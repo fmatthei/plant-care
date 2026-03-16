@@ -1,0 +1,829 @@
+/* ===== Reset & Base ===== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f2f5f2;
+  color: #1c2b1c;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== CSS Variables ===== */
+:root {
+  --bg: #f2f5f2;
+  --card: #ffffff;
+  --primary: #2e7d51;
+  --primary-dark: #1b5e38;
+  --primary-light: #e6f4ec;
+  --text: #1c2b1c;
+  --text-muted: #6b7c6b;
+  --border: #dde8dd;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.07), 0 2px 6px rgba(0,0,0,0.04);
+  --shadow: 0 2px 12px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.04);
+  --radius: 16px;
+  --radius-sm: 12px;
+  --radius-xs: 8px;
+
+  --water: #1565c0;
+  --water-bg: #e3f2fd;
+  --refill: #0277bd;
+  --refill-bg: #e1f5fe;
+  --fertilize: #2e7d32;
+  --fertilize-bg: #e8f5e9;
+  --check: #bf360c;
+  --check-bg: #fbe9e7;
+
+  --matu: #283593;
+  --matu-bg: #e8eaf6;
+  --vale: #880e4f;
+  --vale-bg: #fce4ec;
+
+  --due: #c62828;
+  --due-bg: #ffebee;
+  --soon: #e65100;
+  --soon-bg: #fff3e0;
+  --ok: #1b5e20;
+  --ok-bg: #e8f5e9;
+}
+
+/* ===== App Container ===== */
+#app {
+  min-height: 100vh;
+  max-width: 480px;
+  margin: 0 auto;
+  padding-bottom: 40px;
+}
+
+/* ===== App Header (Home) ===== */
+.app-header {
+  background: var(--primary);
+  color: white;
+  padding: 20px 20px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.app-header .date-label {
+  font-size: 13px;
+  opacity: 0.82;
+  font-weight: 500;
+}
+
+/* ===== Page Header (Plant Detail) ===== */
+.page-header {
+  background: var(--primary);
+  color: white;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.back-btn {
+  background: rgba(255,255,255,0.18);
+  border: none;
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  cursor: pointer;
+  font-size: 22px;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.page-header-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-header-info h1 {
+  font-size: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page-header-emoji {
+  font-size: 30px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* ===== Due Banner ===== */
+.due-banner {
+  margin: 14px 16px 0;
+  background: var(--due-bg);
+  border: 1px solid #ffcdd2;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--due);
+}
+
+/* ===== Plant Cards (Home) ===== */
+.plants-list {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plant-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 16px;
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  border: 1px solid var(--border);
+}
+
+.plant-card:active {
+  transform: scale(0.975);
+  box-shadow: none;
+}
+
+.plant-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.plant-card-emoji {
+  font-size: 42px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.plant-card-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.plant-card-meta h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.plant-card-meta .transplant-info {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.plant-card-arrow {
+  color: #bbb;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.due-tasks-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 26px;
+  align-items: center;
+}
+
+.task-due-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.task-due-badge.water    { background: var(--water-bg);     color: var(--water); }
+.task-due-badge.refill   { background: var(--refill-bg);    color: var(--refill); }
+.task-due-badge.fertilize{ background: var(--fertilize-bg); color: var(--fertilize); }
+.task-due-badge.check    { background: var(--check-bg);     color: var(--check); }
+
+.all-good-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ok);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ===== Section Layout ===== */
+.section {
+  margin: 16px 16px 0;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+
+.section-action {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 2px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* ===== Info Card (Transplant Date) ===== */
+.info-card {
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.info-card-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.info-card-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ===== Task Cards ===== */
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-card {
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.task-card-inner {
+  display: flex;
+}
+
+.task-left-bar {
+  width: 4px;
+  flex-shrink: 0;
+}
+
+.task-left-bar.water     { background: var(--water); }
+.task-left-bar.refill    { background: var(--refill); }
+.task-left-bar.fertilize { background: var(--fertilize); }
+.task-left-bar.check     { background: var(--check); }
+
+.task-body {
+  flex: 1;
+  padding: 12px 12px 12px 12px;
+  min-width: 0;
+}
+
+.task-row1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.task-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.task-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+
+.owner-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  flex-shrink: 0;
+}
+
+.owner-badge.matu { background: var(--matu-bg); color: var(--matu); }
+.owner-badge.vale { background: var(--vale-bg); color: var(--vale); }
+
+.task-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.task-due-label {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.task-due-label.due  { color: var(--due); }
+.task-due-label.soon { color: var(--soon); }
+.task-due-label.ok   { color: var(--ok); }
+
+.task-note-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: #f7f9f7;
+  border-radius: 6px;
+  border-left: 2px solid var(--border);
+  line-height: 1.4;
+}
+
+.task-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+/* ===== Buttons ===== */
+.btn {
+  border: none;
+  border-radius: var(--radius-xs);
+  padding: 8px 13px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: opacity 0.1s, transform 0.1s;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn:active {
+  opacity: 0.72;
+  transform: scale(0.97);
+}
+
+.btn-primary   { background: var(--primary); color: white; }
+.btn-secondary { background: var(--primary-light); color: var(--primary); }
+.btn-ghost     { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+.btn-danger    { background: var(--due-bg); color: var(--due); }
+
+/* ===== Health Notes ===== */
+.health-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.health-note-card {
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  padding: 12px;
+}
+
+.health-note-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.health-note-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.author-label        { font-weight: 700; }
+.author-label.matu   { color: var(--matu); }
+.author-label.vale   { color: var(--vale); }
+
+.health-note-btns {
+  display: flex;
+  gap: 2px;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px 6px;
+  font-size: 14px;
+  border-radius: 6px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  line-height: 1;
+}
+
+.icon-btn:active { opacity: 0.6; }
+
+.health-note-text {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* ===== Care Log ===== */
+.care-log-list {
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.care-log-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.care-log-entry:last-child {
+  border-bottom: none;
+}
+
+.care-log-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.care-log-dot.water     { background: var(--water); }
+.care-log-dot.refill    { background: var(--refill); }
+.care-log-dot.fertilize { background: var(--fertilize); }
+.care-log-dot.check     { background: var(--check); }
+
+.care-log-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.care-log-task {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.care-log-who {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.care-log-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ===== Empty State ===== */
+.empty-state {
+  padding: 18px 0 4px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* ===== Overlay ===== */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.38);
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+
+.overlay.active {
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* ===== Bottom Sheet ===== */
+.sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  z-index: 60;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  max-height: 90vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sheet.active {
+  transform: translateY(0);
+}
+
+.sheet-handle {
+  width: 38px;
+  height: 4px;
+  background: #d4d4d4;
+  border-radius: 2px;
+  margin: 12px auto 0;
+  flex-shrink: 0;
+}
+
+#sheet-content {
+  padding: 16px 20px 48px;
+}
+
+.sheet-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 18px;
+  padding-top: 2px;
+}
+
+/* ===== Form Elements ===== */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  margin-bottom: 6px;
+}
+
+.form-input,
+.form-textarea {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-xs);
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text);
+  background: white;
+  transition: border-color 0.15s;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.form-input:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 90px;
+  line-height: 1.5;
+}
+
+.owner-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.owner-option {
+  flex: 1;
+  padding: 11px 10px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-xs);
+  text-align: center;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-muted);
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.owner-option.matu.selected {
+  border-color: var(--matu);
+  background: var(--matu-bg);
+  color: var(--matu);
+}
+
+.owner-option.vale.selected {
+  border-color: var(--vale);
+  background: var(--vale-bg);
+  color: var(--vale);
+}
+
+.sheet-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.sheet-actions .btn {
+  flex: 1;
+  padding: 13px;
+  font-size: 15px;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+}
+
+.freq-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.freq-row .form-input {
+  width: 80px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.freq-row span {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* ===== Paused Task ===== */
+.task-card.paused {
+  background: #f8f8f8;
+}
+
+.task-card.paused .task-left-bar {
+  opacity: 0.3;
+}
+
+.task-card.paused .task-name {
+  color: var(--text-muted);
+}
+
+.task-paused-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #eeeeee;
+  color: #888888;
+  border: 1px solid #dddddd;
+}
+
+/* ===== Recurrence Type Toggle ===== */
+.recurrence-type-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.recurrence-option {
+  flex: 1;
+  padding: 11px 10px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-xs);
+  text-align: center;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.recurrence-option.selected {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+/* Show/hide interval vs weekdays sections */
+#recurrence-container.recurrence-interval .recurrence-weekdays-section { display: none; }
+#recurrence-container.recurrence-weekdays .recurrence-interval-section { display: none; }
+
+/* ===== Weekday Picker ===== */
+.weekday-picker {
+  display: flex;
+  gap: 5px;
+}
+
+.weekday-btn {
+  flex: 1;
+  padding: 9px 0;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: white;
+  cursor: pointer;
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.weekday-btn.selected {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: white;
+}
+
+/* ===== Form Hint ===== */
+.form-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 5px;
+}
+
+/* ===== Sheet Danger Zone ===== */
+.sheet-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 20px -20px 16px;
+}
+
+.sheet-danger {
+  display: flex;
+  gap: 8px;
+}
+
+.sheet-danger .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.btn-warning {
+  background: var(--soon-bg);
+  color: var(--soon);
+}

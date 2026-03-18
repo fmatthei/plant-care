@@ -823,6 +823,14 @@ body {
   margin-top: 5px;
 }
 
+/* ===== Data Footer ===== */
+.data-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding: 16px 0 28px;
+}
+
 /* ===== Sheet Danger Zone ===== */
 .sheet-divider {
   height: 1px;

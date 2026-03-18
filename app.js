@@ -341,6 +341,13 @@ function renderHome() {
   }
 
   html += '</div>';
+
+  html += `
+    <div class="data-footer">
+      <button class="btn btn-ghost" data-action="export-data">&#8681; Export Backup</button>
+      <button class="btn btn-ghost" data-action="import-data">&#8679; Import Backup</button>
+    </div>`;
+
   document.getElementById('app').innerHTML = html;
 }
 
@@ -833,6 +840,42 @@ function handleEvent(e) {
       }
       closeSheet();
       renderPlantDetail(pid);
+      break;
+    }
+
+    case 'export-data': {
+      const data = localStorage.getItem('plant-care-v1') ?? '[]';
+      const blob = new Blob([data], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = 'plant-care-backup.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      break;
+    }
+
+    case 'import-data': {
+      const fileInput = document.createElement('input');
+      fileInput.type   = 'file';
+      fileInput.accept = '.json,application/json';
+      fileInput.addEventListener('change', () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const parsed = JSON.parse(e.target.result);
+            if (!Array.isArray(parsed)) throw new Error('Invalid format');
+            localStorage.setItem('plant-care-v1', JSON.stringify(parsed));
+            location.reload();
+          } catch (_) {
+            alert('Invalid backup file. Please select a valid plant-care-backup.json file.');
+          }
+        };
+        reader.readAsText(file);
+      });
+      fileInput.click();
       break;
     }
 

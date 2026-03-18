@@ -799,6 +799,23 @@ body {
   color: white;
 }
 
+/* ===== Date Input Wrapper ===== */
+.date-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.date-input-wrapper .form-input {
+  padding-left: 36px;
+}
+.date-input-wrapper .date-icon {
+  position: absolute;
+  left: 10px;
+  pointer-events: none;
+  font-size: 16px;
+  line-height: 1;
+}
+
 /* ===== Form Hint ===== */
 .form-hint {
   font-size: 12px;

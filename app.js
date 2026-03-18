@@ -576,7 +576,7 @@ function renderEditTaskSheet(plantId, taskId) {
 
     <div class="form-group">
       <label class="form-label">Override Next Due Date</label>
-      <input type="date" class="form-input" id="sheet-next-due-override" value="${task.nextDueOverride ?? ''}">
+      <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-next-due-override" value="${task.nextDueOverride ?? ''}"></div>
       <div class="form-hint">Leave empty to use automatic calculation</div>
     </div>
 
@@ -595,7 +595,7 @@ function renderEditTaskSheet(plantId, taskId) {
 
     <div class="form-group">
       <label class="form-label">Last Done</label>
-      <input type="date" class="form-input" id="sheet-last-done" value="${task.lastDone ?? ''}">
+      <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-last-done" value="${task.lastDone ?? ''}"></div>
     </div>
 
     <div class="sheet-actions">
@@ -666,7 +666,7 @@ function renderEditPlantSheet(plantId) {
     </div>
     <div class="form-group">
       <label class="form-label">Date Transplanted</label>
-      <input type="date" class="form-input" id="sheet-transplant-date" value="${plant.dateTransplanted ?? ''}">
+      <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date" value="${plant.dateTransplanted ?? ''}"></div>
     </div>
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>

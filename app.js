@@ -24,6 +24,8 @@ const USERS = {
   Vale: { color: '#880e4f' },
 };
 
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const DEFAULT_PLANTS = [
   {
     id: 'mandarin',
@@ -82,6 +84,36 @@ function getActiveUser() {
 function setActiveUser(name) {
   activeUser = name;
   localStorage.setItem('active-user', name);
+}
+
+function renderLoginScreen(errorMsg) {
+  document.getElementById('app').innerHTML = `
+    <div class="user-select-screen">
+      <h2>Plant Care</h2>
+      <div class="user-select-buttons">
+        <input class="form-input" type="email" id="login-email" placeholder="Email" autocomplete="email">
+        <input class="form-input" type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+        <button class="btn btn-primary" data-action="login" style="width:100%;padding:16px;font-size:16px;">Sign In</button>
+        ${errorMsg ? `<p style="color:var(--due);font-size:14px;text-align:center;margin:0;">${errorMsg}</p>` : ''}
+      </div>
+    </div>`;
+}
+
+async function handleLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    renderLoginScreen(error.message);
+  } else {
+    const saved = getActiveUser();
+    if (saved) {
+      activeUser = saved;
+      navigateTo('home');
+    } else {
+      renderUserSelect();
+    }
+  }
 }
 
 function renderUserSelect() {
@@ -992,6 +1024,10 @@ function handleEvent(e) {
 
   switch (action) {
 
+    case 'login':
+      handleLogin();
+      break;
+
     case 'open-plant':
       navigateTo('plant', plantId);
       break;
@@ -1288,8 +1324,19 @@ function handleEvent(e) {
 // INIT
 // ============================================================
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   loadData();
+
+  document.getElementById('app').addEventListener('click', handleEvent);
+  document.getElementById('sheet').addEventListener('click', handleEvent);
+  document.getElementById('overlay').addEventListener('click', closeSheet);
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) {
+    renderLoginScreen();
+    return;
+  }
+
   const saved = getActiveUser();
   if (saved) {
     activeUser = saved;
@@ -1297,8 +1344,4 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     renderUserSelect();
   }
-
-  document.getElementById('app').addEventListener('click', handleEvent);
-  document.getElementById('sheet').addEventListener('click', handleEvent);
-  document.getElementById('overlay').addEventListener('click', closeSheet);
 });

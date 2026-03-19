@@ -72,6 +72,7 @@ let plants = [];
 let activeUser = null;
 let activeTab = 'plants';
 let scheduleShowAll = false;
+let membersCache = []; // household_members rows: { id, display_name }
 
 // ============================================================
 // ACTIVE USER
@@ -180,9 +181,12 @@ async function loadFromSupabase() {
   ]);
   if (!plantRows) return;
 
+  // Cache members for use in write operations
+  membersCache = memberRows ?? [];
+
   // Build a map from household_members.id → display_name for resolving task owners
   const ownerMap = {};
-  for (const m of (memberRows ?? [])) {
+  for (const m of membersCache) {
     ownerMap[m.id] = m.display_name;
   }
 
@@ -377,7 +381,7 @@ function getTaskConfig(task) {
 // ACTIONS
 // ============================================================
 
-function markTaskDone(plantId, taskId) {
+async function markTaskDone(plantId, taskId) {
   const plant = getPlant(plantId);
   const task = plant?.tasks.find(t => t.id === taskId);
   if (!task) return;
@@ -397,20 +401,75 @@ function markTaskDone(plantId, taskId) {
 
   plant.careLog = plant.careLog.slice(0, 50);
   saveData();
+
+  const member = membersCache.find(m => m.display_name === task.owner);
+  await supabaseClient
+    .from('tasks')
+    .update({ last_done: todayStr(), next_due_override: null })
+    .eq('id', taskId)
+    .then(({ error }) => { if (error) console.error('markTaskDone task update error:', error); });
+  await supabaseClient
+    .from('care_log')
+    .insert({
+      plant_id:            plantId,
+      task_id:             taskId,
+      household_member_id: member?.id ?? null,
+      task_name:           taskCfg.name,
+      task_type:           taskCfg.type,
+      date:                todayStr(),
+    })
+    .then(({ error }) => { if (error) console.error('markTaskDone care_log insert error:', error); });
 }
 
-function reassignTask(plantId, taskId) {
+async function reassignTask(plantId, taskId) {
   const task = getTask(plantId, taskId);
   if (!task) return;
   task.owner = task.owner === 'Matu' ? 'Vale' : 'Matu';
   saveData();
+
+  const member = membersCache.find(m => m.display_name === task.owner);
+  await supabaseClient
+    .from('tasks')
+    .update({ owner_id: member?.id ?? null })
+    .eq('id', taskId)
+    .then(({ error }) => { if (error) console.error('reassignTask error:', error); });
 }
 
-function updateTask(plantId, taskId, updates) {
+async function updateTask(plantId, taskId, updates) {
   const task = getTask(plantId, taskId);
   if (!task) return;
   Object.assign(task, updates);
   saveData();
+
+  const dbUpdates = {};
+
+  if ('lastDone'        in updates) dbUpdates.last_done         = updates.lastDone;
+  if ('nextDueOverride' in updates) dbUpdates.next_due_override = updates.nextDueOverride;
+  if ('paused'          in updates) dbUpdates.paused            = updates.paused;
+  if ('note'            in updates) dbUpdates.note              = updates.note;
+
+  if ('owner' in updates) {
+    const member = membersCache.find(m => m.display_name === updates.owner);
+    dbUpdates.owner_id = member?.id ?? null;
+  }
+
+  const recurrenceFields = ['recurrenceType', 'frequencyDays', 'recurrenceUnit', 'weekdays'];
+  if (recurrenceFields.some(f => f in updates)) {
+    dbUpdates.recurrence = {
+      type:  task.recurrenceType,
+      every: task.frequencyDays,
+      unit:  task.recurrenceUnit ?? 'days',
+      days:  task.weekdays ?? [],
+    };
+  }
+
+  if (Object.keys(dbUpdates).length === 0) return;
+
+  await supabaseClient
+    .from('tasks')
+    .update(dbUpdates)
+    .eq('id', taskId)
+    .then(({ error }) => { if (error) console.error('updateTask error:', error); });
 }
 
 function pauseTask(plantId, taskId) {
@@ -423,11 +482,17 @@ function resumeTask(plantId, taskId) {
   if (task) { task.paused = false; saveData(); }
 }
 
-function deleteTask(plantId, taskId) {
+async function deleteTask(plantId, taskId) {
   const plant = getPlant(plantId);
   if (!plant) return;
   plant.tasks = plant.tasks.filter(t => t.id !== taskId);
   saveData();
+
+  await supabaseClient
+    .from('tasks')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', taskId)
+    .then(({ error }) => { if (error) console.error('deleteTask error:', error); });
 }
 
 function addHealthNote(plantId, text, author) {

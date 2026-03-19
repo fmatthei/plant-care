@@ -57,6 +57,7 @@ const state = {
 
 let plants = [];
 let activeUser = null;
+let activeTab = 'plants';
 
 // ============================================================
 // ACTIVE USER
@@ -320,9 +321,6 @@ function updatePlantInfo(plantId, updates) {
 // ============================================================
 
 function renderHome() {
-  // isDue() already returns false for paused tasks, so the count is correct
-  const totalDue = plants.reduce((sum, p) => sum + p.tasks.filter(isDue).length, 0);
-
   let html = `
     <div class="app-header">
       <h1>Plant Care</h1>
@@ -330,21 +328,29 @@ function renderHome() {
         <span class="date-label">${todayFormatted()}</span>
         <button class="user-indicator" data-action="switch-user">&#128100; ${escapeHtml(activeUser)}</button>
       </div>
+    </div>
+    <div class="tab-bar">
+      <button class="tab-btn${activeTab === 'plants' ? ' active' : ''}" data-action="switch-tab" data-tab="plants">&#127807; My Plants</button>
+      <button class="tab-btn${activeTab === 'schedule' ? ' active' : ''}" data-action="switch-tab" data-tab="schedule">&#128197; Schedule</button>
     </div>`;
 
-  if (totalDue > 0) {
-    html += `
+  if (activeTab === 'plants') {
+    // isDue() already returns false for paused tasks, so the count is correct
+    const totalDue = plants.reduce((sum, p) => sum + p.tasks.filter(isDue).length, 0);
+
+    if (totalDue > 0) {
+      html += `
     <div class="due-banner">
       &#9888;&#65039; ${totalDue} task${totalDue !== 1 ? 's' : ''} due today
     </div>`;
-  }
+    }
 
-  html += '<div class="plants-list">';
+    html += '<div class="plants-list">';
 
-  for (const plant of plants) {
-    const dueTasks = plant.tasks.filter(isDue);
+    for (const plant of plants) {
+      const dueTasks = plant.tasks.filter(isDue);
 
-    html += `
+      html += `
     <div class="plant-card" data-action="open-plant" data-plant="${plant.id}">
       <div class="plant-card-top">
         <span class="plant-card-emoji">${plant.emoji}</span>
@@ -356,25 +362,28 @@ function renderHome() {
       </div>
       <div class="due-tasks-row">`;
 
-    if (dueTasks.length === 0) {
-      html += `<span class="all-good-badge">&#10003; All good</span>`;
-    } else {
-      for (const task of dueTasks) {
-        const cfg = TASK_CONFIG[task.id];
-        html += `<span class="task-due-badge ${cfg.type}">${cfg.icon} ${cfg.name}</span>`;
+      if (dueTasks.length === 0) {
+        html += `<span class="all-good-badge">&#10003; All good</span>`;
+      } else {
+        for (const task of dueTasks) {
+          const cfg = TASK_CONFIG[task.id];
+          html += `<span class="task-due-badge ${cfg.type}">${cfg.icon} ${cfg.name}</span>`;
+        }
       }
+
+      html += `</div></div>`;
     }
 
-    html += `</div></div>`;
-  }
+    html += '</div>';
 
-  html += '</div>';
-
-  html += `
+    html += `
     <div class="data-footer">
       <button class="btn btn-ghost" data-action="export-data">&#8681; Export Backup</button>
       <button class="btn btn-ghost" data-action="import-data">&#8679; Import Backup</button>
     </div>`;
+  } else {
+    html += `<div class="tab-placeholder">Schedule coming soon</div>`;
+  }
 
   document.getElementById('app').innerHTML = html;
 }
@@ -744,6 +753,12 @@ function handleEvent(e) {
     case 'go-home':
       navigateTo('home');
       break;
+
+    case 'switch-tab': {
+      activeTab = target.dataset.tab;
+      renderHome();
+      break;
+    }
 
     case 'select-user': {
       const user = target.dataset.user;

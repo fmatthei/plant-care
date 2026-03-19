@@ -852,3 +852,72 @@ body {
   background: var(--soon-bg);
   color: var(--soon);
 }
+
+/* ===== User Select Screen ===== */
+.user-select-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 40px 20px;
+}
+
+.user-select-screen h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.user-select-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 280px;
+}
+
+.user-select-btn {
+  width: 100%;
+  padding: 18px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.user-select-btn:active {
+  background: var(--primary-light);
+  border-color: var(--primary);
+}
+
+/* ===== Header Right ===== */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ===== User Indicator ===== */
+.user-indicator {
+  background: rgba(255,255,255,0.18);
+  border: none;
+  border-radius: 20px;
+  padding: 4px 10px;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+}
+
+.user-indicator:active {
+  background: rgba(255,255,255,0.3);
+}

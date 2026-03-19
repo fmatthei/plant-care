@@ -56,6 +56,31 @@ const state = {
 };
 
 let plants = [];
+let activeUser = null;
+
+// ============================================================
+// ACTIVE USER
+// ============================================================
+
+function getActiveUser() {
+  return localStorage.getItem('active-user');
+}
+
+function setActiveUser(name) {
+  activeUser = name;
+  localStorage.setItem('active-user', name);
+}
+
+function renderUserSelect() {
+  document.getElementById('app').innerHTML = `
+    <div class="user-select-screen">
+      <h2>Who are you?</h2>
+      <div class="user-select-buttons">
+        <button class="user-select-btn" data-action="select-user" data-user="Matu">Matu</button>
+        <button class="user-select-btn" data-action="select-user" data-user="Vale">Vale</button>
+      </div>
+    </div>`;
+}
 
 // ============================================================
 // DATA PERSISTENCE
@@ -301,7 +326,10 @@ function renderHome() {
   let html = `
     <div class="app-header">
       <h1>Plant Care</h1>
-      <span class="date-label">${todayFormatted()}</span>
+      <div class="header-right">
+        <span class="date-label">${todayFormatted()}</span>
+        <button class="user-indicator" data-action="switch-user">&#128100; ${escapeHtml(activeUser)}</button>
+      </div>
     </div>`;
 
   if (totalDue > 0) {
@@ -717,6 +745,19 @@ function handleEvent(e) {
       navigateTo('home');
       break;
 
+    case 'select-user': {
+      const user = target.dataset.user;
+      setActiveUser(user);
+      navigateTo('home');
+      break;
+    }
+
+    case 'switch-user': {
+      setActiveUser(activeUser === 'Matu' ? 'Vale' : 'Matu');
+      renderHome();
+      break;
+    }
+
     case 'mark-done':
       markTaskDone(plantId, taskId);
       renderPlantDetail(state.plantId);
@@ -903,7 +944,13 @@ function handleEvent(e) {
 
 document.addEventListener('DOMContentLoaded', () => {
   loadData();
-  navigateTo('home');
+  const saved = getActiveUser();
+  if (saved) {
+    activeUser = saved;
+    navigateTo('home');
+  } else {
+    renderUserSelect();
+  }
 
   document.getElementById('app').addEventListener('click', handleEvent);
   document.getElementById('sheet').addEventListener('click', handleEvent);

@@ -391,6 +391,7 @@ function renderHome() {
       <div class="header-right">
         <span class="date-label">${todayFormatted()}</span>
         <button class="user-indicator" data-action="switch-user">&#128100; ${escapeHtml(activeUser)}</button>
+        <button class="btn-sign-out" data-action="sign-out">Sign Out</button>
       </div>
     </div>
     <div class="tab-bar">
@@ -1026,6 +1027,10 @@ function handleEvent(e) {
 
     case 'login':
       handleLogin();
+      break;
+
+    case 'sign-out':
+      supabaseClient.auth.signOut().then(() => renderLoginScreen());
       break;
 
     case 'open-plant':

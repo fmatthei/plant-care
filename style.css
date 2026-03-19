@@ -1113,6 +1113,24 @@ body {
   background: rgba(255,255,255,0.3);
 }
 
+.btn-sign-out {
+  background: transparent;
+  border: 1px solid white;
+  border-radius: 20px;
+  padding: 4px 10px;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.btn-sign-out:hover {
+  background: rgba(255,255,255,0.2);
+}
+
 /* ===== Add Task Button (Plant Detail) ===== */
 .btn-add-task-detail {
   display: flex;

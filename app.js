@@ -9,9 +9,15 @@ const TASK_CONFIG = {
   'refill-pot':   { name: 'Refill Self-Watering Pot',  icon: '🪣', type: 'refill' },
   'fertilize':    { name: 'Fertilize',                 icon: '🌱', type: 'fertilize' },
   'check':        { name: 'Check',                     icon: '🔍', type: 'check' },
+  'repot':        { name: 'Repot',                     icon: '🪴', type: 'repot' },
+  'prune':        { name: 'Prune',                     icon: '✂️',  type: 'prune' },
+  'check-pests':  { name: 'Check Pests',               icon: '🐛', type: 'pest' },
+  'rotate':       { name: 'Rotate',                    icon: '🔄', type: 'rotate' },
 };
 
 const WEEKDAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+const CUSTOM_ICONS = ['🌿', '💦', '🧴', '🌊', '✂️', '🔍', '🪴', '🐛', '🔄', '🌞', '🧪', '🌸', '🍃', '🌼', '🌡️', '🪥'];
 
 const USERS = {
   Matu: { color: '#283593' },
@@ -247,6 +253,16 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+// Returns config for a task, falling back to task.customName/customIcon for custom tasks
+function getTaskConfig(task) {
+  if (TASK_CONFIG[task.id]) return TASK_CONFIG[task.id];
+  return {
+    name: task.customName ?? task.id,
+    icon: task.customIcon ?? '🌿',
+    type: 'custom',
+  };
+}
+
 // ============================================================
 // ACTIONS
 // ============================================================
@@ -259,13 +275,14 @@ function markTaskDone(plantId, taskId) {
   task.lastDone = todayStr();
   task.nextDueOverride = null; // clear any manual override when marking done
 
+  const taskCfg = getTaskConfig(task);
   plant.careLog.unshift({
     id: uid(),
     date: todayStr(),
     author: task.owner,
     taskId: task.id,
-    taskName: TASK_CONFIG[task.id].name,
-    taskType: TASK_CONFIG[task.id].type,
+    taskName: taskCfg.name,
+    taskType: taskCfg.type,
   });
 
   plant.careLog = plant.careLog.slice(0, 50);
@@ -381,7 +398,7 @@ function renderHome() {
         html += `<span class="all-good-badge">&#10003; All good</span>`;
       } else {
         for (const task of dueTasks) {
-          const cfg = TASK_CONFIG[task.id];
+          const cfg = getTaskConfig(task);
           html += `<span class="task-due-badge ${cfg.type}">${cfg.icon} ${cfg.name}</span>`;
         }
       }
@@ -433,9 +450,9 @@ function renderSchedule() {
   }
 
   function renderTaskRow(plant, task, extraClass) {
-    const cfg = TASK_CONFIG[task.id];
+    const cfg = getTaskConfig(task);
     const ownerTag = scheduleShowAll
-      ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'}">👤 ${escapeHtml(task.owner)}</span>`
+      ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'};background:${(USERS[task.owner]?.color ?? '#666666')}26">👤 ${escapeHtml(task.owner)}</span>`
       : '';
     return `<div class="sched-task${extraClass ? ' ' + extraClass : ''}">
         <span class="sched-task-label">${cfg.icon} <strong>${escapeHtml(cfg.name)}</strong> · ${escapeHtml(plant.name)}${ownerTag}</span>
@@ -476,9 +493,9 @@ function renderSchedule() {
       <div class="sched-section-title">⚠️ Overdue</div>`;
     for (const { plant, task } of overdueItems) {
       const daysAgo = Math.abs(daysUntilDue(task));
-      const cfg = TASK_CONFIG[task.id];
+      const cfg = getTaskConfig(task);
       const ownerTag = scheduleShowAll
-        ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'}">👤 ${escapeHtml(task.owner)}</span>`
+        ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'};background:${(USERS[task.owner]?.color ?? '#666666')}26">👤 ${escapeHtml(task.owner)}</span>`
         : '';
       html += `<div class="sched-task sched-task-overdue">
         <span class="sched-task-label">${cfg.icon} <strong>${escapeHtml(cfg.name)}</strong> · ${escapeHtml(plant.name)}${ownerTag} <span class="sched-overdue-days">(${daysAgo} day${daysAgo !== 1 ? 's' : ''} overdue)</span></span>
@@ -544,6 +561,7 @@ function renderPlantDetail(plantId) {
     <div class="section-header">
       <span class="section-title">Care Tasks</span>
     </div>
+    <button class="btn-add-task-detail" data-action="add-task" data-plant="${plant.id}">&#43; Add Task</button>
     <div class="task-list">`;
 
   for (const task of plant.tasks) {
@@ -596,7 +614,7 @@ function renderPlantDetail(plantId) {
 }
 
 function renderTaskCard(plantId, task) {
-  const cfg = TASK_CONFIG[task.id];
+  const cfg = getTaskConfig(task);
   const isPaused = task.paused ?? false;
   const ownerCls = task.owner.toLowerCase();
   const otherOwner = task.owner === 'Matu' ? 'Vale' : 'Matu';
@@ -666,7 +684,7 @@ function renderHealthNoteCard(plantId, note) {
 }
 
 function renderCareLogEntry(entry) {
-  const type = TASK_CONFIG[entry.taskId]?.type ?? 'check';
+  const type = entry.taskType ?? TASK_CONFIG[entry.taskId]?.type ?? 'custom';
   const authorCls = entry.author.toLowerCase();
   return `
   <div class="care-log-entry">
@@ -699,7 +717,7 @@ function closeSheet() {
 function renderEditTaskSheet(plantId, taskId) {
   const task = getTask(plantId, taskId);
   if (!task) return;
-  const cfg = TASK_CONFIG[taskId];
+  const cfg = getTaskConfig(task);
   const isPaused = task.paused ?? false;
   const recType = task.recurrenceType ?? 'interval';
 
@@ -774,6 +792,115 @@ function renderEditTaskSheet(plantId, taskId) {
       <button class="btn btn-danger" data-action="delete-task" data-plant="${plantId}" data-task="${taskId}">
         Delete Task
       </button>
+    </div>
+  `);
+}
+
+function renderAddTaskStep1(plantId) {
+  const plant = getPlant(plantId);
+  if (!plant) return;
+  const existingIds = new Set(plant.tasks.map(t => t.id));
+
+  state.sheetMode = 'add-task-step1';
+  state.sheetData = { plantId };
+
+  const presetOptions = Object.entries(TASK_CONFIG).map(([key, cfg]) => {
+    if (existingIds.has(key)) {
+      return `
+      <div class="task-type-option task-type-option-disabled">
+        <span class="task-type-icon">${cfg.icon}</span>
+        <span class="task-type-name">${escapeHtml(cfg.name)}</span>
+        <span class="task-type-assigned">Added</span>
+      </div>`;
+    }
+    return `
+      <div class="task-type-option" data-action="add-task-select-type" data-plant="${plantId}" data-type-key="${key}">
+        <span class="task-type-icon">${cfg.icon}</span>
+        <span class="task-type-name">${escapeHtml(cfg.name)}</span>
+      </div>`;
+  }).join('');
+
+  openSheet(`
+    <div class="sheet-title">Add Task</div>
+    <div class="task-type-list">
+      ${presetOptions}
+      <div class="task-type-option task-type-option-custom" data-action="add-task-select-type" data-plant="${plantId}" data-type-key="custom">
+        <span class="task-type-icon">✏️</span>
+        <span class="task-type-name">Custom</span>
+      </div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
+    </div>
+  `);
+}
+
+function renderAddTaskStep2(plantId, typeKey) {
+  const isCustom = typeKey === 'custom';
+  const cfg = isCustom ? null : TASK_CONFIG[typeKey];
+  const defaultOwner = activeUser ?? Object.keys(USERS)[0];
+
+  state.sheetMode = 'add-task-step2';
+  state.sheetData = { plantId, typeKey };
+
+  const weekdayBtns = WEEKDAY_NAMES.map((name, i) =>
+    `<button class="weekday-btn" data-action="sheet-toggle-weekday" data-day="${i}">${name}</button>`
+  ).join('');
+
+  const ownerOptions = Object.keys(USERS).map(name => {
+    const sel = name === defaultOwner ? 'selected' : '';
+    const cls = name.toLowerCase();
+    return `<div class="owner-option ${cls} ${sel}" data-action="sheet-set-owner" data-owner="${escapeHtml(name)}">${escapeHtml(name)}</div>`;
+  }).join('');
+
+  const titleHtml = isCustom
+    ? `<div class="sheet-title">Custom Task</div>`
+    : `<div class="sheet-title">${cfg.icon} ${cfg.name}</div>`;
+
+  const customFields = isCustom ? `
+    <div class="form-group">
+      <label class="form-label">Task Name</label>
+      <input type="text" class="form-input" id="sheet-custom-name" placeholder="e.g. Mist leaves" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Icon</label>
+      <div class="icon-picker" id="sheet-icon-picker">
+        ${CUSTOM_ICONS.map((ic, i) =>
+          `<div class="icon-option${i === 0 ? ' selected' : ''}" data-action="add-task-pick-icon" data-icon="${ic}">${ic}</div>`
+        ).join('')}
+      </div>
+    </div>` : '';
+
+  openSheet(`
+    ${titleHtml}
+    ${customFields}
+    <div class="form-group">
+      <label class="form-label">Recurrence</label>
+      <div class="recurrence-type-toggle">
+        <div class="recurrence-option selected" data-action="sheet-toggle-recurrence" data-rtype="interval">Every X days</div>
+        <div class="recurrence-option" data-action="sheet-toggle-recurrence" data-rtype="weekdays">Days of week</div>
+      </div>
+    </div>
+    <div id="recurrence-container" class="recurrence-interval">
+      <div class="recurrence-interval-section form-group">
+        <div class="freq-row">
+          <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="7">
+          <span>days between tasks</span>
+        </div>
+      </div>
+      <div class="recurrence-weekdays-section form-group">
+        <div class="weekday-picker">${weekdayBtns}</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Owner</label>
+      <div class="owner-toggle">
+        ${ownerOptions}
+      </div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" data-action="add-task-back" data-plant="${plantId}">&#8592; Back</button>
+      <button class="btn btn-primary" data-action="sheet-save-new-task">Add Task</button>
     </div>
   `);
 }
@@ -954,6 +1081,81 @@ function handleEvent(e) {
         renderPlantDetail(state.plantId);
       }
       break;
+
+    case 'add-task':
+      renderAddTaskStep1(plantId);
+      break;
+
+    case 'add-task-select-type': {
+      const typeKey = target.dataset.typeKey;
+      const pid = target.dataset.plant;
+      renderAddTaskStep2(pid, typeKey);
+      break;
+    }
+
+    case 'add-task-back': {
+      const pid = target.dataset.plant;
+      renderAddTaskStep1(pid);
+      break;
+    }
+
+    case 'add-task-pick-icon':
+      document.querySelectorAll('#sheet .icon-option').forEach(o => o.classList.remove('selected'));
+      target.classList.add('selected');
+      break;
+
+    case 'sheet-save-new-task': {
+      const { plantId: pid, typeKey } = state.sheetData;
+      const isCustom = typeKey === 'custom';
+      let taskId, customName, customIcon;
+
+      if (isCustom) {
+        customName = document.getElementById('sheet-custom-name')?.value?.trim();
+        if (!customName) { alert('Please enter a task name.'); return; }
+        customIcon = document.querySelector('#sheet .icon-option.selected')?.dataset.icon ?? '🌿';
+        taskId = uid();
+      } else {
+        taskId = typeKey;
+      }
+
+      const container = document.getElementById('recurrence-container');
+      const recType = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
+      let frequencyDays = 7;
+      let weekdays = [];
+
+      if (recType === 'interval') {
+        const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
+        if (!freq || freq < 1) { alert('Please enter a valid frequency (minimum 1 day).'); return; }
+        frequencyDays = freq;
+      } else {
+        weekdays = [...document.querySelectorAll('#sheet .weekday-btn.selected')].map(b => parseInt(b.dataset.day));
+        if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
+      }
+
+      const selectedOwner = document.querySelector('#sheet .owner-option.selected');
+      const owner = selectedOwner?.dataset.owner ?? Object.keys(USERS)[0];
+
+      const newTask = {
+        id: taskId,
+        recurrenceType: recType,
+        frequencyDays,
+        weekdays,
+        lastDone: null,
+        nextDueOverride: null,
+        paused: false,
+        owner,
+        note: '',
+        ...(isCustom ? { customName, customIcon } : {}),
+      };
+
+      const plant = getPlant(pid);
+      if (!plant) break;
+      plant.tasks.push(newTask);
+      saveData();
+      closeSheet();
+      navigateTo('plant', pid);
+      break;
+    }
 
     case 'sheet-cancel':
       closeSheet();

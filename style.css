@@ -42,6 +42,16 @@ body {
   --fertilize-bg: #e8f5e9;
   --check: #bf360c;
   --check-bg: #fbe9e7;
+  --repot: #6d4c41;
+  --repot-bg: #efebe9;
+  --prune: #558b2f;
+  --prune-bg: #f1f8e9;
+  --pest: #bf6a00;
+  --pest-bg: #fff8e1;
+  --rotate: #4527a0;
+  --rotate-bg: #ede7f6;
+  --custom: #00838f;
+  --custom-bg: #e0f7fa;
 
   --matu: #283593;
   --matu-bg: #e8eaf6;
@@ -236,6 +246,11 @@ body {
 .task-due-badge.refill   { background: var(--refill-bg);    color: var(--refill); }
 .task-due-badge.fertilize{ background: var(--fertilize-bg); color: var(--fertilize); }
 .task-due-badge.check    { background: var(--check-bg);     color: var(--check); }
+.task-due-badge.repot    { background: var(--repot-bg);     color: var(--repot); }
+.task-due-badge.prune    { background: var(--prune-bg);     color: var(--prune); }
+.task-due-badge.pest     { background: var(--pest-bg);      color: var(--pest); }
+.task-due-badge.rotate   { background: var(--rotate-bg);    color: var(--rotate); }
+.task-due-badge.custom   { background: var(--custom-bg);    color: var(--custom); }
 
 .all-good-badge {
   display: inline-flex;
@@ -328,6 +343,11 @@ body {
 .task-left-bar.refill    { background: var(--refill); }
 .task-left-bar.fertilize { background: var(--fertilize); }
 .task-left-bar.check     { background: var(--check); }
+.task-left-bar.repot     { background: var(--repot); }
+.task-left-bar.prune     { background: var(--prune); }
+.task-left-bar.pest      { background: var(--pest); }
+.task-left-bar.rotate    { background: var(--rotate); }
+.task-left-bar.custom    { background: var(--custom); }
 
 .task-body {
   flex: 1;
@@ -517,6 +537,11 @@ body {
 .care-log-dot.refill    { background: var(--refill); }
 .care-log-dot.fertilize { background: var(--fertilize); }
 .care-log-dot.check     { background: var(--check); }
+.care-log-dot.repot     { background: var(--repot); }
+.care-log-dot.prune     { background: var(--prune); }
+.care-log-dot.pest      { background: var(--pest); }
+.care-log-dot.rotate    { background: var(--rotate); }
+.care-log-dot.custom    { background: var(--custom); }
 
 .care-log-info {
   flex: 1;
@@ -993,6 +1018,8 @@ body {
 .sched-owner-tag {
   font-size: 12px;
   font-weight: normal;
+  padding: 1px 6px;
+  border-radius: 10px;
 }
 
 .sched-overdue-days {
@@ -1084,4 +1111,125 @@ body {
 
 .user-indicator:active {
   background: rgba(255,255,255,0.3);
+}
+
+/* ===== Add Task Button (Plant Detail) ===== */
+.btn-add-task-detail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 11px;
+  margin-bottom: 10px;
+  background: none;
+  border: 2px solid var(--primary);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.12s;
+  font-family: inherit;
+}
+
+.btn-add-task-detail:active {
+  background: var(--primary-light);
+}
+
+/* ===== Task Type Picker (Add Task Step 1) ===== */
+.task-type-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.task-type-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: white;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.12s, border-color 0.12s;
+  user-select: none;
+}
+
+.task-type-option:active {
+  background: var(--primary-light);
+  border-color: var(--primary);
+}
+
+.task-type-option-disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
+.task-type-option-custom {
+  border-style: dashed;
+}
+
+.task-type-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  line-height: 1;
+  width: 26px;
+  text-align: center;
+}
+
+.task-type-name {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.task-type-assigned {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: #eeeeee;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+/* ===== Icon Picker (Add Task Step 2 Custom) ===== */
+.icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.icon-option {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: white;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: border-color 0.12s, background 0.12s;
+  user-select: none;
+  line-height: 1;
+}
+
+.icon-option.selected {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.icon-option:active {
+  opacity: 0.7;
 }

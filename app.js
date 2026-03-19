@@ -13,6 +13,11 @@ const TASK_CONFIG = {
 
 const WEEKDAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
+const USERS = {
+  Matu: { color: '#283593' },
+  Vale: { color: '#880e4f' },
+};
+
 const DEFAULT_PLANTS = [
   {
     id: 'mandarin',
@@ -58,6 +63,7 @@ const state = {
 let plants = [];
 let activeUser = null;
 let activeTab = 'plants';
+let scheduleShowAll = false;
 
 // ============================================================
 // ACTIVE USER
@@ -205,6 +211,15 @@ function formatDateShort(dateStr) {
 
 function todayFormatted() {
   return new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+// Returns the ISO date string of the Monday of the week containing dateStr
+function getMondayOfWeek(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const dow = d.getDay(); // 0=Sun, 1=Mon...
+  const diff = dow === 0 ? -6 : 1 - dow;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().split('T')[0];
 }
 
 // ============================================================
@@ -382,10 +397,114 @@ function renderHome() {
       <button class="btn btn-ghost" data-action="import-data">&#8679; Import Backup</button>
     </div>`;
   } else {
-    html += `<div class="tab-placeholder">Schedule coming soon</div>`;
+    html += renderSchedule();
   }
 
   document.getElementById('app').innerHTML = html;
+}
+
+// ============================================================
+// RENDER: SCHEDULE
+// ============================================================
+
+function renderSchedule() {
+  const today = todayStr();
+  const thisMonday = getMondayOfWeek(today);
+  const nextMonday = addDays(thisMonday, 7);
+
+  // Collect relevant (non-paused) task items
+  const items = [];
+  for (const plant of plants) {
+    for (const task of plant.tasks) {
+      if (task.paused) continue;
+      if (!scheduleShowAll && task.owner !== activeUser) continue;
+      items.push({ plant, task });
+    }
+  }
+
+  // Overdue: nextDue strictly before today
+  const overdueItems = items.filter(({ task }) => computeNextDue(task) < today);
+
+  const thisWeekDays = Array.from({ length: 7 }, (_, i) => addDays(thisMonday, i));
+  const nextWeekDays = Array.from({ length: 7 }, (_, i) => addDays(nextMonday, i));
+
+  function itemsForDay(dateStr) {
+    return items.filter(({ task }) => computeNextDue(task) === dateStr);
+  }
+
+  function renderTaskRow(plant, task, extraClass) {
+    const cfg = TASK_CONFIG[task.id];
+    const ownerTag = scheduleShowAll
+      ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'}">👤 ${escapeHtml(task.owner)}</span>`
+      : '';
+    return `<div class="sched-task${extraClass ? ' ' + extraClass : ''}">
+        <span class="sched-task-label">${cfg.icon} <strong>${escapeHtml(cfg.name)}</strong> · ${escapeHtml(plant.name)}${ownerTag}</span>
+        <button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>
+      </div>`;
+  }
+
+  function renderDay(dateStr) {
+    const label = new Date(dateStr + 'T12:00:00')
+      .toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    const isToday = dateStr === today;
+    const isPast  = dateStr < today;
+    const dayClass = isToday ? ' sched-day-today' : isPast ? ' sched-day-past' : '';
+    const dayItems = itemsForDay(dateStr);
+    let h = `<div class="sched-day${dayClass}">`;
+    h += `<div class="sched-day-header">${label}</div>`;
+    if (dayItems.length === 0) {
+      h += `<div class="sched-empty">🌞 All clear!</div>`;
+    } else {
+      for (const { plant, task } of dayItems) {
+        h += renderTaskRow(plant, task, null);
+      }
+    }
+    h += `</div>`;
+    return h;
+  }
+
+  let html = `
+    <div class="sched-toolbar">
+      <label class="sched-toggle-label">
+        <input type="checkbox" class="sched-toggle-cb" data-action="schedule-toggle-all"${scheduleShowAll ? ' checked' : ''}>
+        Show all tasks
+      </label>
+    </div>`;
+
+  if (overdueItems.length > 0) {
+    html += `<div class="sched-section sched-section-overdue">
+      <div class="sched-section-title">⚠️ Overdue</div>`;
+    for (const { plant, task } of overdueItems) {
+      const daysAgo = Math.abs(daysUntilDue(task));
+      const cfg = TASK_CONFIG[task.id];
+      const ownerTag = scheduleShowAll
+        ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'}">👤 ${escapeHtml(task.owner)}</span>`
+        : '';
+      html += `<div class="sched-task sched-task-overdue">
+        <span class="sched-task-label">${cfg.icon} <strong>${escapeHtml(cfg.name)}</strong> · ${escapeHtml(plant.name)}${ownerTag} <span class="sched-overdue-days">(${daysAgo} day${daysAgo !== 1 ? 's' : ''} overdue)</span></span>
+        <button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `<div class="sched-section">
+      <div class="sched-section-title">This Week</div>`;
+
+  for (const day of thisWeekDays) {
+    html += renderDay(day);
+  }
+
+  html += `</div>
+    <div class="sched-section">
+      <div class="sched-section-title">Next Week</div>`;
+
+  for (const day of nextWeekDays) {
+    html += renderDay(day);
+  }
+
+  html += `</div>`;
+  return html;
 }
 
 // ============================================================
@@ -776,6 +895,16 @@ function handleEvent(e) {
     case 'mark-done':
       markTaskDone(plantId, taskId);
       renderPlantDetail(state.plantId);
+      break;
+
+    case 'schedule-mark-done':
+      markTaskDone(plantId, taskId);
+      renderHome();
+      break;
+
+    case 'schedule-toggle-all':
+      scheduleShowAll = target.checked;
+      renderHome();
       break;
 
     case 'reassign-task':

@@ -890,6 +890,133 @@ body {
   font-size: 16px;
 }
 
+/* ===== Schedule View ===== */
+.sched-toolbar {
+  padding: 14px 20px 8px;
+}
+
+.sched-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.sched-toggle-cb {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.sched-section {
+  margin: 8px 16px 0;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.sched-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sched-section-overdue {
+  border: 1.5px solid #f5c2c2;
+}
+
+.sched-section-overdue .sched-section-title {
+  color: var(--due);
+  background: var(--due-bg);
+  border-bottom-color: #f5c2c2;
+}
+
+.sched-day {
+  border-bottom: 1px solid var(--border);
+}
+
+.sched-day:last-child {
+  border-bottom: none;
+}
+
+.sched-day-past {
+  opacity: 0.5;
+}
+
+.sched-day-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 10px 16px 2px;
+}
+
+.sched-day-today .sched-day-header {
+  background: var(--primary);
+  color: white;
+  padding: 13px 16px 5px;
+}
+
+.sched-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 2px 16px 10px;
+}
+
+.sched-task {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px 6px 16px;
+  gap: 8px;
+}
+
+.sched-task-overdue {
+  background: var(--due-bg);
+}
+
+.sched-task-label {
+  font-size: 14px;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+
+.sched-owner-tag {
+  font-size: 12px;
+  font-weight: normal;
+}
+
+.sched-overdue-days {
+  font-size: 12px;
+  color: var(--due);
+}
+
+.sched-done-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s;
+}
+
+.sched-done-btn:active {
+  transform: scale(0.85);
+}
+
 /* ===== User Select Screen ===== */
 .user-select-screen {
   min-height: 100vh;

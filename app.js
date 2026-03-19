@@ -151,6 +151,84 @@ function saveData() {
   } catch (_) {}
 }
 
+async function loadFromSupabase() {
+  // 1. Get the logged-in user
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  if (!user) return;
+
+  // 2. Look up household_id from household_members
+  const { data: member } = await supabaseClient
+    .from('household_members')
+    .select('household_id')
+    .eq('user_id', user.id)
+    .single();
+  if (!member) return;
+
+  const householdId = member.household_id;
+
+  // 3. Fetch all non-deleted plants and all household_members in parallel
+  const [{ data: plantRows }, { data: memberRows }] = await Promise.all([
+    supabaseClient
+      .from('plants')
+      .select('*')
+      .eq('household_id', householdId)
+      .is('deleted_at', null),
+    supabaseClient
+      .from('household_members')
+      .select('id, display_name')
+      .eq('household_id', householdId),
+  ]);
+  if (!plantRows) return;
+
+  // Build a map from household_members.id → display_name for resolving task owners
+  const ownerMap = {};
+  for (const m of (memberRows ?? [])) {
+    ownerMap[m.id] = m.display_name;
+  }
+
+  // 4. Fetch tasks for all plants in parallel
+  const taskResults = await Promise.all(
+    plantRows.map(p =>
+      supabaseClient
+        .from('tasks')
+        .select('*')
+        .eq('plant_id', p.id)
+        .is('deleted_at', null)
+    )
+  );
+
+  plants = plantRows.map((plantRow, i) => {
+    const taskRows = taskResults[i].data ?? [];
+    const tasks = taskRows.map(t => ({
+      id:              t.id,
+      recurrenceType:  t.recurrence?.type,
+      frequencyDays:   t.recurrence?.every,
+      recurrenceUnit:  t.recurrence?.unit  ?? 'days',
+      weekdays:        t.recurrence?.days  ?? [],
+      lastDone:        t.last_done         ?? null,
+      nextDueOverride: t.next_due_override ?? null,
+      paused:          t.paused            ?? false,
+      owner:           ownerMap[t.owner_id] ?? '',
+      note:            t.note              ?? '',
+      name:            t.name,
+      icon:            t.icon              ?? '',
+      type:            t.type              ?? 'custom',
+      ...(t.custom_name ? { customName: t.custom_name } : {}),
+      ...(t.custom_icon ? { customIcon: t.custom_icon } : {}),
+    }));
+
+    return {
+      id:               plantRow.id,
+      name:             plantRow.name,
+      emoji:            plantRow.emoji            ?? '🪴',
+      dateTransplanted: plantRow.date_transplanted ?? '',
+      tasks,
+      healthNotes:      [],
+      careLog:          [],
+    };
+  });
+}
+
 // ============================================================
 // DATE UTILITIES
 // ============================================================
@@ -289,9 +367,9 @@ function escapeHtml(str) {
 function getTaskConfig(task) {
   if (TASK_CONFIG[task.id]) return TASK_CONFIG[task.id];
   return {
-    name: task.customName ?? task.id,
-    icon: task.customIcon ?? '🌿',
-    type: 'custom',
+    name: task.name ?? task.customName ?? task.id,
+    icon: task.icon ?? task.customIcon ?? '🌿',
+    type: task.type ?? 'custom',
   };
 }
 
@@ -1330,17 +1408,18 @@ function handleEvent(e) {
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', async () => {
-  loadData();
-
   document.getElementById('app').addEventListener('click', handleEvent);
   document.getElementById('sheet').addEventListener('click', handleEvent);
   document.getElementById('overlay').addEventListener('click', closeSheet);
 
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (!session) {
+    loadData();
     renderLoginScreen();
     return;
   }
+
+  await loadFromSupabase();
 
   const saved = getActiveUser();
   if (saved) {

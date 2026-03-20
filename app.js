@@ -1141,6 +1141,39 @@ function renderEditPlantSheet(plantId) {
   `);
 }
 
+async function handleSavePlant() {
+  const { plantId: pid } = state.sheetData;
+  const plant = getPlant(pid);
+  if (!plant) return;
+
+  const name  = document.getElementById('sheet-plant-name')?.value?.trim();
+  const emoji = document.getElementById('sheet-plant-emoji')?.value?.trim();
+  const date  = document.getElementById('sheet-transplant-date')?.value;
+
+  const localUpdates = {
+    name:             name  || plant.name,
+    emoji:            emoji || plant.emoji,
+    dateTransplanted: date  || null,
+  };
+
+  updatePlantInfo(pid, localUpdates);
+
+  const dbUpdates = {
+    name:             localUpdates.name,
+    emoji:            localUpdates.emoji,
+    date_transplanted: localUpdates.dateTransplanted,
+  };
+
+  await supabaseClient
+    .from('plants')
+    .update(dbUpdates)
+    .eq('id', pid)
+    .then(({ error }) => { if (error) console.error('handleSavePlant error:', error); });
+
+  closeSheet();
+  renderPlantDetail(pid);
+}
+
 async function handleSaveNewTask() {
   const { plantId: pid, typeKey } = state.sheetData;
   const isCustom = typeKey === 'custom';
@@ -1496,21 +1529,9 @@ function handleEvent(e) {
       break;
     }
 
-    case 'sheet-save-plant': {
-      const { plantId: pid } = state.sheetData;
-      const plant = getPlant(pid);
-      const name  = document.getElementById('sheet-plant-name')?.value?.trim();
-      const emoji = document.getElementById('sheet-plant-emoji')?.value?.trim();
-      const date  = document.getElementById('sheet-transplant-date')?.value;
-      updatePlantInfo(pid, {
-        name:             name  || plant.name,
-        emoji:            emoji || plant.emoji,
-        dateTransplanted: date  || null,
-      });
-      closeSheet();
-      renderPlantDetail(pid);
+    case 'sheet-save-plant':
+      handleSavePlant();
       break;
-    }
   }
 }
 

@@ -472,14 +472,26 @@ async function updateTask(plantId, taskId, updates) {
     .then(({ error }) => { if (error) console.error('updateTask error:', error); });
 }
 
-function pauseTask(plantId, taskId) {
+async function pauseTask(plantId, taskId) {
   const task = getTask(plantId, taskId);
   if (task) { task.paused = true; saveData(); }
+
+  await supabaseClient
+    .from('tasks')
+    .update({ paused: true })
+    .eq('id', taskId)
+    .then(({ error }) => { if (error) console.error('pauseTask error:', error); });
 }
 
-function resumeTask(plantId, taskId) {
+async function resumeTask(plantId, taskId) {
   const task = getTask(plantId, taskId);
   if (task) { task.paused = false; saveData(); }
+
+  await supabaseClient
+    .from('tasks')
+    .update({ paused: false })
+    .eq('id', taskId)
+    .then(({ error }) => { if (error) console.error('resumeTask error:', error); });
 }
 
 async function deleteTask(plantId, taskId) {

@@ -1141,6 +1141,101 @@ function renderEditPlantSheet(plantId) {
   `);
 }
 
+async function handleSaveNewTask() {
+  const { plantId: pid, typeKey } = state.sheetData;
+  const isCustom = typeKey === 'custom';
+
+  // Resolve name, icon, type
+  let name, icon, type, customName, customIcon;
+  if (isCustom) {
+    customName = document.getElementById('sheet-custom-name')?.value?.trim();
+    if (!customName) { alert('Please enter a task name.'); return; }
+    customIcon = document.querySelector('#sheet .icon-option.selected')?.dataset.icon ?? '🌿';
+    name = customName;
+    icon = customIcon;
+    type = 'custom';
+  } else {
+    const cfg = TASK_CONFIG[typeKey];
+    name = cfg.name;
+    icon = cfg.icon;
+    type = cfg.type;
+  }
+
+  const container = document.getElementById('recurrence-container');
+  const recType = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
+  let frequencyDays = 7;
+  let weekdays = [];
+
+  if (recType === 'interval') {
+    const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
+    if (!freq || freq < 1) { alert('Please enter a valid frequency (minimum 1 day).'); return; }
+    frequencyDays = freq;
+  } else {
+    weekdays = [...document.querySelectorAll('#sheet .weekday-btn.selected')].map(b => parseInt(b.dataset.day));
+    if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
+  }
+
+  const selectedOwner = document.querySelector('#sheet .owner-option.selected');
+  const owner = selectedOwner?.dataset.owner ?? Object.keys(USERS)[0];
+
+  const plant = getPlant(pid);
+  if (!plant) return;
+
+  const ownerMember = membersCache.find(m => m.display_name === owner);
+  const sortOrder = plant.tasks.length + 1;
+
+  const supabaseRow = {
+    plant_id:   pid,
+    name,
+    icon,
+    type,
+    recurrence: {
+      type:  recType,
+      every: frequencyDays,
+      unit:  'days',
+      days:  weekdays,
+    },
+    owner_id:   ownerMember?.id ?? null,
+    paused:     false,
+    note:       '',
+    sort_order: sortOrder,
+  };
+
+  const { data: inserted, error } = await supabaseClient
+    .from('tasks')
+    .insert(supabaseRow)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('handleSaveNewTask: Supabase insert error:', error);
+  }
+
+  const taskId = inserted?.id ?? uid();
+
+  const newTask = {
+    id: taskId,
+    name,
+    icon,
+    type,
+    recurrenceType: recType,
+    frequencyDays,
+    recurrenceUnit: 'days',
+    weekdays,
+    lastDone: null,
+    nextDueOverride: null,
+    paused: false,
+    owner,
+    note: '',
+    ...(isCustom ? { customName, customIcon } : {}),
+  };
+
+  plant.tasks.push(newTask);
+  saveData();
+  closeSheet();
+  navigateTo('plant', pid);
+}
+
 // ============================================================
 // NAVIGATION
 // ============================================================
@@ -1288,58 +1383,9 @@ function handleEvent(e) {
       target.classList.add('selected');
       break;
 
-    case 'sheet-save-new-task': {
-      const { plantId: pid, typeKey } = state.sheetData;
-      const isCustom = typeKey === 'custom';
-      let taskId, customName, customIcon;
-
-      if (isCustom) {
-        customName = document.getElementById('sheet-custom-name')?.value?.trim();
-        if (!customName) { alert('Please enter a task name.'); return; }
-        customIcon = document.querySelector('#sheet .icon-option.selected')?.dataset.icon ?? '🌿';
-        taskId = uid();
-      } else {
-        taskId = typeKey;
-      }
-
-      const container = document.getElementById('recurrence-container');
-      const recType = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
-      let frequencyDays = 7;
-      let weekdays = [];
-
-      if (recType === 'interval') {
-        const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
-        if (!freq || freq < 1) { alert('Please enter a valid frequency (minimum 1 day).'); return; }
-        frequencyDays = freq;
-      } else {
-        weekdays = [...document.querySelectorAll('#sheet .weekday-btn.selected')].map(b => parseInt(b.dataset.day));
-        if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
-      }
-
-      const selectedOwner = document.querySelector('#sheet .owner-option.selected');
-      const owner = selectedOwner?.dataset.owner ?? Object.keys(USERS)[0];
-
-      const newTask = {
-        id: taskId,
-        recurrenceType: recType,
-        frequencyDays,
-        weekdays,
-        lastDone: null,
-        nextDueOverride: null,
-        paused: false,
-        owner,
-        note: '',
-        ...(isCustom ? { customName, customIcon } : {}),
-      };
-
-      const plant = getPlant(pid);
-      if (!plant) break;
-      plant.tasks.push(newTask);
-      saveData();
-      closeSheet();
-      navigateTo('plant', pid);
+    case 'sheet-save-new-task':
+      handleSaveNewTask();
       break;
-    }
 
     case 'sheet-cancel':
       closeSheet();

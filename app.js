@@ -73,6 +73,7 @@ let activeUser = null;
 let activeTab = 'plants';
 let scheduleShowAll = false;
 let membersCache = []; // household_members rows: { id, display_name }
+let householdId = null;
 
 // ============================================================
 // ACTIVE USER
@@ -165,7 +166,7 @@ async function loadFromSupabase() {
     .single();
   if (!member) return;
 
-  const householdId = member.household_id;
+  householdId = member.household_id;
 
   // 3. Fetch all non-deleted plants and all household_members in parallel
   const [{ data: plantRows }, { data: memberRows }] = await Promise.all([
@@ -565,6 +566,7 @@ function renderHome() {
     </div>`;
     }
 
+    html += `<button class="btn-add-task-detail" data-action="add-plant">&#43; Add Plant</button>`;
     html += '<div class="plants-list">';
 
     for (const plant of plants) {
@@ -1186,6 +1188,71 @@ async function handleSavePlant() {
   renderPlantDetail(pid);
 }
 
+function renderAddPlantSheet() {
+  state.sheetMode = 'add-plant';
+  state.sheetData = {};
+
+  openSheet(`
+    <div class="sheet-title">Add Plant</div>
+    <div class="form-group">
+      <label class="form-label">Plant Name</label>
+      <input type="text" class="form-input" id="sheet-plant-name" placeholder="e.g. Monstera" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Emoji</label>
+      <input type="text" class="form-input" id="sheet-plant-emoji" value="🪴" style="font-size:22px;text-align:center;letter-spacing:4px">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Date Transplanted</label>
+      <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date"></div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
+      <button class="btn btn-primary" data-action="sheet-save-new-plant">Save</button>
+    </div>
+  `);
+}
+
+async function handleSaveNewPlant() {
+  const name = document.getElementById('sheet-plant-name')?.value?.trim();
+  if (!name) { alert('Please enter a plant name.'); return; }
+
+  const emoji = document.getElementById('sheet-plant-emoji')?.value?.trim() || '🪴';
+  const dateTransplanted = document.getElementById('sheet-transplant-date')?.value || null;
+  const sortOrder = plants.length + 1;
+
+  const { data: inserted, error } = await supabaseClient
+    .from('plants')
+    .insert({
+      household_id:      householdId,
+      name,
+      emoji,
+      date_transplanted: dateTransplanted,
+      sort_order:        sortOrder,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('handleSaveNewPlant: Supabase insert error:', error);
+  }
+
+  const newPlant = {
+    id:               inserted?.id ?? uid(),
+    name,
+    emoji,
+    dateTransplanted: dateTransplanted ?? '',
+    tasks:            [],
+    healthNotes:      [],
+    careLog:          [],
+  };
+
+  plants.push(newPlant);
+  saveData();
+  closeSheet();
+  navigateTo('plant', newPlant.id);
+}
+
 async function handleSaveNewTask() {
   const { plantId: pid, typeKey } = state.sheetData;
   const isCustom = typeKey === 'custom';
@@ -1406,6 +1473,10 @@ function handleEvent(e) {
       }
       break;
 
+    case 'add-plant':
+      renderAddPlantSheet();
+      break;
+
     case 'add-task':
       renderAddTaskStep1(plantId);
       break;
@@ -1426,6 +1497,10 @@ function handleEvent(e) {
     case 'add-task-pick-icon':
       document.querySelectorAll('#sheet .icon-option').forEach(o => o.classList.remove('selected'));
       target.classList.add('selected');
+      break;
+
+    case 'sheet-save-new-plant':
+      handleSaveNewPlant();
       break;
 
     case 'sheet-save-new-task':

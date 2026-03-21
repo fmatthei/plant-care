@@ -277,10 +277,10 @@ function addDays(dateStr, n) {
 }
 
 // Returns the nearest upcoming date (today or future) matching one of the given weekday numbers (0=Sun)
-function nextWeekdayOccurrence(days) {
+function nextWeekdayOccurrence(days, skipToday = false) {
   if (!days || days.length === 0) return todayStr();
   const todayDow = new Date(todayStr() + 'T12:00:00').getDay();
-  for (let d = 0; d <= 6; d++) {
+  for (let d = skipToday ? 1 : 0; d <= 7; d++) {
     if (days.includes((todayDow + d) % 7)) return addDays(todayStr(), d);
   }
   return todayStr();
@@ -291,7 +291,8 @@ function computeNextDue(task) {
   if (task.nextDueOverride) return task.nextDueOverride;
   const recType = task.recurrenceType ?? 'interval';
   if (recType === 'weekdays') {
-    return nextWeekdayOccurrence(task.weekdays ?? []);
+    const skipToday = task.lastDone === todayStr();
+    return nextWeekdayOccurrence(task.weekdays ?? [], skipToday);
   }
   if (!task.lastDone) return todayStr();
   return addDays(task.lastDone, task.frequencyDays);
@@ -304,6 +305,7 @@ function daysUntilDue(task) {
 
 function isDue(task) {
   if (task.paused) return false;
+  if ((task.recurrenceType ?? 'interval') === 'weekdays' && task.lastDone === todayStr()) return false;
   return daysUntilDue(task) <= 0;
 }
 
@@ -875,6 +877,8 @@ function renderTaskCard(plantId, task) {
         <div class="task-meta">${escapeHtml(recurrenceLabel(task))} &middot; ${lastDoneLabel(task)}</div>`;
 
   if (!isPaused) {
+    const _daysDebug = daysUntilDue(task);
+    console.log('[due-debug]', { id: task.id, lastDone: task.lastDone, today: todayStr(), daysUntilDue: _daysDebug, recurrenceType: task.recurrenceType });
     const { label: dueLabel, cls: dueCls } = dueLabelAndClass(task);
     const dueIcon = dueCls === 'due' ? '&#9888;&#65039;' : dueCls === 'soon' ? '&#128276;' : '&#10003;';
     html += `<div class="task-due-label ${dueCls}">${dueIcon} ${escapeHtml(dueLabel)}</div>`;

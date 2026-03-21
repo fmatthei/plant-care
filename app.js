@@ -423,7 +423,6 @@ async function markTaskDone(plantId, taskId) {
   });
 
   plant.careLog = plant.careLog.slice(0, 50);
-  saveData();
 
   const member = membersCache.find(m => m.display_name === task.owner);
   await supabaseClient
@@ -455,7 +454,6 @@ async function undoMarkTaskDone(plantId, taskId) {
   // Remove the most recent care log entry for this task (today's entry)
   const idx = plant.careLog.findIndex(e => e.taskId === taskId && e.date === todayStr());
   if (idx !== -1) plant.careLog.splice(idx, 1);
-  saveData();
 
   await supabaseClient
     .from('tasks')
@@ -475,7 +473,6 @@ async function reassignTask(plantId, taskId) {
   const task = getTask(plantId, taskId);
   if (!task) return;
   task.owner = task.owner === 'Matu' ? 'Vale' : 'Matu';
-  saveData();
 
   const member = membersCache.find(m => m.display_name === task.owner);
   await supabaseClient
@@ -489,7 +486,6 @@ async function updateTask(plantId, taskId, updates) {
   const task = getTask(plantId, taskId);
   if (!task) return;
   Object.assign(task, updates);
-  saveData();
 
   const dbUpdates = {};
 
@@ -497,6 +493,7 @@ async function updateTask(plantId, taskId, updates) {
   if ('nextDueOverride' in updates) dbUpdates.next_due_override = updates.nextDueOverride;
   if ('paused'          in updates) dbUpdates.paused            = updates.paused;
   if ('note'            in updates) dbUpdates.note              = updates.note;
+  if ('name'            in updates) dbUpdates.name              = updates.name;
 
   if ('owner' in updates) {
     const member = membersCache.find(m => m.display_name === updates.owner);
@@ -524,7 +521,7 @@ async function updateTask(plantId, taskId, updates) {
 
 async function pauseTask(plantId, taskId) {
   const task = getTask(plantId, taskId);
-  if (task) { task.paused = true; saveData(); }
+  if (task) { task.paused = true; }
 
   await supabaseClient
     .from('tasks')
@@ -535,7 +532,7 @@ async function pauseTask(plantId, taskId) {
 
 async function resumeTask(plantId, taskId) {
   const task = getTask(plantId, taskId);
-  if (task) { task.paused = false; saveData(); }
+  if (task) { task.paused = false; }
 
   await supabaseClient
     .from('tasks')
@@ -548,7 +545,6 @@ async function deleteTask(plantId, taskId) {
   const plant = getPlant(plantId);
   if (!plant) return;
   plant.tasks = plant.tasks.filter(t => t.id !== taskId);
-  saveData();
 
   await supabaseClient
     .from('tasks')
@@ -582,7 +578,6 @@ function updatePlantInfo(plantId, updates) {
   const plant = getPlant(plantId);
   if (!plant) return;
   Object.assign(plant, updates);
-  saveData();
 }
 
 // ============================================================
@@ -983,8 +978,16 @@ function renderEditTaskSheet(plantId, taskId) {
     return `<button class="weekday-btn ${sel}" data-action="sheet-toggle-weekday" data-day="${i}">${name}</button>`;
   }).join('');
 
+  const isCustom = !TASK_CONFIG[task.id];
+
   openSheet(`
     <div class="sheet-title">${cfg.icon} ${cfg.name}</div>
+
+    ${isCustom ? `
+    <div class="form-group">
+      <label class="form-label">Task Name</label>
+      <input type="text" class="form-input" id="sheet-task-name" value="${escapeHtml(task.name ?? '')}">
+    </div>` : ''}
 
     <div class="form-group">
       <label class="form-label">Recurrence</label>
@@ -1309,7 +1312,6 @@ async function handleSaveNewPlant() {
   };
 
   plants.push(newPlant);
-  saveData();
   closeSheet();
   navigateTo('plant', newPlant.id);
 }
@@ -1404,7 +1406,6 @@ async function handleSaveNewTask() {
   };
 
   plant.tasks.push(newTask);
-  saveData();
   closeSheet();
   navigateTo('plant', pid);
 }
@@ -1622,7 +1623,7 @@ function handleEvent(e) {
       const lastDoneVal = document.getElementById('sheet-last-done')?.value;
       const overrideVal = document.getElementById('sheet-next-due-override')?.value;
 
-      updateTask(pid, tid, {
+      const taskUpdates = {
         recurrenceType: recType,
         frequencyDays,
         weekdays,
@@ -1630,7 +1631,14 @@ function handleEvent(e) {
         owner: selectedOwner?.dataset.owner ?? 'Matu',
         lastDone: lastDoneVal || null,
         nextDueOverride: overrideVal || null,
-      });
+      };
+
+      if (!TASK_CONFIG[tid]) {
+        const nameVal = document.getElementById('sheet-task-name')?.value?.trim();
+        if (nameVal) taskUpdates.name = nameVal;
+      }
+
+      updateTask(pid, tid, taskUpdates);
       closeSheet();
       renderPlantDetail(pid);
       break;

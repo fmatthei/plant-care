@@ -583,6 +583,38 @@ function updatePlantInfo(plantId, updates) {
 }
 
 // ============================================================
+// TOAST
+// ============================================================
+
+function showToast(message) {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add('visible');
+  clearTimeout(toast._hideTimeout);
+  toast._hideTimeout = setTimeout(() => toast.classList.remove('visible'), 2500);
+}
+
+// ============================================================
+// PLANT EMOJI PICKER
+// ============================================================
+
+const PLANT_EMOJIS = ['🌱','🪴','🌿','🍃','🌵','🎋','🎍','🌾','🌲','🌳','🌴','🍀','🍁','🍂','🌸','🌺','🌻','🌹','🌷','💐','🍊','🍋','🍇','🍓','🫐','🥦','🌶️','🧅','🧄'];
+
+function renderEmojiPickerHtml(currentEmoji) {
+  const gridItems = PLANT_EMOJIS.map(e => {
+    const sel = e === currentEmoji ? ' selected' : '';
+    return `<div class="emoji-option${sel}" data-action="pick-plant-emoji" data-emoji="${e}">${e}</div>`;
+  }).join('');
+  const customVal = PLANT_EMOJIS.includes(currentEmoji) ? '' : (currentEmoji ?? '');
+  return `
+    <div class="emoji-picker-grid">${gridItems}</div>
+    <div class="emoji-custom-row">
+      <input type="text" class="form-input" id="sheet-plant-emoji" placeholder="Or paste custom emoji" autocomplete="off" style="font-size:22px;text-align:center" value="${escapeHtml(customVal)}">
+    </div>`;
+}
+
+// ============================================================
 // RENDER: HOME
 // ============================================================
 
@@ -612,7 +644,18 @@ function renderHome() {
     </div>`;
     }
 
-    html += `<button class="btn-add-task-detail" data-action="add-plant">&#43; Add Plant</button>`;
+    if (plants.length === 0) {
+      html += `
+    <div class="plants-empty-state">
+      <span class="empty-emoji">🌱</span>
+      <h2>Welcome to Plant Care</h2>
+      <p>Add your first plant to get started</p>
+      <button class="btn-add-task-detail" data-action="add-plant">Add my first plant 🌱</button>
+    </div>`;
+    } else {
+      html += `<button class="btn-add-task-detail" data-action="add-plant">&#43; Add Plant</button>`;
+    }
+
     html += '<div class="plants-list">';
 
     for (const plant of plants) {
@@ -1210,11 +1253,12 @@ function renderEditPlantSheet(plantId) {
     </div>
     <div class="form-group">
       <label class="form-label">Emoji</label>
-      <input type="text" class="form-input" id="sheet-plant-emoji" value="${plant.emoji}" style="font-size:22px;text-align:center;letter-spacing:4px">
+      ${renderEmojiPickerHtml(plant.emoji)}
     </div>
     <div class="form-group">
-      <label class="form-label">Date Transplanted</label>
-      <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date" value="${plant.dateTransplanted ?? ''}"></div>
+      <label class="form-label">Set Purchase/Transplant Date (optional)</label>
+      <label class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date" value="${plant.dateTransplanted ?? ''}"></label>
+      <p class="form-hint">Helps track when your plant was last repotted</p>
     </div>
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
@@ -1229,7 +1273,8 @@ async function handleSavePlant() {
   if (!plant) return;
 
   const name  = document.getElementById('sheet-plant-name')?.value?.trim();
-  const emoji = document.getElementById('sheet-plant-emoji')?.value?.trim();
+  const selectedGridEmoji = document.querySelector('#sheet .emoji-option.selected')?.dataset.emoji ?? '';
+  const emoji = selectedGridEmoji || document.getElementById('sheet-plant-emoji')?.value?.trim();
   const date  = document.getElementById('sheet-transplant-date')?.value;
 
   const localUpdates = {
@@ -1254,6 +1299,7 @@ async function handleSavePlant() {
 
   closeSheet();
   renderPlantDetail(pid);
+  showToast('✅ Plant saved!');
 }
 
 function renderAddPlantSheet() {
@@ -1268,11 +1314,12 @@ function renderAddPlantSheet() {
     </div>
     <div class="form-group">
       <label class="form-label">Emoji</label>
-      <input type="text" class="form-input" id="sheet-plant-emoji" value="🪴" style="font-size:22px;text-align:center;letter-spacing:4px">
+      ${renderEmojiPickerHtml('🪴')}
     </div>
     <div class="form-group">
-      <label class="form-label">Date Transplanted</label>
-      <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date"></div>
+      <label class="form-label">Set Purchase/Transplant Date (optional)</label>
+      <label class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date"></label>
+      <p class="form-hint">Helps track when your plant was last repotted</p>
     </div>
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
@@ -1285,7 +1332,8 @@ async function handleSaveNewPlant() {
   const name = document.getElementById('sheet-plant-name')?.value?.trim();
   if (!name) { alert('Please enter a plant name.'); return; }
 
-  const emoji = document.getElementById('sheet-plant-emoji')?.value?.trim() || '🪴';
+  const selectedGridEmoji = document.querySelector('#sheet .emoji-option.selected')?.dataset.emoji ?? '';
+  const emoji = selectedGridEmoji || document.getElementById('sheet-plant-emoji')?.value?.trim() || '🪴';
   const dateTransplanted = document.getElementById('sheet-transplant-date')?.value || null;
   const sortOrder = plants.length + 1;
 
@@ -1318,6 +1366,7 @@ async function handleSaveNewPlant() {
   plants.push(newPlant);
   closeSheet();
   navigateTo('plant', newPlant.id);
+  showToast('🌱 Plant added!');
 }
 
 async function handleSaveNewTask() {
@@ -1412,6 +1461,7 @@ async function handleSaveNewTask() {
   plant.tasks.push(newTask);
   closeSheet();
   navigateTo('plant', pid);
+  showToast('✅ Task added!');
 }
 
 // ============================================================
@@ -1523,6 +1573,7 @@ function handleEvent(e) {
         deleteTask(plantId, taskId);
         closeSheet();
         renderPlantDetail(state.plantId);
+        showToast('🗑️ Task deleted!');
       }
       break;
 
@@ -1572,6 +1623,11 @@ function handleEvent(e) {
 
     case 'add-task-pick-icon':
       document.querySelectorAll('#sheet .icon-option').forEach(o => o.classList.remove('selected'));
+      target.classList.add('selected');
+      break;
+
+    case 'pick-plant-emoji':
+      document.querySelectorAll('#sheet .emoji-option').forEach(o => o.classList.remove('selected'));
       target.classList.add('selected');
       break;
 
@@ -1645,6 +1701,7 @@ function handleEvent(e) {
       updateTask(pid, tid, taskUpdates);
       closeSheet();
       renderPlantDetail(pid);
+      showToast('✅ Task saved!');
       break;
     }
 

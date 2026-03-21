@@ -191,16 +191,28 @@ async function loadFromSupabase() {
     ownerMap[m.id] = m.display_name;
   }
 
-  // 4. Fetch tasks for all plants in parallel
-  const taskResults = await Promise.all(
-    plantRows.map(p =>
-      supabaseClient
-        .from('tasks')
-        .select('*')
-        .eq('plant_id', p.id)
-        .is('deleted_at', null)
-    )
-  );
+  // 4. Fetch tasks and care log entries for all plants in parallel
+  const [taskResults, careLogResults] = await Promise.all([
+    Promise.all(
+      plantRows.map(p =>
+        supabaseClient
+          .from('tasks')
+          .select('*')
+          .eq('plant_id', p.id)
+          .is('deleted_at', null)
+      )
+    ),
+    Promise.all(
+      plantRows.map(p =>
+        supabaseClient
+          .from('care_log')
+          .select('*')
+          .eq('plant_id', p.id)
+          .order('date', { ascending: false })
+          .limit(50)
+      )
+    ),
+  ]);
 
   plants = plantRows.map((plantRow, i) => {
     const taskRows = taskResults[i].data ?? [];
@@ -222,6 +234,16 @@ async function loadFromSupabase() {
       ...(t.custom_icon ? { customIcon: t.custom_icon } : {}),
     }));
 
+    const careLogRows = careLogResults[i].data ?? [];
+    const careLog = careLogRows.map(r => ({
+      id:       r.id,
+      date:     r.date,
+      author:   r.task_name,
+      taskId:   r.task_id,
+      taskName: r.task_name,
+      taskType: r.task_type,
+    }));
+
     return {
       id:               plantRow.id,
       name:             plantRow.name,
@@ -229,7 +251,7 @@ async function loadFromSupabase() {
       dateTransplanted: plantRow.date_transplanted ?? '',
       tasks,
       healthNotes:      [],
-      careLog:          [],
+      careLog,
     };
   });
 }
@@ -420,6 +442,33 @@ async function markTaskDone(plantId, taskId) {
       date:                todayStr(),
     })
     .then(({ error }) => { if (error) console.error('markTaskDone care_log insert error:', error); });
+}
+
+async function undoMarkTaskDone(plantId, taskId) {
+  const plant = getPlant(plantId);
+  const task = plant?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+
+  task.lastDone = null;
+  task.nextDueOverride = null;
+
+  // Remove the most recent care log entry for this task (today's entry)
+  const idx = plant.careLog.findIndex(e => e.taskId === taskId && e.date === todayStr());
+  if (idx !== -1) plant.careLog.splice(idx, 1);
+  saveData();
+
+  await supabaseClient
+    .from('tasks')
+    .update({ last_done: null, next_due_override: null })
+    .eq('id', taskId)
+    .then(({ error }) => { if (error) console.error('undoMarkTaskDone task update error:', error); });
+  await supabaseClient
+    .from('care_log')
+    .delete()
+    .eq('plant_id', plantId)
+    .eq('task_id', taskId)
+    .eq('date', todayStr())
+    .then(({ error }) => { if (error) console.error('undoMarkTaskDone care_log delete error:', error); });
 }
 
 async function reassignTask(plantId, taskId) {
@@ -644,9 +693,13 @@ function renderSchedule() {
     const ownerTag = scheduleShowAll
       ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'};background:${(USERS[task.owner]?.color ?? '#666666')}26">👤 ${escapeHtml(task.owner)}</span>`
       : '';
+    const doneToday = task.lastDone === today;
+    const doneBtn = doneToday
+      ? `<button class="sched-done-btn" data-action="schedule-undo-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Undo">↩️</button>`
+      : `<button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>`;
     return `<div class="sched-task${extraClass ? ' ' + extraClass : ''}">
         <span class="sched-task-label">${cfg.icon} <strong>${escapeHtml(cfg.name)}</strong> · ${escapeHtml(plant.name)}${ownerTag}</span>
-        <button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>
+        ${doneBtn}
       </div>`;
   }
 
@@ -687,9 +740,13 @@ function renderSchedule() {
       const ownerTag = scheduleShowAll
         ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'};background:${(USERS[task.owner]?.color ?? '#666666')}26">👤 ${escapeHtml(task.owner)}</span>`
         : '';
+      const doneToday = task.lastDone === today;
+      const overdueDoneBtn = doneToday
+        ? `<button class="sched-done-btn" data-action="schedule-undo-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Undo">↩️</button>`
+        : `<button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>`;
       html += `<div class="sched-task sched-task-overdue">
         <span class="sched-task-label">${cfg.icon} <strong>${escapeHtml(cfg.name)}</strong> · ${escapeHtml(plant.name)}${ownerTag} <span class="sched-overdue-days">(${daysAgo} day${daysAgo !== 1 ? 's' : ''} overdue)</span></span>
-        <button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>
+        ${overdueDoneBtn}
       </div>`;
     }
     html += `</div>`;
@@ -839,9 +896,13 @@ function renderTaskCard(plantId, task) {
           <button class="btn btn-ghost" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">Edit</button>
         </div>`;
   } else {
+    const doneToday = task.lastDone === todayStr();
     html += `
         <div class="task-actions">
-          <button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>
+          ${doneToday
+            ? `<button class="btn btn-warning" data-action="undo-mark-done" data-plant="${plantId}" data-task="${task.id}">&#8630; Undo</button>`
+            : `<button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>`
+          }
           <button class="btn btn-secondary" data-action="reassign-task" data-plant="${plantId}" data-task="${task.id}">&#8644; ${escapeHtml(otherOwner)}</button>
           <button class="btn btn-ghost" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">Edit</button>
         </div>`;
@@ -1415,8 +1476,18 @@ function handleEvent(e) {
       renderPlantDetail(state.plantId);
       break;
 
+    case 'undo-mark-done':
+      undoMarkTaskDone(plantId, taskId);
+      renderPlantDetail(state.plantId);
+      break;
+
     case 'schedule-mark-done':
       markTaskDone(plantId, taskId);
+      renderHome();
+      break;
+
+    case 'schedule-undo-mark-done':
+      undoMarkTaskDone(plantId, taskId);
       renderHome();
       break;
 

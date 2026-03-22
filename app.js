@@ -610,7 +610,7 @@ function renderEmojiPickerHtml(currentEmoji) {
   return `
     <div class="emoji-picker-grid">${gridItems}</div>
     <div class="emoji-custom-row">
-      <input type="text" class="form-input" id="sheet-plant-emoji" placeholder="Or paste custom emoji" autocomplete="off" style="font-size:22px;text-align:center" value="${escapeHtml(customVal)}">
+      <input type="text" class="form-input" id="sheet-plant-emoji" placeholder="Or paste custom emoji" autocomplete="off" value="${escapeHtml(customVal)}">
     </div>`;
 }
 

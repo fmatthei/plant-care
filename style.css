@@ -828,6 +828,8 @@ body {
 /* Show/hide interval vs weekdays sections */
 #recurrence-container.recurrence-interval .recurrence-weekdays-section { display: none; }
 #recurrence-container.recurrence-weekdays .recurrence-interval-section { display: none; }
+#recurrence-container.recurrence-one-off .recurrence-interval-section,
+#recurrence-container.recurrence-one-off .recurrence-weekdays-section { display: none; }
 
 /* ===== Weekday Picker ===== */
 .weekday-picker {

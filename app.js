@@ -335,6 +335,10 @@ function nextWeekdayOccurrence(days, skipToday = false) {
 function computeNextDue(task) {
   if (task.nextDueOverride) return task.nextDueOverride;
   const recType = task.recurrenceType ?? 'interval';
+  if (recType === 'one-off') {
+    // null = complete (never show as due); todayStr() = pending (always due until done)
+    return task.lastDone ? null : todayStr();
+  }
   if (recType === 'weekdays') {
     const skipToday = task.lastDone === todayStr();
     return nextWeekdayOccurrence(task.weekdays ?? [], skipToday);
@@ -343,9 +347,11 @@ function computeNextDue(task) {
   return addDays(task.lastDone, task.frequencyDays);
 }
 
-// Positive = days remaining, 0 = due today, negative = overdue
+// Positive = days remaining, 0 = due today, negative = overdue, Infinity = complete (one-off done)
 function daysUntilDue(task) {
-  return daysBetween(todayStr(), computeNextDue(task));
+  const next = computeNextDue(task);
+  if (next === null) return Infinity;
+  return daysBetween(todayStr(), next);
 }
 
 function isDue(task) {
@@ -358,6 +364,11 @@ function dueLabelAndClass(task) {
   const days = daysUntilDue(task);
   const manual = task.nextDueOverride ? ' (manual)' : '';
   const recType = task.recurrenceType ?? 'interval';
+  if (recType === 'one-off') {
+    return days === Infinity
+      ? { label: 'Done', cls: 'ok' }
+      : { label: 'Due today \u2014 one-off', cls: 'due' };
+  }
   // "never done" only makes sense for interval tasks with no override
   if (recType === 'interval' && !task.lastDone && !task.nextDueOverride) {
     return { label: 'Due today \u2014 never done', cls: 'due' };
@@ -379,6 +390,7 @@ function lastDoneLabel(task) {
 
 function recurrenceLabel(task) {
   const recType = task.recurrenceType ?? 'interval';
+  if (recType === 'one-off') return 'One-off';
   if (recType === 'weekdays') {
     const days = (task.weekdays ?? []).slice().sort((a, b) => a - b);
     if (days.length === 0) return 'No days set';
@@ -549,12 +561,9 @@ async function updateTask(plantId, taskId, updates) {
 
   const recurrenceFields = ['recurrenceType', 'frequencyDays', 'recurrenceUnit', 'weekdays'];
   if (recurrenceFields.some(f => f in updates)) {
-    dbUpdates.recurrence = {
-      type:  task.recurrenceType,
-      every: task.frequencyDays,
-      unit:  task.recurrenceUnit ?? 'days',
-      days:  task.weekdays ?? [],
-    };
+    dbUpdates.recurrence = task.recurrenceType === 'one-off'
+      ? { type: 'one-off' }
+      : { type: task.recurrenceType, every: task.frequencyDays, unit: task.recurrenceUnit ?? 'days', days: task.weekdays ?? [] };
   }
 
   if (Object.keys(dbUpdates).length === 0) return;
@@ -1086,6 +1095,7 @@ function renderEditTaskSheet(plantId, taskId) {
       <div class="recurrence-type-toggle">
         <div class="recurrence-option ${recType === 'interval' ? 'selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval">Every X days</div>
         <div class="recurrence-option ${recType === 'weekdays' ? 'selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays">Days of week</div>
+        <div class="recurrence-option ${recType === 'one-off' ? 'selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="one-off">One-off</div>
       </div>
     </div>
 
@@ -1225,6 +1235,7 @@ function renderAddTaskStep2(plantId, typeKey) {
       <div class="recurrence-type-toggle">
         <div class="recurrence-option selected" data-action="sheet-toggle-recurrence" data-rtype="interval">Every X days</div>
         <div class="recurrence-option" data-action="sheet-toggle-recurrence" data-rtype="weekdays">Days of week</div>
+        <div class="recurrence-option" data-action="sheet-toggle-recurrence" data-rtype="one-off">One-off</div>
       </div>
     </div>
     <div id="recurrence-container" class="recurrence-interval">
@@ -1435,7 +1446,9 @@ async function handleSaveNewTask() {
   }
 
   const container = document.getElementById('recurrence-container');
-  const recType = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
+  const recType = container?.classList.contains('recurrence-weekdays') ? 'weekdays'
+                : container?.classList.contains('recurrence-one-off')  ? 'one-off'
+                : 'interval';
   let frequencyDays = 7;
   let weekdays = [];
 
@@ -1443,7 +1456,7 @@ async function handleSaveNewTask() {
     const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
     if (!freq || freq < 1) { alert('Please enter a valid frequency (minimum 1 day).'); return; }
     frequencyDays = freq;
-  } else {
+  } else if (recType === 'weekdays') {
     weekdays = [...document.querySelectorAll('#sheet .weekday-btn.selected')].map(b => parseInt(b.dataset.day));
     if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
   }
@@ -1462,12 +1475,9 @@ async function handleSaveNewTask() {
     name,
     icon,
     type,
-    recurrence: {
-      type:  recType,
-      every: frequencyDays,
-      unit:  'days',
-      days:  weekdays,
-    },
+    recurrence: recType === 'one-off'
+      ? { type: 'one-off' }
+      : { type: recType, every: frequencyDays, unit: 'days', days: weekdays },
     owner_id:   ownerMember?.id ?? null,
     paused:     false,
     note:       '',
@@ -1714,7 +1724,9 @@ function handleEvent(e) {
       const { plantId: pid, taskId: tid } = state.sheetData;
 
       const container = document.getElementById('recurrence-container');
-      const recType = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
+      const recType = container?.classList.contains('recurrence-weekdays') ? 'weekdays'
+                    : container?.classList.contains('recurrence-one-off')  ? 'one-off'
+                    : 'interval';
 
       let frequencyDays = getTask(pid, tid)?.frequencyDays ?? 1;
       let weekdays = [];
@@ -1723,7 +1735,7 @@ function handleEvent(e) {
         const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
         if (!freq || freq < 1) { alert('Please enter a valid frequency (minimum 1 day).'); return; }
         frequencyDays = freq;
-      } else {
+      } else if (recType === 'weekdays') {
         weekdays = [...document.querySelectorAll('#sheet .weekday-btn.selected')].map(b => parseInt(b.dataset.day));
         if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
       }

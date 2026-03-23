@@ -1766,25 +1766,27 @@ function handleEvent(e) {
 // INIT
 // ============================================================
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('app').addEventListener('click', handleEvent);
   document.getElementById('sheet').addEventListener('click', handleEvent);
   document.getElementById('overlay').addEventListener('click', closeSheet);
 
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (!session) {
-    loadData();
-    renderLoginScreen();
-    return;
-  }
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event !== 'INITIAL_SESSION') return;
+    if (!session) {
+      loadData();
+      renderLoginScreen();
+      return;
+    }
 
-  await loadFromSupabase();
+    await loadFromSupabase();
 
-  const saved = getActiveUser();
-  if (saved) {
-    activeUser = saved;
-    navigateTo('home');
-  } else {
-    renderUserSelect();
-  }
+    const saved = getActiveUser();
+    if (saved) {
+      activeUser = saved;
+      navigateTo('home');
+    } else {
+      renderUserSelect();
+    }
+  });
 });

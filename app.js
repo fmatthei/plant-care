@@ -181,6 +181,10 @@ async function loadFromSupabase() {
       .eq('household_id', householdId),
   ]);
   if (!plantRows) return;
+  if (plantRows.length === 0) {
+    plants = [];
+    return;
+  }
 
   // Cache members for use in write operations
   membersCache = memberRows ?? [];

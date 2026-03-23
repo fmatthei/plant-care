@@ -222,13 +222,15 @@ async function loadFromSupabase() {
       .eq('household_id', householdId),
   ]);
   if (!plantRows) return;
+
+  // Cache members for write operations — must be set before any early return
+  // so handleSaveNewPlant() always has a valid membersCache even with no plants.
+  membersCache = memberRows ?? [];
+
   if (plantRows.length === 0) {
     plants = [];
     return;
   }
-
-  // Cache members for use in write operations
-  membersCache = memberRows ?? [];
 
   // Build a map from household_members.id → display_name for resolving task owners
   const ownerMap = {};
@@ -1393,6 +1395,7 @@ async function handleSaveNewPlant() {
   const dateTransplanted = document.getElementById('sheet-transplant-date')?.value || null;
   const sortOrder = plants.length + 1;
 
+  console.log('handleSaveNewPlant householdId:', householdId);
   const { data: inserted, error } = await supabaseClient
     .from('plants')
     .insert({

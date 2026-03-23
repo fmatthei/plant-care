@@ -1396,7 +1396,6 @@ async function handleSaveNewPlant() {
   const dateTransplanted = document.getElementById('sheet-transplant-date')?.value || null;
   const sortOrder = plants.length + 1;
 
-  console.log('handleSaveNewPlant householdId:', householdId);
   const { data: inserted, error } = await supabaseClient
     .from('plants')
     .insert({

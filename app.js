@@ -747,7 +747,8 @@ function renderHome() {
     <div class="data-footer">
       <button class="btn btn-ghost" data-action="export-data">&#8681; Export Backup</button>
       <button class="btn btn-ghost" data-action="import-data">&#8679; Import Backup</button>
-    </div>`;
+    </div>
+    <div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${typeof BUILD_TIME !== 'undefined' ? BUILD_TIME : 'local'}</div>`;
   } else {
     html += renderSchedule();
   }

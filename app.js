@@ -24,6 +24,9 @@ const USERS = {
   Vale: { color: '#880e4f' },
 };
 
+// Snapshot the hash before createClient() processes and clears it.
+const initialHash = window.location.hash;
+
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const DEFAULT_PLANTS = [
@@ -1825,8 +1828,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (event !== 'INITIAL_SESSION') return;
 
-    // If the URL carries a recovery token, let the PASSWORD_RECOVERY event handle it.
-    if (window.location.hash.includes('type=recovery')) return;
+    // If the URL carried a recovery token, let the PASSWORD_RECOVERY event handle it.
+    // Use initialHash (captured before createClient clears window.location.hash).
+    if (initialHash.includes('type=recovery')) return;
 
     if (!session) {
       loadData();

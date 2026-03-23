@@ -118,6 +118,44 @@ async function handleLogin() {
   }
 }
 
+function renderPasswordResetScreen(errorMsg) {
+  document.getElementById('app').innerHTML = `
+    <div class="user-select-screen">
+      <h2>Set New Password</h2>
+      <div class="user-select-buttons">
+        <input class="form-input" type="password" id="reset-password" placeholder="New password" autocomplete="new-password">
+        <input class="form-input" type="password" id="reset-password-confirm" placeholder="Confirm new password" autocomplete="new-password">
+        <button class="btn btn-primary" data-action="save-new-password" style="width:100%;padding:16px;font-size:16px;">Save</button>
+        ${errorMsg ? `<p style="color:var(--due);font-size:14px;text-align:center;margin:0;">${errorMsg}</p>` : ''}
+      </div>
+    </div>`;
+}
+
+async function handlePasswordReset() {
+  const password = document.getElementById('reset-password').value;
+  const confirm  = document.getElementById('reset-password-confirm').value;
+  if (password.length < 6) {
+    renderPasswordResetScreen('Password must be at least 6 characters.');
+    return;
+  }
+  if (password !== confirm) {
+    renderPasswordResetScreen('Passwords do not match.');
+    return;
+  }
+  const { error } = await supabaseClient.auth.updateUser({ password });
+  if (error) {
+    renderPasswordResetScreen(error.message);
+    return;
+  }
+  document.getElementById('app').innerHTML = `
+    <div class="user-select-screen">
+      <h2>Password Updated</h2>
+      <p style="color:var(--text-muted);font-size:15px;text-align:center;">Your password has been updated. Redirecting to sign in…</p>
+    </div>`;
+  await supabaseClient.auth.signOut();
+  setTimeout(renderLoginScreen, 2000);
+}
+
 function renderUserSelect() {
   document.getElementById('app').innerHTML = `
     <div class="user-select-screen">
@@ -1499,6 +1537,10 @@ function handleEvent(e) {
       handleLogin();
       break;
 
+    case 'save-new-password':
+      handlePasswordReset();
+      break;
+
     case 'sign-out':
       supabaseClient.auth.signOut().then(() => renderLoginScreen());
       break;
@@ -1776,7 +1818,16 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('overlay').addEventListener('click', closeSheet);
 
   supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      renderPasswordResetScreen();
+      return;
+    }
+
     if (event !== 'INITIAL_SESSION') return;
+
+    // If the URL carries a recovery token, let the PASSWORD_RECOVERY event handle it.
+    if (window.location.hash.includes('type=recovery')) return;
+
     if (!session) {
       loadData();
       renderLoginScreen();

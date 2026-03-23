@@ -1313,7 +1313,7 @@ function renderEditPlantSheet(plantId) {
     </div>
     <div class="form-group">
       <label class="form-label">Set Purchase/Transplant Date (optional)</label>
-      <label class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date" value="${plant.dateTransplanted ?? ''}"></label>
+      <div class="date-input-wrapper" style="cursor:pointer" onclick="this.querySelector('input').click()"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date" value="${plant.dateTransplanted ?? ''}"></div>
       <p class="form-hint">Helps track when your plant was last repotted</p>
     </div>
     <div class="sheet-actions">
@@ -1374,7 +1374,7 @@ function renderAddPlantSheet() {
     </div>
     <div class="form-group">
       <label class="form-label">Set Purchase/Transplant Date (optional)</label>
-      <label class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date"></label>
+      <div class="date-input-wrapper" style="cursor:pointer" onclick="this.querySelector('input').click()"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date"></div>
       <p class="form-hint">Helps track when your plant was last repotted</p>
     </div>
     <div class="sheet-actions">

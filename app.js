@@ -224,7 +224,7 @@ async function loadFromSupabase() {
       .is('deleted_at', null),
     supabaseClient
       .from('household_members')
-      .select('id, display_name')
+      .select('id, display_name, color')
       .eq('household_id', householdId),
   ]);
   if (!plantRows) return;
@@ -732,12 +732,15 @@ function renderEmojiPickerHtml(currentEmoji) {
 // ============================================================
 
 function renderHome() {
+  const activeMember  = membersCache.find(m => m.display_name === activeUser);
+  const userPillStyle = activeMember?.color ? `background:${activeMember.color};color:white;` : '';
+
   let html = `
     <div class="app-header">
       <h1>Plant Care</h1>
       <div class="header-right">
         <span class="date-label">${todayFormatted()}</span>
-        <button class="user-indicator" data-action="switch-user">&#128100; ${escapeHtml(activeUser)}</button>
+        <button class="user-indicator" data-action="switch-user" style="${userPillStyle}">&#128100; ${escapeHtml(activeUser)}</button>
         <button class="btn-hamburger" data-action="open-menu">&#9776;</button>
       </div>
     </div>
@@ -1721,11 +1724,14 @@ async function handleEvent(e) {
       await handleChangePassword();
       break;
 
-    case 'menu-switch-user':
+    case 'menu-switch-user': {
       closeMenu();
-      setActiveUser(activeUser === 'Matu' ? 'Vale' : 'Matu');
+      const newUser = activeUser === 'Matu' ? 'Vale' : 'Matu';
+      setActiveUser(newUser);
       renderHome();
+      showToast(`Switched to ${newUser}`);
       break;
+    }
 
     case 'menu-export-data': {
       closeMenu();

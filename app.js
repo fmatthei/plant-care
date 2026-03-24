@@ -708,7 +708,7 @@ function renderHome() {
       <div class="header-right">
         <span class="date-label">${todayFormatted()}</span>
         <button class="user-indicator" data-action="switch-user">&#128100; ${escapeHtml(activeUser)}</button>
-        <button class="btn-sign-out" data-action="sign-out">Sign Out</button>
+        <button class="btn-hamburger" data-action="open-menu">&#9776;</button>
       </div>
     </div>
     <div class="tab-bar">
@@ -770,12 +770,7 @@ function renderHome() {
 
     html += '</div>';
 
-    html += `
-    <div class="data-footer">
-      <button class="btn btn-ghost" data-action="export-data">&#8681; Export Backup</button>
-      <button class="btn btn-ghost" data-action="import-data">&#8679; Import Backup</button>
-    </div>
-    <div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${typeof BUILD_TIME !== 'undefined' ? BUILD_TIME : 'local'}</div>`;
+    html += `<div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${typeof BUILD_TIME !== 'undefined' ? BUILD_TIME : 'local'}</div>`;
   } else {
     html += renderSchedule();
   }
@@ -1089,6 +1084,78 @@ function closeSheet() {
   document.getElementById('overlay').classList.remove('active');
   state.sheetMode = null;
   state.sheetData = {};
+}
+
+function openMenu() {
+  renderMenuPanel();
+  document.getElementById('menu-panel').classList.add('active');
+  document.getElementById('menu-overlay').classList.add('active');
+}
+
+function closeMenu() {
+  document.getElementById('menu-panel').classList.remove('active');
+  document.getElementById('menu-overlay').classList.remove('active');
+}
+
+function renderMenuPanel() {
+  document.getElementById('menu-content').innerHTML = `
+    <button class="menu-close" data-action="close-menu">&#10005;</button>
+    <div class="menu-section">
+      <div class="menu-section-title">Profile</div>
+      <div class="menu-user-name">&#128100; ${escapeHtml(activeUser)}</div>
+      <button class="menu-item" data-action="change-password">Change Password</button>
+    </div>
+    <div class="menu-section">
+      <div class="menu-section-title">Household</div>
+      <button class="menu-item" disabled>Change Household <span class="menu-coming-soon">Coming soon</span></button>
+    </div>
+    <div class="menu-section">
+      <div class="menu-section-title">Account</div>
+      <button class="menu-item" data-action="menu-switch-user">Switch User</button>
+      <button class="menu-item" data-action="menu-export-data">&#8681; Export Backup</button>
+      <button class="menu-item" data-action="menu-import-data">&#8679; Import Backup</button>
+      <button class="menu-item menu-item-danger" data-action="menu-sign-out">Sign Out</button>
+    </div>
+  `;
+}
+
+function renderChangePasswordSheet() {
+  openSheet(`
+    <div class="sheet-title">Change Password</div>
+    <div class="form-group">
+      <label class="form-label">New password</label>
+      <input type="password" class="form-input" id="sheet-new-password" placeholder="At least 8 characters" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Confirm password</label>
+      <input type="password" class="form-input" id="sheet-confirm-password" placeholder="Repeat new password" autocomplete="new-password">
+    </div>
+    <div id="change-password-error" style="color:var(--due);font-size:14px;margin-bottom:8px;display:none;"></div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" data-action="close-sheet">Cancel</button>
+      <button class="btn btn-primary" data-action="save-change-password">Save</button>
+    </div>
+  `);
+}
+
+async function handleChangePassword() {
+  const password = document.getElementById('sheet-new-password')?.value ?? '';
+  const confirm  = document.getElementById('sheet-confirm-password')?.value ?? '';
+  const errorEl  = document.getElementById('change-password-error');
+
+  const showError = (msg) => {
+    errorEl.textContent = msg;
+    errorEl.style.display = 'block';
+  };
+
+  if (password.length < 8) { showError('Password must be at least 8 characters.'); return; }
+  if (password !== confirm) { showError('Passwords do not match.'); return; }
+
+  const { error } = await supabaseClient.auth.updateUser({ password });
+  if (error) { showError(error.message); return; }
+
+  closeSheet();
+  showToast('&#128274; Password updated!');
 }
 
 function renderEditTaskSheet(plantId, taskId) {
@@ -1613,6 +1680,72 @@ async function handleEvent(e) {
       supabaseClient.auth.signOut().then(() => renderLoginScreen());
       break;
 
+    case 'open-menu':
+      openMenu();
+      break;
+
+    case 'close-menu':
+      closeMenu();
+      break;
+
+    case 'change-password':
+      closeMenu();
+      renderChangePasswordSheet();
+      break;
+
+    case 'save-change-password':
+      await handleChangePassword();
+      break;
+
+    case 'menu-switch-user':
+      closeMenu();
+      setActiveUser(activeUser === 'Matu' ? 'Vale' : 'Matu');
+      renderHome();
+      break;
+
+    case 'menu-export-data': {
+      closeMenu();
+      const exportData = localStorage.getItem('plant-care-v1') ?? '[]';
+      const exportBlob = new Blob([exportData], { type: 'application/json' });
+      const exportUrl  = URL.createObjectURL(exportBlob);
+      const exportA    = document.createElement('a');
+      exportA.href     = exportUrl;
+      exportA.download = 'plant-care-backup.json';
+      exportA.click();
+      URL.revokeObjectURL(exportUrl);
+      break;
+    }
+
+    case 'menu-import-data': {
+      closeMenu();
+      const importInput = document.createElement('input');
+      importInput.type   = 'file';
+      importInput.accept = '.json,application/json';
+      importInput.addEventListener('change', () => {
+        const file = importInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const parsed = JSON.parse(ev.target.result);
+            if (!Array.isArray(parsed)) throw new Error('Invalid format');
+            localStorage.setItem('plant-care-v1', JSON.stringify(parsed));
+            location.reload();
+          } catch (_) {
+            alert('Invalid backup file. Please select a valid plant-care-backup.json file.');
+          }
+        };
+        reader.readAsText(file);
+      });
+      importInput.click();
+      break;
+    }
+
+    case 'menu-sign-out':
+      closeMenu();
+      supabaseClient.auth.signOut().then(() => renderLoginScreen());
+      break;
+
     case 'open-plant':
       navigateTo('plant', plantId);
       break;
@@ -1897,7 +2030,9 @@ async function handleEvent(e) {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('app').addEventListener('click', handleEvent);
   document.getElementById('sheet').addEventListener('click', handleEvent);
+  document.getElementById('menu-panel').addEventListener('click', handleEvent);
   document.getElementById('overlay').addEventListener('click', closeSheet);
+  document.getElementById('menu-overlay').addEventListener('click', closeMenu);
 
   supabaseClient.auth.onAuthStateChange(async (event, session) => {
     if (event === 'PASSWORD_RECOVERY') {

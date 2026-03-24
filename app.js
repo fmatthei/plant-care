@@ -732,15 +732,17 @@ function renderEmojiPickerHtml(currentEmoji) {
 // ============================================================
 
 function renderHome() {
-  const activeMember  = membersCache.find(m => m.display_name === activeUser);
-  const userPillStyle = activeMember?.color ? `background:white;color:${activeMember.color};` : '';
+  const activeMember   = membersCache.find(m => m.display_name === activeUser);
+  const userColor      = activeMember?.color ?? '';
+  const userPillStyle  = userColor ? `background:white;` : '';
+  const userColorStyle = userColor ? `color:${userColor};` : '';
 
   let html = `
     <div class="app-header">
       <h1>Plant Care</h1>
       <div class="header-right">
         <span class="date-label">${todayFormatted()}</span>
-        <button class="user-indicator" data-action="switch-user" style="${userPillStyle}">&#128100; ${escapeHtml(activeUser)}</button>
+        <button class="user-indicator" data-action="switch-user" style="${userPillStyle}"><span style="${userColorStyle}">&#128100; ${escapeHtml(activeUser)}</span></button>
         <button class="btn-hamburger" data-action="open-menu">&#9776;</button>
       </div>
     </div>

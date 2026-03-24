@@ -1256,6 +1256,8 @@ function renderAddTaskStep2(plantId, typeKey) {
       </div>
     </div>` : '';
 
+  const todayVal = todayStr();
+
   openSheet(`
     ${titleHtml}
     ${customFields}
@@ -1273,9 +1275,21 @@ function renderAddTaskStep2(plantId, typeKey) {
           <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="7">
           <span>days between tasks</span>
         </div>
+        <div class="form-group" style="margin-top:12px">
+          <label class="form-label">First due date</label>
+          <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-interval" value="${todayVal}"></div>
+        </div>
       </div>
       <div class="recurrence-weekdays-section form-group">
         <div class="weekday-picker">${weekdayBtns}</div>
+        <div class="form-group" style="margin-top:12px">
+          <label class="form-label">Start from</label>
+          <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-weekdays" value="${todayVal}"></div>
+        </div>
+      </div>
+      <div class="recurrence-one-off-section form-group">
+        <label class="form-label">Due date</label>
+        <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-one-off" value="${todayVal}"></div>
       </div>
     </div>
     <div class="form-group">
@@ -1495,6 +1509,11 @@ async function handleSaveNewTask() {
     if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
   }
 
+  const firstDueInputId = recType === 'interval' ? 'sheet-first-due-interval'
+                        : recType === 'weekdays'  ? 'sheet-first-due-weekdays'
+                        :                           'sheet-first-due-one-off';
+  const firstDueVal = document.getElementById(firstDueInputId)?.value || null;
+
   const selectedOwner = document.querySelector('#sheet .owner-option.selected');
   const owner = selectedOwner?.dataset.owner ?? Object.keys(USERS)[0];
 
@@ -1505,17 +1524,18 @@ async function handleSaveNewTask() {
   const sortOrder = plant.tasks.length + 1;
 
   const supabaseRow = {
-    plant_id:   pid,
+    plant_id:         pid,
     name,
     icon,
     type,
     recurrence: recType === 'one-off'
       ? { type: 'one-off' }
       : { type: recType, every: frequencyDays, unit: 'days', days: weekdays },
-    owner_id:   ownerMember?.id ?? null,
-    paused:     false,
-    note:       '',
-    sort_order: sortOrder,
+    owner_id:         ownerMember?.id ?? null,
+    paused:           false,
+    note:             '',
+    sort_order:       sortOrder,
+    next_due_override: firstDueVal,
   };
 
   const { data: inserted, error } = await supabaseClient
@@ -1540,7 +1560,7 @@ async function handleSaveNewTask() {
     recurrenceUnit: 'days',
     weekdays,
     lastDone: null,
-    nextDueOverride: null,
+    nextDueOverride: firstDueVal,
     paused: false,
     owner,
     note: '',

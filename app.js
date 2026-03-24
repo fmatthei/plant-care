@@ -247,7 +247,7 @@ async function loadFromSupabase() {
 
   // 4. Fetch tasks, care log, and notes for all plants in parallel
   const plantIds = plantRows.map(p => p.id);
-  const [taskResults, careLogResults, { data: noteRows }] = await Promise.all([
+  const [taskResults, careLogResults, { data: noteRows, error: notesError }] = await Promise.all([
     Promise.all(
       plantRows.map(p =>
         supabaseClient
@@ -275,6 +275,7 @@ async function loadFromSupabase() {
       .order('created_at', { ascending: false }),
   ]);
 
+  if (notesError) console.error('loadFromSupabase: notes fetch error:', notesError);
   notes = (noteRows ?? []).map(r => ({
     id:        r.id,
     plantId:   r.plant_id,

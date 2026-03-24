@@ -1569,7 +1569,7 @@ function navigateTo(view, plantId = null) {
 // EVENT HANDLING
 // ============================================================
 
-function handleEvent(e) {
+async function handleEvent(e) {
   const target = e.target.closest('[data-action]');
   if (!target) return;
 

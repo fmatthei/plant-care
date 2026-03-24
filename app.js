@@ -733,7 +733,7 @@ function renderEmojiPickerHtml(currentEmoji) {
 
 function renderHome() {
   const activeMember  = membersCache.find(m => m.display_name === activeUser);
-  const userPillStyle = activeMember?.color ? `background:${activeMember.color}22;color:${activeMember.color};` : '';
+  const userPillStyle = activeMember?.color ? `background:white;color:${activeMember.color};` : '';
 
   let html = `
     <div class="app-header">

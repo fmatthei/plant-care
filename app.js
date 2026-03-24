@@ -102,6 +102,9 @@ function renderLoginScreen(errorMsg) {
         ${errorMsg ? `<p style="color:var(--due);font-size:14px;text-align:center;margin:0;">${errorMsg}</p>` : ''}
       </div>
     </div>`;
+  document.getElementById('app').addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleLogin();
+  });
 }
 
 async function handleLogin() {
@@ -132,6 +135,9 @@ function renderPasswordResetScreen(errorMsg) {
         ${errorMsg ? `<p style="color:var(--due);font-size:14px;text-align:center;margin:0;">${errorMsg}</p>` : ''}
       </div>
     </div>`;
+  document.getElementById('app').addEventListener('keydown', e => {
+    if (e.key === 'Enter') handlePasswordReset();
+  });
 }
 
 async function handlePasswordReset() {
@@ -609,6 +615,26 @@ async function deleteTask(plantId, taskId) {
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', taskId)
     .then(({ error }) => { if (error) console.error('deleteTask error:', error); });
+}
+
+async function deletePlant(plantId) {
+  const now = new Date().toISOString();
+
+  await Promise.all([
+    supabaseClient
+      .from('plants')
+      .update({ deleted_at: now })
+      .eq('id', plantId)
+      .then(({ error }) => { if (error) console.error('deletePlant plants error:', error); }),
+    supabaseClient
+      .from('tasks')
+      .update({ deleted_at: now })
+      .eq('plant_id', plantId)
+      .is('deleted_at', null)
+      .then(({ error }) => { if (error) console.error('deletePlant tasks error:', error); }),
+  ]);
+
+  plants = plants.filter(p => p.id !== plantId);
 }
 
 function addHealthNote(plantId, text, author) {
@@ -1323,6 +1349,11 @@ function renderEditPlantSheet(plantId) {
       <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
       <button class="btn btn-primary" data-action="sheet-save-plant">Save</button>
     </div>
+
+    <div class="sheet-divider"></div>
+    <div class="sheet-danger">
+      <button class="btn btn-danger" data-action="delete-plant" data-plant="${plantId}">Delete Plant</button>
+    </div>
   `);
 }
 
@@ -1630,6 +1661,18 @@ function handleEvent(e) {
       renderPlantDetail(state.plantId);
       break;
 
+    case 'delete-plant': {
+      const plantToDelete = getPlant(plantId);
+      if (plantToDelete && confirm(`Delete ${plantToDelete.name}? This will remove the plant and all its tasks. This cannot be undone.`)) {
+        const deletedName = plantToDelete.name;
+        await deletePlant(plantId);
+        closeSheet();
+        navigateTo('home');
+        showToast(`🗑️ ${deletedName} deleted`);
+      }
+      break;
+    }
+
     case 'delete-task':
       if (confirm('Permanently delete this task? This cannot be undone.')) {
         deleteTask(plantId, taskId);
@@ -1848,7 +1891,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (initialHash.includes('type=recovery')) return;
 
     if (!session) {
-      loadData();
       renderLoginScreen();
       return;
     }

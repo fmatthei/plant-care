@@ -373,9 +373,10 @@ function dueLabelAndClass(task) {
   const manual = task.nextDueOverride ? ' (manual)' : '';
   const recType = task.recurrenceType ?? 'interval';
   if (recType === 'one-off') {
-    return days === Infinity
-      ? { label: 'Done', cls: 'ok' }
-      : { label: 'Due today \u2014 one-off', cls: 'due' };
+    if (days === Infinity) return { label: 'Done', cls: 'ok' };
+    if (days > 0)  return { label: `In ${days} day${days !== 1 ? 's' : ''} \u2014 one-off`, cls: 'upcoming' };
+    if (days === 0) return { label: 'Due today \u2014 one-off', cls: 'due' };
+    return { label: 'Overdue \u2014 one-off', cls: 'due' };
   }
   // "never done" only makes sense for interval tasks with no override
   if (recType === 'interval' && !task.lastDone && !task.nextDueOverride) {

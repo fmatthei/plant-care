@@ -41,7 +41,6 @@ const DEFAULT_PLANTS = [
       { id: 'fertilize',    recurrenceType: 'interval', frequencyDays: 14, weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
       { id: 'check',        recurrenceType: 'interval', frequencyDays: 3,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: 'Check leaf color, pests, and soil condition' },
     ],
-    healthNotes: [],
     careLog: [],
   },
   {
@@ -55,7 +54,6 @@ const DEFAULT_PLANTS = [
       { id: 'fertilize',    recurrenceType: 'interval', frequencyDays: 14, weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
       { id: 'check',        recurrenceType: 'interval', frequencyDays: 7,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: 'Check for blooms and overall health' },
     ],
-    healthNotes: [],
     careLog: [],
   },
 ];
@@ -72,6 +70,8 @@ const state = {
 };
 
 let plants = [];
+let notes  = [];
+let notesShowAll = new Set(); // plantIds where "Show all" is expanded
 let activeUser = null;
 let activeTab = 'plants';
 let scheduleShowAll = false;
@@ -235,6 +235,7 @@ async function loadFromSupabase() {
 
   if (plantRows.length === 0) {
     plants = [];
+    notes  = [];
     return;
   }
 
@@ -244,8 +245,9 @@ async function loadFromSupabase() {
     ownerMap[m.id] = m.display_name;
   }
 
-  // 4. Fetch tasks and care log entries for all plants in parallel
-  const [taskResults, careLogResults] = await Promise.all([
+  // 4. Fetch tasks, care log, and notes for all plants in parallel
+  const plantIds = plantRows.map(p => p.id);
+  const [taskResults, careLogResults, { data: noteRows }] = await Promise.all([
     Promise.all(
       plantRows.map(p =>
         supabaseClient
@@ -265,7 +267,22 @@ async function loadFromSupabase() {
           .limit(50)
       )
     ),
+    supabaseClient
+      .from('notes')
+      .select('*')
+      .in('plant_id', plantIds)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false }),
   ]);
+
+  notes = (noteRows ?? []).map(r => ({
+    id:        r.id,
+    plantId:   r.plant_id,
+    memberId:  r.household_member_id,
+    author:    ownerMap[r.household_member_id] ?? 'Unknown',
+    note:      r.note,
+    createdAt: r.created_at,
+  }));
 
   plants = plantRows.map((plantRow, i) => {
     const taskRows = taskResults[i].data ?? [];
@@ -303,7 +320,6 @@ async function loadFromSupabase() {
       emoji:            plantRow.emoji            ?? '🪴',
       dateTransplanted: plantRow.date_transplanted ?? '',
       tasks,
-      healthNotes:      [],
       careLog,
     };
   });
@@ -418,6 +434,13 @@ function formatDateShort(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T12:00:00');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatNoteDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
 function todayFormatted() {
@@ -638,25 +661,31 @@ async function deletePlant(plantId) {
   plants = plants.filter(p => p.id !== plantId);
 }
 
-function addHealthNote(plantId, text, author) {
-  const plant = getPlant(plantId);
-  if (!plant || !text.trim()) return;
-  plant.healthNotes.unshift({ id: uid(), date: todayStr(), author, text: text.trim() });
-  saveData();
+async function addNote(plantId, noteText) {
+  const member = membersCache.find(m => m.display_name === activeUser);
+  const { data: inserted, error } = await supabaseClient
+    .from('notes')
+    .insert({ plant_id: plantId, household_member_id: member?.id ?? null, note: noteText })
+    .select()
+    .single();
+  if (error) { console.error('addNote error:', error); return; }
+  notes.unshift({
+    id:        inserted.id,
+    plantId:   inserted.plant_id,
+    memberId:  inserted.household_member_id,
+    author:    activeUser,
+    note:      inserted.note,
+    createdAt: inserted.created_at,
+  });
 }
 
-function editHealthNote(plantId, noteId, text) {
-  const note = getPlant(plantId)?.healthNotes.find(n => n.id === noteId);
-  if (!note || !text.trim()) return;
-  note.text = text.trim();
-  saveData();
-}
-
-function deleteHealthNote(plantId, noteId) {
-  const plant = getPlant(plantId);
-  if (!plant) return;
-  plant.healthNotes = plant.healthNotes.filter(n => n.id !== noteId);
-  saveData();
+async function deleteNote(noteId) {
+  const { error } = await supabaseClient
+    .from('notes')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', noteId);
+  if (error) { console.error('deleteNote error:', error); return; }
+  notes = notes.filter(n => n.id !== noteId);
 }
 
 function updatePlantInfo(plantId, updates) {
@@ -936,22 +965,34 @@ function renderPlantDetail(plantId) {
 
   html += `</div></div>`;
 
-  // Health Notes
+  // Notes
+  const plantNotes = notes.filter(n => n.plantId === plant.id);
+  const showAll    = notesShowAll.has(plant.id);
+  const NOTES_LIMIT = 5;
+  const visibleNotes = showAll ? plantNotes : plantNotes.slice(0, NOTES_LIMIT);
+
   html += `
   <div class="section">
     <div class="section-header">
-      <span class="section-title">Health Notes</span>
-      <button class="section-action" data-action="add-health-note" data-plant="${plant.id}">+ Add</button>
+      <span class="section-title">Notes</span>
+      <button class="section-action" data-action="add-note" data-plant="${plant.id}">+ Add</button>
     </div>`;
 
-  if (plant.healthNotes.length === 0) {
-    html += `<div class="empty-state">No health notes yet.</div>`;
+  if (plantNotes.length === 0) {
+    html += `<div class="empty-state">No notes yet.</div>`;
   } else {
     html += `<div class="health-note-list">`;
-    for (const note of plant.healthNotes) {
-      html += renderHealthNoteCard(plant.id, note);
+    for (const n of visibleNotes) {
+      html += renderNoteCard(n);
     }
     html += `</div>`;
+    if (plantNotes.length > NOTES_LIMIT) {
+      if (showAll) {
+        html += `<button class="btn btn-ghost" style="width:100%;margin-top:6px" data-action="toggle-notes-show-all" data-plant="${plant.id}">Show less</button>`;
+      } else {
+        html += `<button class="btn btn-ghost" style="width:100%;margin-top:6px" data-action="toggle-notes-show-all" data-plant="${plant.id}">Show all ${plantNotes.length} notes</button>`;
+      }
+    }
   }
 
   html += `</div>`;
@@ -1037,21 +1078,20 @@ function renderTaskCard(plantId, task) {
   return html;
 }
 
-function renderHealthNoteCard(plantId, note) {
-  const authorCls = note.author.toLowerCase();
+function renderNoteCard(note) {
+  const authorCls = (note.author ?? '').toLowerCase();
   return `
   <div class="health-note-card">
     <div class="health-note-header">
       <span class="health-note-meta">
-        <span class="author-label ${authorCls}">${escapeHtml(note.author)}</span>
-        &middot; ${formatDateShort(note.date)}
+        <span class="author-label ${authorCls}">${escapeHtml(note.author ?? '')}</span>
+        &middot; ${formatNoteDate(note.createdAt)}
       </span>
       <div class="health-note-btns">
-        <button class="icon-btn" data-action="edit-health-note" data-plant="${plantId}" data-note="${note.id}" title="Edit">&#9998;</button>
-        <button class="icon-btn" data-action="delete-health-note" data-plant="${plantId}" data-note="${note.id}" title="Delete">&#10005;</button>
+        <button class="icon-btn" data-action="delete-note" data-plant="${note.plantId}" data-note="${note.id}" title="Delete">&#10005;</button>
       </div>
     </div>
-    <div class="health-note-text">${escapeHtml(note.text)}</div>
+    <div class="health-note-text">${escapeHtml(note.note)}</div>
   </div>`;
 }
 
@@ -1373,34 +1413,18 @@ function renderAddTaskStep2(plantId, typeKey) {
   `);
 }
 
-function renderHealthNoteSheet(plantId, noteId = null) {
-  const plant = getPlant(plantId);
-  if (!plant) return;
-  const existing = noteId ? plant.healthNotes.find(n => n.id === noteId) : null;
-  const isEdit = !!existing;
-
-  state.sheetMode = 'health-note';
-  state.sheetData = { plantId, noteId };
-
-  const matuSel = (!existing || existing.author === 'Matu') ? 'selected' : '';
-  const valeSel = existing?.author === 'Vale' ? 'selected' : '';
+function renderAddNoteSheet(plantId) {
+  state.sheetMode = 'add-note';
+  state.sheetData = { plantId };
 
   openSheet(`
-    <div class="sheet-title">${isEdit ? 'Edit' : 'Add'} Health Note</div>
+    <div class="sheet-title">Add Note</div>
     <div class="form-group">
-      <label class="form-label">Author</label>
-      <div class="owner-toggle">
-        <div class="owner-option matu ${matuSel}" data-action="sheet-set-owner" data-owner="Matu">Matu</div>
-        <div class="owner-option vale ${valeSel}" data-action="sheet-set-owner" data-owner="Vale">Vale</div>
-      </div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Note</label>
-      <textarea class="form-textarea" id="sheet-note-text" placeholder="Describe what you observed..." style="min-height:110px">${escapeHtml(existing?.text ?? '')}</textarea>
+      <textarea class="form-textarea" id="sheet-note-text" placeholder="Describe what you observed..." style="min-height:110px"></textarea>
     </div>
     <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
-      <button class="btn btn-primary" data-action="sheet-save-health-note">Save</button>
+      <button class="btn btn-ghost" data-action="close-sheet">Cancel</button>
+      <button class="btn btn-primary" data-action="sheet-save-note">Save</button>
     </div>
   `);
 }
@@ -1531,7 +1555,6 @@ async function handleSaveNewPlant() {
     emoji,
     dateTransplanted: dateTransplanted ?? '',
     tasks:            [],
-    healthNotes:      [],
     careLog:          [],
   };
 
@@ -1844,19 +1867,24 @@ async function handleEvent(e) {
       renderEditPlantSheet(plantId);
       break;
 
-    case 'add-health-note':
-      renderHealthNoteSheet(plantId);
+    case 'add-note':
+      renderAddNoteSheet(plantId);
       break;
 
-    case 'edit-health-note':
-      renderHealthNoteSheet(plantId, noteId);
-      break;
-
-    case 'delete-health-note':
-      if (confirm('Delete this health note?')) {
-        deleteHealthNote(plantId, noteId);
+    case 'delete-note':
+      if (confirm('Delete this note?')) {
+        await deleteNote(noteId);
         renderPlantDetail(state.plantId);
       }
+      break;
+
+    case 'toggle-notes-show-all':
+      if (notesShowAll.has(plantId)) {
+        notesShowAll.delete(plantId);
+      } else {
+        notesShowAll.add(plantId);
+      }
+      renderPlantDetail(state.plantId);
       break;
 
     case 'add-plant':
@@ -1966,16 +1994,11 @@ async function handleEvent(e) {
       break;
     }
 
-    case 'sheet-save-health-note': {
-      const { plantId: pid, noteId: nid } = state.sheetData;
+    case 'sheet-save-note': {
+      const { plantId: pid } = state.sheetData;
       const text = document.getElementById('sheet-note-text')?.value?.trim();
       if (!text) { alert('Please enter a note.'); return; }
-      const selectedOwner = document.querySelector('#sheet .owner-option.selected');
-      if (nid) {
-        editHealthNote(pid, nid, text);
-      } else {
-        addHealthNote(pid, text, selectedOwner?.dataset.owner ?? 'Matu');
-      }
+      await addNote(pid, text);
       closeSheet();
       renderPlantDetail(pid);
       break;

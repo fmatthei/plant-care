@@ -506,13 +506,6 @@ body {
   line-height: 1.5;
 }
 
-.note-action-row {
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  margin-top: 8px;
-}
-
 .note-action-btn {
   background: none;
   border: none;

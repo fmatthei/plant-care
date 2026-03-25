@@ -1102,17 +1102,20 @@ function renderNoteCard(note) {
   const isOwn = note.memberId && note.memberId === activeMemberId;
   const isEditing = editingNoteId === note.id;
 
+  const actions = isOwn
+    ? `<div class="health-note-btns">
+         <button class="note-action-btn" data-action="edit-note" data-note="${note.id}" title="Edit">&#9999;&#xFE0E;</button>
+         <button class="note-action-btn note-action-btn--delete" data-action="delete-note" data-plant="${note.plantId}" data-note="${note.id}" title="Delete">&#128465;&#xFE0E;</button>
+       </div>`
+    : '';
+
   const body = isEditing
     ? `<textarea class="form-textarea note-edit-textarea" data-note="${note.id}" style="min-height:80px">${escapeHtml(note.note)}</textarea>
        <div class="note-edit-actions">
          <button class="btn btn-ghost btn-sm" data-action="cancel-note-edit" data-note="${note.id}">Cancel</button>
          <button class="btn btn-primary btn-sm" data-action="save-note-edit" data-note="${note.id}">Save</button>
        </div>`
-    : `<div class="health-note-text">${escapeHtml(note.note)}</div>
-       ${isOwn ? `<div class="note-action-row">
-         <button class="note-action-btn" data-action="edit-note" data-note="${note.id}" title="Edit">&#9999;&#xFE0E;</button>
-         <button class="note-action-btn note-action-btn--delete" data-action="delete-note" data-plant="${note.plantId}" data-note="${note.id}" title="Delete">&#128465;&#xFE0E;</button>
-       </div>` : ''}`;
+    : `<div class="health-note-text">${escapeHtml(note.note)}</div>`;
 
   return `
   <div class="health-note-card">
@@ -1121,6 +1124,7 @@ function renderNoteCard(note) {
         <span class="author-label ${authorCls}">${escapeHtml(note.author ?? '')}</span>
         &middot; ${formatNoteDate(note.createdAt)}
       </span>
+      ${actions}
     </div>
     ${body}
   </div>`;

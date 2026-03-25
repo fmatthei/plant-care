@@ -700,6 +700,20 @@ body {
   padding-top: 2px;
 }
 
+.sheet-title-optional {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.post-task-photo-btn {
+  width: 100%;
+  margin-bottom: 12px;
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* ===== Form Elements ===== */
 .form-group {
   margin-bottom: 16px;

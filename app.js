@@ -534,6 +534,8 @@ async function markTaskDone(plantId, taskId) {
       date:                todayStr(),
     })
     .then(({ error }) => { if (error) console.error('markTaskDone care_log insert error:', error); });
+
+  renderPostTaskNoteSheet(plantId);
 }
 
 async function undoMarkTaskDone(plantId, taskId) {
@@ -1448,6 +1450,23 @@ function renderAddTaskStep2(plantId, typeKey) {
   `);
 }
 
+function renderPostTaskNoteSheet(plantId) {
+  state.sheetMode = 'post-task-note';
+  state.sheetData = { plantId };
+
+  openSheet(`
+    <div class="sheet-title">Add a note <span class="sheet-title-optional">Optional</span></div>
+    <div class="form-group">
+      <textarea class="form-textarea" id="post-task-note-text" placeholder="Describe what you observed..." style="min-height:110px"></textarea>
+    </div>
+    <button class="btn btn-ghost post-task-photo-btn" disabled>&#128247; Add photo</button>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" data-action="sheet-skip-post-task-note">Skip</button>
+      <button class="btn btn-primary" data-action="sheet-save-post-task-note">Save note</button>
+    </div>
+  `);
+}
+
 function renderAddNoteSheet(plantId) {
   state.sheetMode = 'add-note';
   state.sheetData = { plantId };
@@ -2070,6 +2089,20 @@ async function handleEvent(e) {
       renderPlantDetail(pid);
       break;
     }
+
+    case 'sheet-save-post-task-note': {
+      const { plantId: pid } = state.sheetData;
+      const text = document.getElementById('post-task-note-text')?.value?.trim();
+      closeSheet();
+      if (text) await addNote(pid, text);
+      if (state.view === 'plant') renderPlantDetail(pid);
+      else renderHome();
+      break;
+    }
+
+    case 'sheet-skip-post-task-note':
+      closeSheet();
+      break;
 
     case 'export-data': {
       const data = localStorage.getItem('plant-care-v1') ?? '[]';

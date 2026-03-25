@@ -506,6 +506,30 @@ body {
   line-height: 1.5;
 }
 
+.health-note-text--editable {
+  cursor: pointer;
+  border-radius: 6px;
+  margin: -4px;
+  padding: 4px;
+  transition: background 0.15s;
+}
+
+.health-note-text--editable:active {
+  background: var(--border);
+}
+
+.note-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 13px;
+}
+
 /* ===== Care Log ===== */
 .care-log-list {
   background: var(--card);

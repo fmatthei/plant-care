@@ -72,6 +72,7 @@ const state = {
 let plants = [];
 let notes  = [];
 let notesShowAll = new Set(); // plantIds where "Show all" is expanded
+let editingNoteId = null;
 let activeUser = null;
 let activeTab = 'plants';
 let scheduleShowAll = false;
@@ -689,6 +690,16 @@ async function deleteNote(noteId) {
   notes = notes.filter(n => n.id !== noteId);
 }
 
+async function updateNote(noteId, newText) {
+  const { error } = await supabaseClient
+    .from('notes')
+    .update({ note: newText })
+    .eq('id', noteId);
+  if (error) { console.error('updateNote error:', error); return; }
+  const n = notes.find(n => n.id === noteId);
+  if (n) n.note = newText;
+}
+
 function updatePlantInfo(plantId, updates) {
   const plant = getPlant(plantId);
   if (!plant) return;
@@ -1086,6 +1097,22 @@ function renderTaskCard(plantId, task) {
 
 function renderNoteCard(note) {
   const authorCls = (note.author ?? '').toLowerCase();
+  const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
+  const isOwn = note.memberId && note.memberId === activeMemberId;
+  const isEditing = editingNoteId === note.id;
+
+  const btns = isOwn
+    ? `<button class="icon-btn" data-action="delete-note" data-plant="${note.plantId}" data-note="${note.id}" title="Delete">&#10005;</button>`
+    : '';
+
+  const body = isEditing
+    ? `<textarea class="form-textarea note-edit-textarea" data-note="${note.id}" style="min-height:80px">${escapeHtml(note.note)}</textarea>
+       <div class="note-edit-actions">
+         <button class="btn btn-ghost btn-sm" data-action="cancel-note-edit" data-note="${note.id}">Cancel</button>
+         <button class="btn btn-primary btn-sm" data-action="save-note-edit" data-note="${note.id}">Save</button>
+       </div>`
+    : `<div class="health-note-text${isOwn ? ' health-note-text--editable' : ''}" ${isOwn ? `data-action="edit-note" data-note="${note.id}"` : ''}>${escapeHtml(note.note)}</div>`;
+
   return `
   <div class="health-note-card">
     <div class="health-note-header">
@@ -1093,11 +1120,9 @@ function renderNoteCard(note) {
         <span class="author-label ${authorCls}">${escapeHtml(note.author ?? '')}</span>
         &middot; ${formatNoteDate(note.createdAt)}
       </span>
-      <div class="health-note-btns">
-        <button class="icon-btn" data-action="delete-note" data-plant="${note.plantId}" data-note="${note.id}" title="Delete">&#10005;</button>
-      </div>
+      <div class="health-note-btns">${btns}</div>
     </div>
-    <div class="health-note-text">${escapeHtml(note.note)}</div>
+    ${body}
   </div>`;
 }
 
@@ -1880,11 +1905,40 @@ async function handleEvent(e) {
       renderAddNoteSheet(plantId);
       break;
 
-    case 'delete-note':
+    case 'delete-note': {
+      const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
+      const noteToDelete = notes.find(n => n.id === noteId);
+      if (!noteToDelete || noteToDelete.memberId !== activeMemberId) break;
       if (confirm('Delete this note?')) {
         await deleteNote(noteId);
         renderPlantDetail(state.plantId);
       }
+      break;
+    }
+
+    case 'edit-note': {
+      const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
+      const noteToEdit = notes.find(n => n.id === noteId);
+      if (!noteToEdit || noteToEdit.memberId !== activeMemberId) break;
+      editingNoteId = noteId;
+      renderPlantDetail(state.plantId);
+      document.querySelector(`.note-edit-textarea[data-note="${noteId}"]`)?.focus();
+      break;
+    }
+
+    case 'save-note-edit': {
+      const textarea = document.querySelector(`.note-edit-textarea[data-note="${noteId}"]`);
+      const newText = textarea?.value?.trim();
+      if (!newText) { alert('Note cannot be empty.'); return; }
+      await updateNote(noteId, newText);
+      editingNoteId = null;
+      renderPlantDetail(state.plantId);
+      break;
+    }
+
+    case 'cancel-note-edit':
+      editingNoteId = null;
+      renderPlantDetail(state.plantId);
       break;
 
     case 'toggle-notes-show-all':

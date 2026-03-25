@@ -951,6 +951,7 @@ function renderPlantDetail(plantId) {
       <h1>${escapeHtml(plant.name)}</h1>
     </div>
     <span class="page-header-emoji">${plant.emoji}</span>
+    <button class="btn-hamburger" data-action="open-menu">&#9776;</button>
   </div>
   <div class="plant-detail">`;
 
@@ -1111,7 +1112,7 @@ function renderNoteCard(note) {
          <button class="btn btn-ghost btn-sm" data-action="cancel-note-edit" data-note="${note.id}">Cancel</button>
          <button class="btn btn-primary btn-sm" data-action="save-note-edit" data-note="${note.id}">Save</button>
        </div>`
-    : `<div class="health-note-text${isOwn ? ' health-note-text--editable' : ''}" ${isOwn ? `data-action="edit-note" data-note="${note.id}"` : ''}>${escapeHtml(note.note)}</div>`;
+    : `<div class="health-note-text${isOwn ? ' health-note-text--editable' : ''}" ${isOwn ? `data-action="edit-note" data-note="${note.id}"` : ''}>${escapeHtml(note.note)}${isOwn ? ' <span class="note-edit-hint">&#9999;&#xFE0E;</span>' : ''}</div>`;
 
   return `
   <div class="health-note-card">

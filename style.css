@@ -518,6 +518,14 @@ body {
   background: var(--border);
 }
 
+.note-edit-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  margin-left: 4px;
+  pointer-events: none;
+}
+
 .note-edit-actions {
   display: flex;
   justify-content: flex-end;

@@ -744,20 +744,24 @@ function renderEmojiPickerHtml(currentEmoji) {
 // RENDER: HOME
 // ============================================================
 
-function renderHome() {
+function renderHeaderRight() {
   const activeMember   = membersCache.find(m => m.display_name === activeUser);
   const userColor      = activeMember?.color ?? '';
   const userPillStyle  = userColor ? `background:white;` : '';
   const userColorStyle = userColor ? `color:${userColor};` : '';
+  return `
+    <div class="header-right">
+      <span class="date-label">${todayFormatted()}</span>
+      <button class="user-indicator" data-action="switch-user" style="${userPillStyle}"><span style="${userColorStyle}">&#128100; ${escapeHtml(activeUser)}</span></button>
+      <button class="btn-hamburger" data-action="open-menu">&#9776;</button>
+    </div>`;
+}
 
+function renderHome() {
   let html = `
     <div class="app-header">
       <h1>Plant Care</h1>
-      <div class="header-right">
-        <span class="date-label">${todayFormatted()}</span>
-        <button class="user-indicator" data-action="switch-user" style="${userPillStyle}"><span style="${userColorStyle}">&#128100; ${escapeHtml(activeUser)}</span></button>
-        <button class="btn-hamburger" data-action="open-menu">&#9776;</button>
-      </div>
+      ${renderHeaderRight()}
     </div>
     <div class="tab-bar">
       <button class="tab-btn${activeTab === 'plants' ? ' active' : ''}" data-action="switch-tab" data-tab="plants">&#127807; My Plants</button>
@@ -947,13 +951,12 @@ function renderPlantDetail(plantId) {
   if (!plant) { navigateTo('home'); return; }
 
   let html = `
-  <div class="page-header">
-    <button class="back-btn" data-action="go-home">&#8249;</button>
-    <div class="page-header-info">
+  <div class="app-header">
+    <div class="header-left">
+      <button class="back-btn" data-action="go-home">&#8249;</button>
       <h1>${escapeHtml(plant.name)}</h1>
     </div>
-    <span class="page-header-emoji">${plant.emoji}</span>
-    <button class="btn-hamburger" data-action="open-menu">&#9776;</button>
+    ${renderHeaderRight()}
   </div>
   <div class="plant-detail">`;
 

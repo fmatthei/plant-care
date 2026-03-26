@@ -284,6 +284,7 @@ async function loadFromSupabase() {
     author:    ownerMap[r.household_member_id] ?? 'Unknown',
     note:      r.note,
     createdAt: r.created_at,
+    taskId:    r.task_id ?? null,
   }));
 
   plants = plantRows.map((plantRow, i) => {
@@ -543,7 +544,7 @@ async function markTaskDone(plantId, taskId) {
     })
     .then(({ error }) => { if (error) console.error('markTaskDone care_log insert error:', error); });
 
-  renderPostTaskNoteSheet(plantId);
+  renderPostTaskNoteSheet(plantId, taskId);
 }
 
 async function undoMarkTaskDone(plantId, taskId) {
@@ -673,11 +674,11 @@ async function deletePlant(plantId) {
   plants = plants.filter(p => p.id !== plantId);
 }
 
-async function addNote(plantId, noteText) {
+async function addNote(plantId, noteText, taskId) {
   const member = membersCache.find(m => m.display_name === activeUser);
   const { data: inserted, error } = await supabaseClient
     .from('notes')
-    .insert({ plant_id: plantId, household_member_id: member?.id ?? null, note: noteText })
+    .insert({ plant_id: plantId, household_member_id: member?.id ?? null, note: noteText, task_id: taskId ?? null })
     .select()
     .single();
   if (error) { console.error('addNote error:', error); return; }
@@ -688,6 +689,7 @@ async function addNote(plantId, noteText) {
     author:    activeUser,
     note:      inserted.note,
     createdAt: inserted.created_at,
+    taskId:    inserted.task_id ?? null,
   });
 }
 
@@ -1123,13 +1125,22 @@ function renderNoteCard(note) {
        </div>`
     : '';
 
+  const taskAttr = (() => {
+    if (!note.taskId) return '';
+    const plant = getPlant(note.plantId);
+    const task = plant?.tasks.find(t => t.id === note.taskId);
+    if (!task) return '';
+    const cfg = getTaskConfig(task);
+    return `<div class="note-task-attr">↳ After: ${escapeHtml(cfg.name)}</div>`;
+  })();
+
   const body = isEditing
     ? `<textarea class="form-textarea note-edit-textarea" data-note="${note.id}" style="min-height:80px">${escapeHtml(note.note)}</textarea>
        <div class="note-edit-actions">
          <button class="btn btn-ghost btn-sm" data-action="cancel-note-edit" data-note="${note.id}">Cancel</button>
          <button class="btn btn-primary btn-sm" data-action="save-note-edit" data-note="${note.id}">Save</button>
        </div>`
-    : `<div class="health-note-text">${escapeHtml(note.note)}</div>`;
+    : `<div class="health-note-text">${escapeHtml(note.note)}</div>${taskAttr}`;
 
   return `
   <div class="health-note-card">
@@ -1462,9 +1473,9 @@ function renderAddTaskStep2(plantId, typeKey) {
   `);
 }
 
-function renderPostTaskNoteSheet(plantId) {
+function renderPostTaskNoteSheet(plantId, taskId) {
   state.sheetMode = 'post-task-note';
-  state.sheetData = { plantId };
+  state.sheetData = { plantId, taskId };
 
   openSheet(`
     <div class="sheet-title">Add a note <span class="sheet-title-optional">Optional</span></div>
@@ -1474,7 +1485,7 @@ function renderPostTaskNoteSheet(plantId) {
     <button class="btn btn-ghost post-task-photo-btn" disabled>&#128247; Add photo</button>
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-action="sheet-skip-post-task-note">Skip</button>
-      <button class="btn btn-primary" data-action="sheet-save-post-task-note">Save note</button>
+      <button class="btn btn-primary" data-action="sheet-save-post-task-note" data-task="${taskId ?? ''}">Save note</button>
     </div>
   `);
 }
@@ -2103,10 +2114,10 @@ async function handleEvent(e) {
     }
 
     case 'sheet-save-post-task-note': {
-      const { plantId: pid } = state.sheetData;
+      const { plantId: pid, taskId: tid } = state.sheetData;
       const text = document.getElementById('post-task-note-text')?.value?.trim();
       closeSheet();
-      if (text) await addNote(pid, text);
+      if (text) await addNote(pid, text, tid);
       if (state.view === 'plant') renderPlantDetail(pid);
       else renderHome();
       break;

@@ -331,6 +331,14 @@ async function loadFromSupabase() {
 // DATE UTILITIES
 // ============================================================
 
+function lastCareLabel(plant) {
+  const entry = plant.careLog?.[0];
+  if (!entry) return '';
+  const diff = daysBetween(entry.date, todayStr());
+  const when = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
+  return `<div class="last-care-line">Last care: ${escapeHtml(entry.taskName)} · ${when}</div>`;
+}
+
 function todayStr() {
   return new Date().toISOString().split('T')[0];
 }
@@ -806,6 +814,7 @@ function renderHome() {
         </div>
         <span class="plant-card-arrow">&#8250;</span>
       </div>
+      ${lastCareLabel(plant)}
       <div class="due-tasks-row">`;
 
       if (dueTasks.length === 0) {

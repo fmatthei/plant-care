@@ -199,6 +199,13 @@ body {
   margin-top: 2px;
 }
 
+.last-care-line {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  opacity: 0.8;
+}
+
 .plant-card-arrow {
   color: #bbb;
   font-size: 22px;

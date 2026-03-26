@@ -1125,13 +1125,13 @@ function renderNoteCard(note) {
        </div>`
     : '';
 
-  const taskAttr = (() => {
+  const taskMeta = (() => {
     if (!note.taskId) return '';
     const plant = getPlant(note.plantId);
     const task = plant?.tasks.find(t => t.id === note.taskId);
     if (!task) return '';
     const cfg = getTaskConfig(task);
-    return `<div class="note-task-attr">↳ After: ${escapeHtml(cfg.name)}</div>`;
+    return ` &middot; ${cfg.icon} after ${escapeHtml(cfg.name)}`;
   })();
 
   const body = isEditing
@@ -1140,14 +1140,14 @@ function renderNoteCard(note) {
          <button class="btn btn-ghost btn-sm" data-action="cancel-note-edit" data-note="${note.id}">Cancel</button>
          <button class="btn btn-primary btn-sm" data-action="save-note-edit" data-note="${note.id}">Save</button>
        </div>`
-    : `<div class="health-note-text">${escapeHtml(note.note)}</div>${taskAttr}`;
+    : `<div class="health-note-text">${escapeHtml(note.note)}</div>`;
 
   return `
   <div class="health-note-card">
     <div class="health-note-header">
       <span class="health-note-meta">
         <span class="author-label ${authorCls}">${escapeHtml(note.author ?? '')}</span>
-        &middot; ${formatNoteDate(note.createdAt)}
+        &middot; ${formatNoteDate(note.createdAt)}${taskMeta}
       </span>
       ${actions}
     </div>

@@ -34,7 +34,7 @@ const DEFAULT_PLANTS = [
     id: 'mandarin',
     name: 'Mandarin Tree',
     emoji: '🍊',
-    dateTransplanted: '',
+    dateAcquired: '',
     tasks: [
       { id: 'normal-water', recurrenceType: 'interval', frequencyDays: 2,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
       { id: 'refill-pot',   recurrenceType: 'interval', frequencyDays: 7,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
@@ -47,7 +47,7 @@ const DEFAULT_PLANTS = [
     id: 'bougainvillea',
     name: 'Bougainvillea',
     emoji: '🌺',
-    dateTransplanted: '',
+    dateAcquired: '',
     tasks: [
       { id: 'normal-water', recurrenceType: 'interval', frequencyDays: 3,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
       { id: 'refill-pot',   recurrenceType: 'interval', frequencyDays: 7,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
@@ -76,6 +76,7 @@ let editingNoteId = null;
 let activeUser = null;
 let activeTab = 'plants';
 let scheduleShowAll = false;
+let plantDetailTab = 'summary';
 let membersCache = []; // household_members rows: { id, display_name }
 let householdId = null;
 
@@ -321,7 +322,7 @@ async function loadFromSupabase() {
       id:               plantRow.id,
       name:             plantRow.name,
       emoji:            plantRow.emoji            ?? '🪴',
-      dateTransplanted: plantRow.date_transplanted ?? '',
+      dateAcquired: plantRow.date_acquired ?? '',
       tasks,
       careLog,
     };
@@ -812,7 +813,7 @@ function renderHome() {
         <span class="plant-card-emoji">${plant.emoji}</span>
         <div class="plant-card-meta">
           <h2>${escapeHtml(plant.name)}</h2>
-          <span class="transplant-info">${plant.dateTransplanted ? 'Transplanted ' + formatDate(plant.dateTransplanted) : 'Transplant date not set'}</span>
+          <span class="transplant-info">${plant.dateAcquired ? 'Home since ' + formatDate(plant.dateAcquired) : 'Arrival date not set'}</span>
         </div>
         <span class="plant-card-arrow">&#8250;</span>
       </div>
@@ -961,97 +962,207 @@ function renderPlantDetail(plantId) {
   const plant = getPlant(plantId);
   if (!plant) { navigateTo('home'); return; }
 
+  const activeMember = membersCache.find(m => m.display_name === activeUser);
+  const userColor    = activeMember?.color ?? '#2e7d51';
+  const initial      = (activeUser ?? '?')[0].toUpperCase();
+
   let html = `
   <div class="app-header">
-    <div class="header-left">
-      <button class="back-btn" data-action="go-home">&#8249;</button>
-      <h1>${escapeHtml(plant.name)}</h1>
+    <button class="back-btn" data-action="go-home">&#8249;</button>
+    <div class="detail-header-title">
+      <span class="detail-header-name">${escapeHtml(plant.emoji + ' ' + plant.name)}</span>
     </div>
-    ${renderHeaderRight()}
+    <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
+  </div>
+  <div class="plant-detail-tabs">
+    <button class="detail-tab-btn${plantDetailTab === 'summary'  ? ' active' : ''}" data-action="plant-detail-tab" data-tab="summary">Summary</button>
+    <button class="detail-tab-btn${plantDetailTab === 'tasks'    ? ' active' : ''}" data-action="plant-detail-tab" data-tab="tasks">Tasks</button>
+    <button class="detail-tab-btn${plantDetailTab === 'schedule' ? ' active' : ''}" data-action="plant-detail-tab" data-tab="schedule">Schedule</button>
+    <button class="detail-tab-btn${plantDetailTab === 'log'      ? ' active' : ''}" data-action="plant-detail-tab" data-tab="log">Log</button>
   </div>
   <div class="plant-detail">`;
 
-  // Plant Info
-  html += `
-  <div class="section">
-    <div class="section-header">
-      <span class="section-title">Plant Info</span>
-      <button class="section-action" data-action="edit-plant" data-plant="${plant.id}">Edit</button>
-    </div>
-    <div class="info-card">
-      <span class="info-card-label">&#128197; Date Transplanted</span>
-      <span class="info-card-value">${plant.dateTransplanted ? formatDate(plant.dateTransplanted) : '\u2014'}</span>
-    </div>
-  </div>`;
-
-  // Tasks
-  html += `
-  <div class="section">
-    <div class="section-header">
-      <span class="section-title">Care Tasks</span>
-    </div>
-    <button class="btn-add-task-detail" data-action="add-task" data-plant="${plant.id}">&#43; Add Task</button>
-    <div class="task-list">`;
-
-  for (const task of plant.tasks) {
-    html += renderTaskCard(plant.id, task);
-  }
-
-  html += `</div></div>`;
-
-  // Notes
-  const plantNotes = notes.filter(n => n.plantId === plant.id);
-  const showAll    = notesShowAll.has(plant.id);
-  const NOTES_LIMIT = 5;
-  const visibleNotes = showAll ? plantNotes : plantNotes.slice(0, NOTES_LIMIT);
-
-  html += `
-  <div class="section">
-    <div class="section-header">
-      <span class="section-title">Notes</span>
-      <button class="section-action" data-action="add-note" data-plant="${plant.id}">+ Add</button>
-    </div>`;
-
-  if (plantNotes.length === 0) {
-    html += `<div class="empty-state">No notes yet.</div>`;
+  if (plantDetailTab === 'summary') {
+    html += renderSummaryTab(plant);
+  } else if (plantDetailTab === 'tasks') {
+    html += renderTasksTab(plant);
+  } else if (plantDetailTab === 'schedule') {
+    html += `<div class="tab-empty-state">Schedule view coming soon</div>`;
   } else {
-    html += `<div class="health-note-list">`;
-    for (const n of visibleNotes) {
-      html += renderNoteCard(n);
-    }
-    html += `</div>`;
-    if (plantNotes.length > NOTES_LIMIT) {
-      if (showAll) {
-        html += `<button class="btn btn-ghost" style="width:100%;margin-top:6px" data-action="toggle-notes-show-all" data-plant="${plant.id}">Show less</button>`;
-      } else {
-        html += `<button class="btn btn-ghost" style="width:100%;margin-top:6px" data-action="toggle-notes-show-all" data-plant="${plant.id}">Show all ${plantNotes.length} notes</button>`;
-      }
-    }
+    html += `<div class="tab-empty-state">Log view coming soon</div>`;
   }
 
   html += `</div>`;
+  document.getElementById('app').innerHTML = html;
+  window.scrollTo(0, 0);
+}
 
-  // Care Log
-  html += `
-  <div class="section" style="margin-bottom:16px">
-    <div class="section-header">
-      <span class="section-title">Care Log</span>
-    </div>`;
+function renderSummaryTab(plant) {
+  let html = '';
 
-  if (plant.careLog.length === 0) {
-    html += `<div class="empty-state">No activity logged yet.</div>`;
+  // ── Plant info card ───────────────────────────────────────
+  const dateAcquired = plant.dateAcquired;
+  if (dateAcquired) {
+    const totalDays = daysBetween(dateAcquired, todayStr());
+    const years     = Math.floor(totalDays / 365);
+    const remDays   = totalDays % 365;
+    const duration  = years > 0
+      ? `${years} year${years !== 1 ? 's' : ''}, ${remDays} day${remDays !== 1 ? 's' : ''} of care 🌱`
+      : `${totalDays} day${totalDays !== 1 ? 's' : ''} of care 🌱`;
+    html += `
+  <div class="plant-info-card" data-action="edit-plant" data-plant="${plant.id}">
+    <div class="plant-info-card-body">
+      <div class="plant-info-main">${escapeHtml(duration)}</div>
+      <div class="plant-info-sub">Home since ${formatDate(dateAcquired)}</div>
+    </div>
+    <span class="plant-info-icon">&#9999;&#xFE0E;</span>
+  </div>`;
   } else {
-    html += `<div class="care-log-list">`;
-    for (const entry of plant.careLog.slice(0, 20)) {
-      html += renderCareLogEntry(entry);
+    html += `
+  <div class="plant-info-card plant-info-card--empty" data-action="edit-plant" data-plant="${plant.id}">
+    <div class="plant-info-card-body">
+      <div class="plant-info-main">Add an arrival date</div>
+      <div class="plant-info-sub">Track how long you&#8217;ve cared for it</div>
+    </div>
+    <span class="plant-info-icon">+</span>
+  </div>`;
+  }
+
+  // ── Due now ───────────────────────────────────────────────
+  const dueTasks = plant.tasks.filter(t => !t.paused && daysUntilDue(t) <= 0);
+  html += `<div class="detail-section-label">&#9888; Due now</div>`;
+  if (dueTasks.length === 0) {
+    html += `<div class="detail-all-clear">All caught up 🌿</div>`;
+  } else {
+    for (const task of dueTasks) {
+      html += renderExpandedTaskRow(plant.id, task);
+    }
+  }
+
+  // ── Upcoming ──────────────────────────────────────────────
+  const upcomingTasks = plant.tasks
+    .filter(t => !t.paused && daysUntilDue(t) > 0 && daysUntilDue(t) !== Infinity)
+    .sort((a, b) => daysUntilDue(a) - daysUntilDue(b));
+  html += `
+  <div class="detail-section-row">
+    <span class="detail-section-label">Upcoming</span>
+    <button class="detail-section-link" data-action="plant-detail-tab" data-tab="tasks">see all</button>
+  </div>`;
+  if (upcomingTasks.length === 0) {
+    html += `<div class="detail-empty">No upcoming tasks</div>`;
+  } else {
+    html += `<div class="compact-task-list">`;
+    for (const task of upcomingTasks) {
+      html += renderCompactTaskRow(plant.id, task);
     }
     html += `</div>`;
   }
 
-  html += `</div></div>`;
+  // ── Recent activity ───────────────────────────────────────
+  const plantNotes = notes.filter(n => n.plantId === plant.id);
+  const activityItems = [
+    ...plant.careLog.map(e  => ({ type: 'care', sortKey: e.date,                          data: e })),
+    ...plantNotes.map(n     => ({ type: 'note', sortKey: (n.createdAt ?? '').split('T')[0], data: n })),
+  ].sort((a, b) => b.sortKey.localeCompare(a.sortKey)).slice(0, 5);
 
-  document.getElementById('app').innerHTML = html;
-  window.scrollTo(0, 0);
+  html += `
+  <div class="detail-section-row">
+    <span class="detail-section-label">Recent activity</span>
+    <button class="detail-section-link" data-action="plant-detail-tab" data-tab="log">view log</button>
+  </div>`;
+  if (activityItems.length === 0) {
+    html += `<div class="detail-empty">No activity yet</div>`;
+  } else {
+    html += `<div class="activity-list">`;
+    for (const item of activityItems) {
+      if (item.type === 'care') {
+        const e    = item.data;
+        const matchedTask = plant.tasks.find(t => t.id === e.taskId);
+        const icon = matchedTask ? getTaskConfig(matchedTask).icon : '&#10003;';
+        const diff = daysBetween(e.date, todayStr());
+        const when = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
+        html += `
+      <div class="activity-row">
+        <span class="activity-icon">${icon}</span>
+        <span class="activity-text">${escapeHtml(e.taskName)}</span>
+        <span class="activity-time">${when}</span>
+      </div>`;
+      } else {
+        const n    = item.data;
+        const diff = daysBetween(item.sortKey, todayStr());
+        const when = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
+        html += `
+      <div class="activity-row">
+        <span class="activity-icon">&#128221;</span>
+        <span class="activity-text"><strong>${escapeHtml(n.author)}</strong> &middot; <span class="activity-note-preview">${escapeHtml(n.note)}</span></span>
+        <span class="activity-time">${when}</span>
+      </div>`;
+      }
+    }
+    html += `</div>`;
+  }
+
+  html += `<button class="btn-add-task-detail" data-action="add-task" data-plant="${plant.id}" style="margin-top:16px;">&#43; Add task</button>`;
+  return html;
+}
+
+function renderTasksTab(plant) {
+  let html = `<button class="btn-add-task-detail" data-action="add-task" data-plant="${plant.id}">&#43; Add Task</button>`;
+  html += `<div class="task-list">`;
+  for (const task of plant.tasks) {
+    html += renderTaskCard(plant.id, task);
+  }
+  html += `</div>`;
+  return html;
+}
+
+function renderExpandedTaskRow(plantId, task) {
+  const cfg        = getTaskConfig(task);
+  const ownerColor = membersCache.find(m => m.display_name === task.owner)?.color
+    ?? USERS[task.owner]?.color ?? '#666';
+  const { label: dueLabel, cls: dueCls } = dueLabelAndClass(task);
+  const otherOwner = task.owner === 'Matu' ? 'Vale' : 'Matu';
+  const doneToday  = task.lastDone === todayStr();
+
+  return `
+  <div class="expanded-task-row">
+    <div class="expanded-task-top">
+      <span class="task-icon">${cfg.icon}</span>
+      <div class="expanded-task-meta">
+        <span class="task-name">${escapeHtml(cfg.name)}</span>
+        <span class="task-meta-line">${escapeHtml(recurrenceLabel(task))} &middot; ${lastDoneLabel(task)}</span>
+      </div>
+      <span class="owner-dot" style="background:${escapeHtml(ownerColor)}" title="${escapeHtml(task.owner)}"></span>
+      <span class="task-status-badge ${dueCls}">${escapeHtml(dueLabel)}</span>
+    </div>
+    <div class="task-actions">
+      ${doneToday
+        ? `<button class="btn btn-warning" data-action="undo-mark-done" data-plant="${plantId}" data-task="${task.id}">&#8630; Undo</button>`
+        : `<button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>`
+      }
+      <button class="btn btn-secondary" data-action="reassign-task" data-plant="${plantId}" data-task="${task.id}">&#8644; ${escapeHtml(otherOwner)}</button>
+      <button class="btn btn-ghost" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">&#9999;&#xFE0E;</button>
+    </div>
+  </div>`;
+}
+
+function renderCompactTaskRow(plantId, task) {
+  const cfg        = getTaskConfig(task);
+  const ownerColor = membersCache.find(m => m.display_name === task.owner)?.color
+    ?? USERS[task.owner]?.color ?? '#666';
+  const { label: dueLabel, cls: dueCls } = dueLabelAndClass(task);
+
+  return `
+  <div class="compact-task-row">
+    <span class="task-icon">${cfg.icon}</span>
+    <div class="compact-task-meta">
+      <span class="task-name">${escapeHtml(cfg.name)}</span>
+      <span class="task-meta-line">${escapeHtml(recurrenceLabel(task))}</span>
+    </div>
+    <span class="owner-dot" style="background:${escapeHtml(ownerColor)}" title="${escapeHtml(task.owner)}"></span>
+    <span class="task-status-badge ${dueCls}">${escapeHtml(dueLabel)}</span>
+    <button class="task-edit-btn" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">&#9999;&#xFE0E;</button>
+  </div>`;
 }
 
 function renderTaskCard(plantId, task) {
@@ -1524,9 +1635,9 @@ function renderEditPlantSheet(plantId) {
       ${renderEmojiPickerHtml(plant.emoji)}
     </div>
     <div class="form-group">
-      <label class="form-label">Set Purchase/Transplant Date (optional)</label>
-      <div class="date-input-wrapper" style="cursor:pointer" onclick="this.querySelector('input').click()"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date" value="${plant.dateTransplanted ?? ''}"></div>
-      <p class="form-hint">Helps track when your plant was last repotted</p>
+      <label class="form-label">Arrival date (optional)</label>
+      <div class="date-input-wrapper" style="cursor:pointer" onclick="this.querySelector('input').click()"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-acquired-date" value="${plant.dateAcquired ?? ''}"></div>
+      <p class="form-hint">Track how long you've cared for it</p>
     </div>
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
@@ -1548,20 +1659,20 @@ async function handleSavePlant() {
   const name  = document.getElementById('sheet-plant-name')?.value?.trim();
   const selectedGridEmoji = document.querySelector('#sheet .emoji-option.selected')?.dataset.emoji ?? '';
   const emoji = selectedGridEmoji || document.getElementById('sheet-plant-emoji')?.value?.trim();
-  const date  = document.getElementById('sheet-transplant-date')?.value;
+  const date  = document.getElementById('sheet-acquired-date')?.value;
 
   const localUpdates = {
-    name:             name  || plant.name,
-    emoji:            emoji || plant.emoji,
-    dateTransplanted: date  || null,
+    name:         name  || plant.name,
+    emoji:        emoji || plant.emoji,
+    dateAcquired: date  || null,
   };
 
   updatePlantInfo(pid, localUpdates);
 
   const dbUpdates = {
-    name:             localUpdates.name,
-    emoji:            localUpdates.emoji,
-    date_transplanted: localUpdates.dateTransplanted,
+    name:         localUpdates.name,
+    emoji:        localUpdates.emoji,
+    date_acquired: localUpdates.dateAcquired,
   };
 
   await supabaseClient
@@ -1590,9 +1701,9 @@ function renderAddPlantSheet() {
       ${renderEmojiPickerHtml('🪴')}
     </div>
     <div class="form-group">
-      <label class="form-label">Set Purchase/Transplant Date (optional)</label>
-      <div class="date-input-wrapper" style="cursor:pointer" onclick="this.querySelector('input').click()"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-transplant-date"></div>
-      <p class="form-hint">Helps track when your plant was last repotted</p>
+      <label class="form-label">Arrival date (optional)</label>
+      <div class="date-input-wrapper" style="cursor:pointer" onclick="this.querySelector('input').click()"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-acquired-date"></div>
+      <p class="form-hint">Track how long you've cared for it</p>
     </div>
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
@@ -1607,17 +1718,17 @@ async function handleSaveNewPlant() {
 
   const selectedGridEmoji = document.querySelector('#sheet .emoji-option.selected')?.dataset.emoji ?? '';
   const emoji = selectedGridEmoji || document.getElementById('sheet-plant-emoji')?.value?.trim() || '🪴';
-  const dateTransplanted = document.getElementById('sheet-transplant-date')?.value || null;
+  const dateAcquired = document.getElementById('sheet-acquired-date')?.value || null;
   const sortOrder = plants.length + 1;
 
   const { data: inserted, error } = await supabaseClient
     .from('plants')
     .insert({
-      household_id:      householdId,
+      household_id:  householdId,
       name,
       emoji,
-      date_transplanted: dateTransplanted,
-      sort_order:        sortOrder,
+      date_acquired: dateAcquired,
+      sort_order:    sortOrder,
     })
     .select()
     .single();
@@ -1627,12 +1738,12 @@ async function handleSaveNewPlant() {
   }
 
   const newPlant = {
-    id:               inserted?.id ?? uid(),
+    id:           inserted?.id ?? uid(),
     name,
     emoji,
-    dateTransplanted: dateTransplanted ?? '',
-    tasks:            [],
-    careLog:          [],
+    dateAcquired: dateAcquired ?? '',
+    tasks:        [],
+    careLog:      [],
   };
 
   plants.push(newPlant);
@@ -1750,7 +1861,7 @@ function navigateTo(view, plantId = null) {
   state.view = view;
   state.plantId = plantId;
   if (view === 'home') renderHome();
-  else if (view === 'plant') renderPlantDetail(plantId);
+  else if (view === 'plant') { plantDetailTab = 'summary'; renderPlantDetail(plantId); }
 }
 
 // ============================================================
@@ -2162,6 +2273,11 @@ async function handleEvent(e) {
       fileInput.click();
       break;
     }
+
+    case 'plant-detail-tab':
+      plantDetailTab = target.dataset.tab;
+      renderPlantDetail(state.plantId);
+      break;
 
     case 'sheet-save-plant':
       handleSavePlant();

@@ -1507,3 +1507,321 @@ body {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ===== Plant Detail Header (redesign) ===== */
+.detail-header-title {
+  flex: 1;
+  min-width: 0;
+  margin-left: 6px;
+}
+
+.detail-header-name {
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.user-initial-circle {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  color: white;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.user-initial-circle:active {
+  opacity: 0.75;
+}
+
+/* ===== Plant Detail Tabs ===== */
+.plant-detail-tabs {
+  display: flex;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px;
+}
+
+.detail-tab-btn {
+  flex: 1;
+  padding: 11px 4px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.detail-tab-btn.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  font-weight: 700;
+}
+
+/* ===== Plant Detail Content ===== */
+.plant-detail {
+  padding: 14px 16px 40px;
+}
+
+/* ===== Plant Info Card ===== */
+.plant-info-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  margin-bottom: 4px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.plant-info-card:active {
+  background: var(--primary-light);
+}
+
+.plant-info-card--empty {
+  border-style: dashed;
+  border-color: #a8c5a8;
+  background: #fafcfa;
+}
+
+.plant-info-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.plant-info-main {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.plant-info-card--empty .plant-info-main {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.plant-info-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.plant-info-icon {
+  font-size: 18px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ===== Detail Section Labels ===== */
+.detail-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  display: block;
+  margin: 18px 0 8px;
+}
+
+.detail-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 0 8px;
+}
+
+.detail-section-row .detail-section-label {
+  margin: 0;
+}
+
+.detail-section-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 0;
+  -webkit-tap-highlight-color: transparent;
+  font-family: inherit;
+}
+
+.detail-all-clear {
+  font-size: 14px;
+  color: var(--ok);
+  font-weight: 600;
+  padding: 8px 0;
+}
+
+.detail-empty {
+  font-size: 14px;
+  color: var(--text-muted);
+  padding: 6px 0;
+}
+
+/* ===== Expanded Task Row (Due Now in Summary) ===== */
+.expanded-task-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.expanded-task-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.expanded-task-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-meta-line {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: block;
+  margin-top: 1px;
+}
+
+/* ===== Owner Dot ===== */
+.owner-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ===== Task Status Badge ===== */
+.task-status-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.task-status-badge.due  { background: var(--due-bg);  color: var(--due); }
+.task-status-badge.soon { background: var(--soon-bg); color: var(--soon); }
+.task-status-badge.ok   { background: var(--ok-bg);   color: var(--ok); }
+
+/* ===== Compact Task Row (Upcoming in Summary) ===== */
+.compact-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.compact-task-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compact-task-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-edit-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.task-edit-btn:active {
+  background: var(--border);
+}
+
+/* ===== Activity List ===== */
+.activity-list {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.activity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.activity-row:last-child {
+  border-bottom: none;
+}
+
+.activity-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.activity-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-note-preview {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.activity-time {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ===== Tab Empty State ===== */
+.tab-empty-state {
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 15px;
+}

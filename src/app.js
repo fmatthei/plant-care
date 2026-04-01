@@ -756,15 +756,13 @@ function renderEmojiPickerHtml(currentEmoji) {
 // ============================================================
 
 function renderHeaderRight() {
-  const activeMember   = membersCache.find(m => m.display_name === activeUser);
-  const userColor      = activeMember?.color ?? '';
-  const userPillStyle  = userColor ? `background:white;` : '';
-  const userColorStyle = userColor ? `color:${userColor};` : '';
+  const activeMember = membersCache.find(m => m.display_name === activeUser);
+  const userColor    = activeMember?.color ?? '#2e7d51';
+  const initial      = (activeUser ?? '?')[0].toUpperCase();
   return `
     <div class="header-right">
       <span class="date-label">${todayFormatted()}</span>
-      <button class="user-indicator" data-action="switch-user" style="${userPillStyle}"><span style="${userColorStyle}">&#128100; ${escapeHtml(activeUser)}</span></button>
-      <button class="btn-hamburger" data-action="open-menu">&#9776;</button>
+      <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
     </div>`;
 }
 
@@ -798,8 +796,6 @@ function renderHome() {
       <p>Add your first plant to get started</p>
       <button class="btn-add-task-detail" data-action="add-plant">Add my first plant 🌱</button>
     </div>`;
-    } else {
-      html += `<button class="btn-add-task-detail" data-action="add-plant">&#43; Add Plant</button>`;
     }
 
     html += '<div class="plants-list">';
@@ -807,32 +803,43 @@ function renderHome() {
     for (const plant of plants) {
       const dueTasks = plant.tasks.filter(isDue);
 
-      html += `
-    <div class="plant-card" data-action="open-plant" data-plant="${plant.id}">
-      <div class="plant-card-top">
-        <span class="plant-card-emoji">${plant.emoji}</span>
-        <div class="plant-card-meta">
-          <h2>${escapeHtml(plant.name)}</h2>
-          <span class="transplant-info">${plant.dateAcquired ? 'Home since ' + formatDate(plant.dateAcquired) : 'Arrival date not set'}</span>
-        </div>
-        <span class="plant-card-arrow">&#8250;</span>
-      </div>
-      ${lastCareLabel(plant)}
-      <div class="due-tasks-row">`;
-
-      if (dueTasks.length === 0) {
-        html += `<span class="all-good-badge">&#10003; All good</span>`;
+      let dueBadgeHtml = '';
+      if (plant.tasks.length === 0) {
+        dueBadgeHtml = '';
+      } else if (dueTasks.length > 0) {
+        dueBadgeHtml = `<span class="due-count-badge">${dueTasks.length} due</span>`;
       } else {
-        for (const task of dueTasks) {
-          const cfg = getTaskConfig(task);
-          html += `<span class="task-due-badge ${cfg.type}">${cfg.icon} ${cfg.name}</span>`;
-        }
+        dueBadgeHtml = `<span class="all-good-badge">&#10003; All good</span>`;
       }
 
-      html += `</div></div>`;
+      let taskPillsHtml = '';
+      for (const task of dueTasks) {
+        const cfg = getTaskConfig(task);
+        taskPillsHtml += `<span class="task-due-badge ${cfg.type}">${cfg.icon} ${cfg.name}</span>`;
+      }
+
+      html += `
+    <div class="plant-card" data-action="open-plant" data-plant="${plant.id}">
+      <div class="plant-card-row">
+        <span class="plant-card-emoji">${plant.emoji}</span>
+        <div class="plant-card-meta">
+          <div class="plant-card-name">${escapeHtml(plant.name)}</div>
+          ${lastCareLabel(plant)}
+        </div>
+        <div class="plant-card-right">
+          ${dueBadgeHtml}
+          <span class="plant-card-arrow">&#8250;</span>
+        </div>
+      </div>
+      ${dueTasks.length > 0 ? `<div class="due-tasks-row">${taskPillsHtml}</div>` : ''}
+    </div>`;
     }
 
     html += '</div>';
+
+    if (plants.length > 0) {
+      html += `<button class="fab-add-plant" data-action="add-plant">&#43; Add Plant</button>`;
+    }
 
     html += `<div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${new Date().toLocaleString('es-CL', { timeZone: 'America/Santiago' })}</div>`;
   } else {

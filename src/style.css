@@ -71,7 +71,7 @@ body {
   min-height: 100vh;
   max-width: 480px;
   margin: 0 auto;
-  padding-bottom: 40px;
+  padding-bottom: 90px;
 }
 
 /* ===== App Header ===== */
@@ -176,8 +176,14 @@ body {
   margin-bottom: 12px;
 }
 
+.plant-card-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .plant-card-emoji {
-  font-size: 42px;
+  font-size: 36px;
   line-height: 1;
   flex-shrink: 0;
 }
@@ -185,6 +191,15 @@ body {
 .plant-card-meta {
   flex: 1;
   min-width: 0;
+}
+
+.plant-card-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .plant-card-meta h2 {
@@ -199,10 +214,17 @@ body {
   margin-top: 2px;
 }
 
+.plant-card-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .last-care-line {
   font-size: 11px;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-top: 2px;
   opacity: 0.8;
 }
 
@@ -216,8 +238,8 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  min-height: 26px;
   align-items: center;
+  margin-top: 10px;
 }
 
 .task-due-badge {
@@ -243,10 +265,58 @@ body {
 .all-good-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: var(--ok-bg);
   color: var(--ok);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.due-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: var(--due-bg);
+  color: var(--due);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ===== Floating Action Button ===== */
+.fab-add-plant {
+  position: fixed;
+  bottom: 24px;
+  right: calc(50% - 240px + 20px);
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 28px;
+  padding: 14px 22px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(46, 125, 81, 0.4);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  z-index: 50;
+  font-family: inherit;
+  transition: opacity 0.12s, transform 0.12s;
+}
+
+.fab-add-plant:active {
+  opacity: 0.85;
+  transform: scale(0.97);
+}
+
+@media (max-width: 480px) {
+  .fab-add-plant {
+    right: 20px;
+  }
 }
 
 /* ===== Section Layout ===== */

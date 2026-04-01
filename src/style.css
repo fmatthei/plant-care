@@ -877,9 +877,20 @@ body {
 }
 
 .owner-pill.selected {
-  background: var(--pill-color, #2e7d51);
-  color: white;
+  background: color-mix(in srgb, var(--pill-color, #2e7d51) 12%, white);
+  color: var(--pill-color, #2e7d51);
   border-color: var(--pill-color, #2e7d51);
+}
+
+.owner-pill-check {
+  display: none;
+  font-size: 12px;
+  font-weight: 800;
+  margin-right: -2px;
+}
+
+.owner-pill.selected .owner-pill-check {
+  display: inline;
 }
 
 .owner-pill-initial {
@@ -893,10 +904,6 @@ body {
   font-size: 11px;
   font-weight: 700;
   flex-shrink: 0;
-}
-
-.owner-pill.selected .owner-pill-initial {
-  background: rgba(255,255,255,0.25);
 }
 
 .sheet-actions {
@@ -925,8 +932,7 @@ body {
 
 .sheet-danger-links {
   display: flex;
-  justify-content: center;
-  gap: 24px;
+  justify-content: space-between;
   margin-top: 10px;
 }
 
@@ -1118,7 +1124,7 @@ body {
   border-bottom: 1px solid var(--border);
   padding: 0 16px;
   position: sticky;
-  top: 55px;
+  top: 62px;
   z-index: 9;
 }
 
@@ -1747,7 +1753,7 @@ body {
   border-bottom: 1px solid var(--border);
   padding: 0 4px;
   position: sticky;
-  top: 55px;
+  top: 62px;
   z-index: 9;
 }
 

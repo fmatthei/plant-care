@@ -1546,6 +1546,7 @@ function renderOwnerPills(selectedOwner) {
     const initial = (m.display_name ?? '?')[0].toUpperCase();
     const sel = m.display_name === selectedOwner ? 'selected' : '';
     return `<div class="owner-pill ${sel}" data-action="sheet-set-owner" data-owner="${escapeHtml(m.display_name)}" style="--pill-color:${escapeHtml(color)}">` +
+      `<span class="owner-pill-check">✓</span>` +
       `<span class="owner-pill-initial">${escapeHtml(initial)}</span>${escapeHtml(m.display_name)}</div>`;
   }).join('');
 }
@@ -1625,9 +1626,9 @@ function renderEditTaskSheet(plantId, taskId) {
       </div>
       <div class="sheet-danger-links">
         <button class="sheet-danger-link pause" data-action="${isPaused ? 'resume-task' : 'pause-task'}" data-plant="${plantId}" data-task="${taskId}">
-          ${isPaused ? 'Resume Task' : 'Pause Task'}
+          ${isPaused ? '&#9654; Resume Task' : '&#9646;&#9646; Pause Task'}
         </button>
-        <button class="sheet-danger-link delete" data-action="delete-task" data-plant="${plantId}" data-task="${taskId}">Delete Task</button>
+        <button class="sheet-danger-link delete" data-action="delete-task" data-plant="${plantId}" data-task="${taskId}">&#128465; Delete Task</button>
       </div>
     </div>
   `);
@@ -2017,7 +2018,10 @@ async function handleSaveNewTask() {
 
   plant.tasks.push(newTask);
   closeSheet();
+  const _appEl = document.getElementById('app');
+  _appEl.style.pointerEvents = 'none';
   navigateTo('plant', pid);
+  setTimeout(() => { _appEl.style.pointerEvents = ''; }, 350);
   showToast('✅ Task added!');
 }
 
@@ -2168,7 +2172,11 @@ async function handleEvent(e) {
     case 'toast-add-note': {
       const pid = target.dataset.plant;
       const tid = target.dataset.task;
-      document.getElementById('toast')?.classList.remove('visible');
+      const _toastEl = document.getElementById('toast');
+      _toastEl?.classList.remove('visible', 'toast--interactive');
+      const _appEl2 = document.getElementById('app');
+      _appEl2.style.pointerEvents = 'none';
+      setTimeout(() => { _appEl2.style.pointerEvents = ''; }, 350);
       if (pid && tid) renderPostTaskNoteSheet(pid, tid);
       break;
     }

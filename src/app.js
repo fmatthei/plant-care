@@ -77,6 +77,7 @@ let activeUser = null;
 let activeTab = 'plants';
 let scheduleShowAll = false;
 let plantDetailTab = 'summary';
+let careLogSegment = 'full';
 let membersCache = []; // household_members rows: { id, display_name }
 let householdId = null;
 
@@ -977,15 +978,16 @@ function renderPlantDetail(plantId) {
   <div class="app-header">
     <button class="back-btn" data-action="go-home">&#8249;</button>
     <div class="detail-header-title">
-      <span class="detail-header-name">${escapeHtml(plant.emoji + ' ' + plant.name)}</span>
+      <span class="detail-header-emoji-circle">${plant.emoji}</span>
+      <span class="detail-header-name">${escapeHtml(plant.name)}</span>
     </div>
     <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
   </div>
   <div class="plant-detail-tabs">
     <button class="detail-tab-btn${plantDetailTab === 'summary'  ? ' active' : ''}" data-action="plant-detail-tab" data-tab="summary">Summary</button>
     <button class="detail-tab-btn${plantDetailTab === 'tasks'    ? ' active' : ''}" data-action="plant-detail-tab" data-tab="tasks">Tasks</button>
-    <button class="detail-tab-btn${plantDetailTab === 'schedule' ? ' active' : ''}" data-action="plant-detail-tab" data-tab="schedule">Schedule</button>
-    <button class="detail-tab-btn${plantDetailTab === 'log'      ? ' active' : ''}" data-action="plant-detail-tab" data-tab="log">Log</button>
+    <button class="detail-tab-btn${plantDetailTab === 'notes'    ? ' active' : ''}" data-action="plant-detail-tab" data-tab="notes">Notes</button>
+    <button class="detail-tab-btn${plantDetailTab === 'carelog'  ? ' active' : ''}" data-action="plant-detail-tab" data-tab="carelog">Care Log</button>
   </div>
   <div class="plant-detail">`;
 
@@ -993,13 +995,26 @@ function renderPlantDetail(plantId) {
     html += renderSummaryTab(plant);
   } else if (plantDetailTab === 'tasks') {
     html += renderTasksTab(plant);
-  } else if (plantDetailTab === 'schedule') {
-    html += `<div class="tab-empty-state">Schedule view coming soon</div>`;
+  } else if (plantDetailTab === 'notes') {
+    html += renderNotesTab(plant);
   } else {
-    html += `<div class="tab-empty-state">Log view coming soon</div>`;
+    html += renderCareLogTab(plant);
   }
 
   html += `</div>`;
+
+  // Context-aware FABs
+  const showNote = plantDetailTab === 'summary' || plantDetailTab === 'notes' || plantDetailTab === 'carelog';
+  const showTask = plantDetailTab === 'summary' || plantDetailTab === 'tasks' || plantDetailTab === 'carelog';
+  html += `<div class="detail-fab-stack">`;
+  if (showNote) {
+    html += `<button class="detail-fab detail-fab-note" data-action="add-note" data-plant="${plant.id}">&#128221; Add note</button>`;
+  }
+  if (showTask) {
+    html += `<button class="detail-fab detail-fab-task" data-action="add-task" data-plant="${plant.id}">&#43; Add task</button>`;
+  }
+  html += `</div>`;
+
   document.getElementById('app').innerHTML = html;
   window.scrollTo(0, 0);
 }
@@ -1035,15 +1050,27 @@ function renderSummaryTab(plant) {
   </div>`;
   }
 
-  // ── Due now ───────────────────────────────────────────────
-  const dueTasks = plant.tasks.filter(t => !t.paused && daysUntilDue(t) <= 0);
-  html += `<div class="detail-section-label">&#9888; Due now</div>`;
-  if (dueTasks.length === 0) {
-    html += `<div class="detail-all-clear">All caught up 🌿</div>`;
-  } else {
-    for (const task of dueTasks) {
+  // ── Overdue ───────────────────────────────────────────────
+  const overdueTasks = plant.tasks.filter(t => !t.paused && daysUntilDue(t) < 0);
+  const dueTodayTasks = plant.tasks.filter(t => !t.paused && daysUntilDue(t) === 0);
+
+  if (overdueTasks.length > 0) {
+    html += `<div class="detail-section-label detail-section-label--overdue">&#9888; Overdue</div>`;
+    for (const task of overdueTasks) {
       html += renderExpandedTaskRow(plant.id, task);
     }
+  }
+
+  // ── Due today ─────────────────────────────────────────────
+  if (dueTodayTasks.length > 0) {
+    html += `<div class="detail-section-label">Due today</div>`;
+    for (const task of dueTodayTasks) {
+      html += renderExpandedTaskRow(plant.id, task);
+    }
+  }
+
+  if (overdueTasks.length === 0 && dueTodayTasks.length === 0) {
+    html += `<div class="detail-all-clear">All caught up 🌿</div>`;
   }
 
   // ── Upcoming ──────────────────────────────────────────────
@@ -1068,14 +1095,14 @@ function renderSummaryTab(plant) {
   // ── Recent activity ───────────────────────────────────────
   const plantNotes = notes.filter(n => n.plantId === plant.id);
   const activityItems = [
-    ...plant.careLog.map(e  => ({ type: 'care', sortKey: e.date,                          data: e })),
+    ...plant.careLog.map(e  => ({ type: 'care', sortKey: e.date,                           data: e })),
     ...plantNotes.map(n     => ({ type: 'note', sortKey: (n.createdAt ?? '').split('T')[0], data: n })),
   ].sort((a, b) => b.sortKey.localeCompare(a.sortKey)).slice(0, 5);
 
   html += `
   <div class="detail-section-row">
     <span class="detail-section-label">Recent activity</span>
-    <button class="detail-section-link" data-action="plant-detail-tab" data-tab="log">view log</button>
+    <button class="detail-section-link" data-action="plant-detail-tab" data-tab="carelog">view log</button>
   </div>`;
   if (activityItems.length === 0) {
     html += `<div class="detail-empty">No activity yet</div>`;
@@ -1109,18 +1136,134 @@ function renderSummaryTab(plant) {
     html += `</div>`;
   }
 
-  html += `<button class="btn-add-task-detail" data-action="add-task" data-plant="${plant.id}" style="margin-top:16px;">&#43; Add task</button>`;
   return html;
 }
 
 function renderTasksTab(plant) {
-  let html = `<button class="btn-add-task-detail" data-action="add-task" data-plant="${plant.id}">&#43; Add Task</button>`;
-  html += `<div class="task-list">`;
+  if (plant.tasks.length === 0) {
+    return `<div class="detail-empty">No tasks yet</div>`;
+  }
+  let html = `<div class="task-list">`;
   for (const task of plant.tasks) {
     html += renderTaskCard(plant.id, task);
   }
   html += `</div>`;
   return html;
+}
+
+function renderNotesTab(plant) {
+  const plantNotes = notes
+    .filter(n => n.plantId === plant.id)
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+
+  if (plantNotes.length === 0) {
+    return `<div class="detail-empty">No notes yet</div>`;
+  }
+  let html = `<div class="health-note-list">`;
+  for (const note of plantNotes) {
+    html += renderNoteCard(note);
+  }
+  html += `</div>`;
+  return html;
+}
+
+function renderCareLogTab(plant) {
+  let html = `
+  <div class="carelog-segmented">
+    <button class="carelog-seg-btn${careLogSegment === 'past'     ? ' active' : ''}" data-action="carelog-segment" data-segment="past">Past</button>
+    <button class="carelog-seg-btn${careLogSegment === 'upcoming' ? ' active' : ''}" data-action="carelog-segment" data-segment="upcoming">Upcoming</button>
+    <button class="carelog-seg-btn${careLogSegment === 'full'     ? ' active' : ''}" data-action="carelog-segment" data-segment="full">Full Log</button>
+  </div>`;
+
+  const showUpcoming = careLogSegment === 'upcoming' || careLogSegment === 'full';
+  const showPast     = careLogSegment === 'past'     || careLogSegment === 'full';
+
+  if (showUpcoming) {
+    if (careLogSegment === 'full') {
+      html += `<div class="detail-section-label">Upcoming</div>`;
+    }
+    const upcomingTasks = plant.tasks
+      .filter(t => !t.paused)
+      .sort((a, b) => {
+        const da = computeNextDue(a) ?? '9999-99-99';
+        const db = computeNextDue(b) ?? '9999-99-99';
+        return da.localeCompare(db);
+      });
+    if (upcomingTasks.length === 0) {
+      html += `<div class="detail-empty">No tasks yet</div>`;
+    } else {
+      html += `<div class="carelog-upcoming-list">`;
+      for (const task of upcomingTasks) {
+        html += renderCareLogUpcomingRow(task);
+      }
+      html += `</div>`;
+    }
+  }
+
+  if (careLogSegment === 'full') {
+    html += `<div class="carelog-divider"></div>`;
+    html += `<div class="detail-section-label">Past</div>`;
+  }
+
+  if (showPast) {
+    const careEntries = [...plant.careLog].sort((a, b) => b.date.localeCompare(a.date));
+    if (careEntries.length === 0) {
+      html += `<div class="detail-empty">No care history yet</div>`;
+    } else {
+      html += `<div class="carelog-past-list">`;
+      for (const entry of careEntries) {
+        const linkedNote = notes.find(n =>
+          n.plantId === plant.id &&
+          n.taskId === entry.taskId &&
+          (n.createdAt ?? '').startsWith(entry.date)
+        );
+        html += renderCareLogPastRow(entry, linkedNote);
+      }
+      html += `</div>`;
+    }
+  }
+
+  return html;
+}
+
+function renderCareLogUpcomingRow(task) {
+  const cfg        = getTaskConfig(task);
+  const { label: dueLabel, cls: dueCls } = dueLabelAndClass(task);
+  const ownerColor = membersCache.find(m => m.display_name === task.owner)?.color
+    ?? USERS[task.owner]?.color ?? '#666';
+
+  return `
+  <div class="carelog-upcoming-row">
+    <span class="carelog-row-icon">${cfg.icon}</span>
+    <div class="carelog-upcoming-meta">
+      <span class="carelog-row-name">${escapeHtml(cfg.name)}</span>
+      <span class="carelog-row-sub">${escapeHtml(recurrenceLabel(task))}</span>
+    </div>
+    <span class="owner-dot" style="background:${escapeHtml(ownerColor)}"></span>
+    <span class="task-status-badge ${dueCls}">${escapeHtml(dueLabel)}</span>
+  </div>`;
+}
+
+function renderCareLogPastRow(entry, linkedNote) {
+  const icon       = TASK_CONFIG[entry.taskId]?.icon ?? '&#10003;';
+  const authorCls  = (entry.author ?? '').toLowerCase();
+  const diff       = daysBetween(entry.date, todayStr());
+  const when       = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
+  const noteLine   = linkedNote
+    ? `<div class="carelog-past-note">${escapeHtml(linkedNote.note)}</div>`
+    : '';
+
+  return `
+  <div class="carelog-past-row">
+    <span class="carelog-row-icon">${icon}</span>
+    <div class="carelog-past-meta">
+      <div class="carelog-past-main">
+        <span class="author-label ${authorCls}">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)}
+      </div>
+      ${noteLine}
+    </div>
+    <div class="carelog-past-date">${when}</div>
+  </div>`;
 }
 
 function renderExpandedTaskRow(plantId, task) {
@@ -1207,7 +1350,7 @@ function renderTaskCard(plantId, task) {
     html += `
         <div class="task-actions">
           <button class="btn btn-secondary" data-action="resume-task" data-plant="${plantId}" data-task="${task.id}">&#9654; Resume</button>
-          <button class="btn btn-ghost" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">Edit</button>
+          <button class="btn btn-ghost task-edit-icon-btn" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">&#9999;&#xFE0E;</button>
         </div>`;
   } else {
     const doneToday = task.lastDone === todayStr();
@@ -1218,7 +1361,7 @@ function renderTaskCard(plantId, task) {
             : `<button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>`
           }
           <button class="btn btn-secondary" data-action="reassign-task" data-plant="${plantId}" data-task="${task.id}">&#8644; ${escapeHtml(otherOwner)}</button>
-          <button class="btn btn-ghost" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">Edit</button>
+          <button class="btn btn-ghost task-edit-icon-btn" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">&#9999;&#xFE0E;</button>
         </div>`;
   }
 
@@ -2283,6 +2426,11 @@ async function handleEvent(e) {
 
     case 'plant-detail-tab':
       plantDetailTab = target.dataset.tab;
+      renderPlantDetail(state.plantId);
+      break;
+
+    case 'carelog-segment':
+      careLogSegment = target.dataset.segment;
       renderPlantDetail(state.plantId);
       break;
 

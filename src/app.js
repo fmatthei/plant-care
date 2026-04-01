@@ -545,8 +545,6 @@ async function markTaskDone(plantId, taskId) {
       date:                todayStr(),
     })
     .then(({ error }) => { if (error) console.error('markTaskDone care_log insert error:', error); });
-
-  renderPostTaskNoteSheet(plantId, taskId);
 }
 
 async function undoMarkTaskDone(plantId, taskId) {
@@ -887,7 +885,10 @@ function renderSchedule() {
     const doneToday = task.lastDone === today;
     const doneBtn = doneToday
       ? `<button class="sched-done-btn" data-action="schedule-undo-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Undo">↩️</button>`
-      : `<button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>`;
+      : `<span class="sched-done-btns">
+           <button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>
+           <button class="sched-done-btn" data-action="schedule-mark-done-with-note" data-plant="${plant.id}" data-task="${task.id}" title="Mark done + add note">📝</button>
+         </span>`;
     return `<div class="sched-task${extraClass ? ' ' + extraClass : ''}">
         <span class="sched-task-label">${cfg.icon} <strong>${escapeHtml(cfg.name)}</strong> · ${escapeHtml(plant.name)}${ownerTag}</span>
         ${doneBtn}
@@ -934,7 +935,10 @@ function renderSchedule() {
       const doneToday = task.lastDone === today;
       const overdueDoneBtn = doneToday
         ? `<button class="sched-done-btn" data-action="schedule-undo-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Undo">↩️</button>`
-        : `<button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>`;
+        : `<span class="sched-done-btns">
+             <button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>
+             <button class="sched-done-btn" data-action="schedule-mark-done-with-note" data-plant="${plant.id}" data-task="${task.id}" title="Mark done + add note">📝</button>
+           </span>`;
       html += `<div class="sched-task sched-task-overdue">
         <span class="sched-task-label">${cfg.icon} <strong>${escapeHtml(cfg.name)}</strong> · ${escapeHtml(plant.name)}${ownerTag} <span class="sched-overdue-days">(${daysAgo} day${daysAgo !== 1 ? 's' : ''} overdue)</span></span>
         ${overdueDoneBtn}
@@ -1245,7 +1249,7 @@ function renderCareLogUpcomingRow(task) {
 }
 
 function renderCareLogPastRow(entry, linkedNote) {
-  const icon       = TASK_CONFIG[entry.taskId]?.icon ?? '&#10003;';
+  const icon       = '✅';
   const authorCls  = (entry.author ?? '').toLowerCase();
   const diff       = daysBetween(entry.date, todayStr());
   const when       = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
@@ -1275,7 +1279,7 @@ function renderExpandedTaskRow(plantId, task) {
   const doneToday  = task.lastDone === todayStr();
 
   return `
-  <div class="expanded-task-row">
+  <div class="expanded-task-row" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">
     <div class="expanded-task-top">
       <span class="task-icon">${cfg.icon}</span>
       <div class="expanded-task-meta">
@@ -1288,7 +1292,8 @@ function renderExpandedTaskRow(plantId, task) {
     <div class="task-actions">
       ${doneToday
         ? `<button class="btn btn-warning" data-action="undo-mark-done" data-plant="${plantId}" data-task="${task.id}">&#8630; Undo</button>`
-        : `<button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>`
+        : `<button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>
+           <button class="btn btn-secondary" data-action="mark-done-with-note" data-plant="${plantId}" data-task="${task.id}">&#10003; + Note</button>`
       }
       <button class="btn btn-secondary" data-action="reassign-task" data-plant="${plantId}" data-task="${task.id}">&#8644; ${escapeHtml(otherOwner)}</button>
       <button class="btn btn-ghost" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">&#9999;&#xFE0E;</button>
@@ -1303,7 +1308,7 @@ function renderCompactTaskRow(plantId, task) {
   const { label: dueLabel, cls: dueCls } = dueLabelAndClass(task);
 
   return `
-  <div class="compact-task-row">
+  <div class="compact-task-row" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">
     <span class="task-icon">${cfg.icon}</span>
     <div class="compact-task-meta">
       <span class="task-name">${escapeHtml(cfg.name)}</span>
@@ -1311,7 +1316,7 @@ function renderCompactTaskRow(plantId, task) {
     </div>
     <span class="owner-dot" style="background:${escapeHtml(ownerColor)}" title="${escapeHtml(task.owner)}"></span>
     <span class="task-status-badge ${dueCls}">${escapeHtml(dueLabel)}</span>
-    <button class="task-edit-btn" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">&#9999;&#xFE0E;</button>
+    <span class="task-edit-chevron">&#8250;</span>
   </div>`;
 }
 
@@ -1358,7 +1363,8 @@ function renderTaskCard(plantId, task) {
         <div class="task-actions">
           ${doneToday
             ? `<button class="btn btn-warning" data-action="undo-mark-done" data-plant="${plantId}" data-task="${task.id}">&#8630; Undo</button>`
-            : `<button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>`
+            : `<button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>
+               <button class="btn btn-secondary" data-action="mark-done-with-note" data-plant="${plantId}" data-task="${task.id}">&#10003; + Note</button>`
           }
           <button class="btn btn-secondary" data-action="reassign-task" data-plant="${plantId}" data-task="${task.id}">&#8644; ${escapeHtml(otherOwner)}</button>
           <button class="btn btn-ghost task-edit-icon-btn" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">&#9999;&#xFE0E;</button>
@@ -2142,6 +2148,11 @@ async function handleEvent(e) {
       renderPlantDetail(state.plantId);
       break;
 
+    case 'mark-done-with-note':
+      markTaskDone(plantId, taskId);
+      renderPostTaskNoteSheet(plantId, taskId);
+      break;
+
     case 'undo-mark-done':
       undoMarkTaskDone(plantId, taskId);
       renderPlantDetail(state.plantId);
@@ -2150,6 +2161,11 @@ async function handleEvent(e) {
     case 'schedule-mark-done':
       markTaskDone(plantId, taskId);
       renderHome();
+      break;
+
+    case 'schedule-mark-done-with-note':
+      markTaskDone(plantId, taskId);
+      renderPostTaskNoteSheet(plantId, taskId);
       break;
 
     case 'schedule-undo-mark-done':

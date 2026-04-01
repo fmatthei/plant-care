@@ -722,13 +722,28 @@ function updatePlantInfo(plantId, updates) {
 // TOAST
 // ============================================================
 
-function showToast(message) {
+function showToast(message, opts = {}) {
   const toast = document.getElementById('toast');
   if (!toast) return;
-  toast.textContent = message;
+  toast.innerHTML = message;
+  toast.classList.toggle('toast--interactive', !!opts.interactive);
+  if (opts.data) {
+    Object.assign(toast.dataset, opts.data);
+  } else {
+    delete toast.dataset.action;
+    delete toast.dataset.plant;
+    delete toast.dataset.task;
+  }
   toast.classList.add('visible');
   clearTimeout(toast._hideTimeout);
-  toast._hideTimeout = setTimeout(() => toast.classList.remove('visible'), 2500);
+  toast._hideTimeout = setTimeout(() => toast.classList.remove('visible'), opts.duration ?? 2500);
+}
+
+function showDoneToast(plantId, taskId, taskName) {
+  showToast(
+    `&#10003; ${escapeHtml(taskName)} done &middot; <span class="toast-link">Add a note?</span>`,
+    { interactive: true, duration: 4000, data: { action: 'toast-add-note', plant: plantId, task: taskId } }
+  );
 }
 
 // ============================================================
@@ -1525,6 +1540,16 @@ async function handleChangePassword() {
   showToast('&#128274; Password updated!');
 }
 
+function renderOwnerPills(selectedOwner) {
+  return membersCache.map(m => {
+    const color = m.color ?? '#2e7d51';
+    const initial = (m.display_name ?? '?')[0].toUpperCase();
+    const sel = m.display_name === selectedOwner ? 'selected' : '';
+    return `<div class="owner-pill ${sel}" data-action="sheet-set-owner" data-owner="${escapeHtml(m.display_name)}" style="--pill-color:${escapeHtml(color)}">` +
+      `<span class="owner-pill-initial">${escapeHtml(initial)}</span>${escapeHtml(m.display_name)}</div>`;
+  }).join('');
+}
+
 function renderEditTaskSheet(plantId, taskId) {
   const task = getTask(plantId, taskId);
   if (!task) return;
@@ -1534,9 +1559,6 @@ function renderEditTaskSheet(plantId, taskId) {
 
   state.sheetMode = 'edit-task';
   state.sheetData = { plantId, taskId };
-
-  const matuSel = task.owner === 'Matu' ? 'selected' : '';
-  const valeSel = task.owner === 'Vale' ? 'selected' : '';
 
   const weekdayBtns = WEEKDAY_NAMES.map((name, i) => {
     const sel = (task.weekdays ?? []).includes(i) ? 'selected' : '';
@@ -1553,6 +1575,11 @@ function renderEditTaskSheet(plantId, taskId) {
       <label class="form-label">Task Name</label>
       <input type="text" class="form-input" id="sheet-task-name" value="${escapeHtml(task.name ?? '')}">
     </div>` : ''}
+
+    <div class="form-group">
+      <label class="form-label">Owner</label>
+      <div class="owner-pill-group">${renderOwnerPills(task.owner)}</div>
+    </div>
 
     <div class="form-group">
       <label class="form-label">Recurrence</label>
@@ -1582,14 +1609,6 @@ function renderEditTaskSheet(plantId, taskId) {
     </div>
 
     <div class="form-group">
-      <label class="form-label">Owner</label>
-      <div class="owner-toggle">
-        <div class="owner-option matu ${matuSel}" data-action="sheet-set-owner" data-owner="Matu">Matu</div>
-        <div class="owner-option vale ${valeSel}" data-action="sheet-set-owner" data-owner="Vale">Vale</div>
-      </div>
-    </div>
-
-    <div class="form-group">
       <label class="form-label">Note / Reminder</label>
       <textarea class="form-textarea" id="sheet-note" placeholder="e.g. Check for pests, rotate pot...">${escapeHtml(task.note ?? '')}</textarea>
     </div>
@@ -1599,19 +1618,17 @@ function renderEditTaskSheet(plantId, taskId) {
       <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-last-done" value="${task.lastDone ?? ''}"></div>
     </div>
 
-    <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
-      <button class="btn btn-primary" data-action="sheet-save-task">Save</button>
-    </div>
-
-    <div class="sheet-divider"></div>
-    <div class="sheet-danger">
-      <button class="btn ${isPaused ? 'btn-secondary' : 'btn-warning'}" data-action="${isPaused ? 'resume-task' : 'pause-task'}" data-plant="${plantId}" data-task="${taskId}">
-        ${isPaused ? '&#9654; Resume Task' : '&#9646;&#9646; Pause Task'}
-      </button>
-      <button class="btn btn-danger" data-action="delete-task" data-plant="${plantId}" data-task="${taskId}">
-        Delete Task
-      </button>
+    <div class="sheet-footer-sticky">
+      <div class="sheet-actions">
+        <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
+        <button class="btn btn-primary" data-action="sheet-save-task">Save</button>
+      </div>
+      <div class="sheet-danger-links">
+        <button class="sheet-danger-link pause" data-action="${isPaused ? 'resume-task' : 'pause-task'}" data-plant="${plantId}" data-task="${taskId}">
+          ${isPaused ? 'Resume Task' : 'Pause Task'}
+        </button>
+        <button class="sheet-danger-link delete" data-action="delete-task" data-plant="${plantId}" data-task="${taskId}">Delete Task</button>
+      </div>
     </div>
   `);
 }
@@ -1667,11 +1684,7 @@ function renderAddTaskStep2(plantId, typeKey) {
     `<button class="weekday-btn" data-action="sheet-toggle-weekday" data-day="${i}">${name}</button>`
   ).join('');
 
-  const ownerOptions = Object.keys(USERS).map(name => {
-    const sel = name === defaultOwner ? 'selected' : '';
-    const cls = name.toLowerCase();
-    return `<div class="owner-option ${cls} ${sel}" data-action="sheet-set-owner" data-owner="${escapeHtml(name)}">${escapeHtml(name)}</div>`;
-  }).join('');
+  const ownerPillsHtml = renderOwnerPills(defaultOwner);
 
   const titleHtml = isCustom
     ? `<div class="sheet-title">Custom Task</div>`
@@ -1696,6 +1709,10 @@ function renderAddTaskStep2(plantId, typeKey) {
   openSheet(`
     ${titleHtml}
     ${customFields}
+    <div class="form-group">
+      <label class="form-label">Owner</label>
+      <div class="owner-pill-group">${ownerPillsHtml}</div>
+    </div>
     <div class="form-group">
       <label class="form-label">Recurrence</label>
       <div class="recurrence-type-toggle">
@@ -1727,15 +1744,11 @@ function renderAddTaskStep2(plantId, typeKey) {
         <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-one-off" value="${todayVal}"></div>
       </div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Owner</label>
-      <div class="owner-toggle">
-        ${ownerOptions}
+    <div class="sheet-footer-sticky">
+      <div class="sheet-actions">
+        <button class="btn btn-ghost" data-action="add-task-back" data-plant="${plantId}">&#8592; Back</button>
+        <button class="btn btn-primary" data-action="sheet-save-new-task">Add Task</button>
       </div>
-    </div>
-    <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="add-task-back" data-plant="${plantId}">&#8592; Back</button>
-      <button class="btn btn-primary" data-action="sheet-save-new-task">Add Task</button>
     </div>
   `);
 }
@@ -1795,14 +1808,14 @@ function renderEditPlantSheet(plantId) {
       <div class="date-input-wrapper" style="cursor:pointer" onclick="this.querySelector('input').click()"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-acquired-date" value="${plant.dateAcquired ?? ''}"></div>
       <p class="form-hint">Track how long you've cared for it</p>
     </div>
-    <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
-      <button class="btn btn-primary" data-action="sheet-save-plant">Save</button>
-    </div>
-
-    <div class="sheet-divider"></div>
-    <div class="sheet-danger">
-      <button class="btn btn-danger" data-action="delete-plant" data-plant="${plantId}">Delete Plant</button>
+    <div class="sheet-footer-sticky">
+      <div class="sheet-actions">
+        <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
+        <button class="btn btn-primary" data-action="sheet-save-plant">Save</button>
+      </div>
+      <div class="sheet-danger-links">
+        <button class="sheet-danger-link delete" data-action="delete-plant" data-plant="${plantId}">Delete Plant</button>
+      </div>
     </div>
   `);
 }
@@ -1949,7 +1962,7 @@ async function handleSaveNewTask() {
                         :                           'sheet-first-due-one-off';
   const firstDueVal = document.getElementById(firstDueInputId)?.value || null;
 
-  const selectedOwner = document.querySelector('#sheet .owner-option.selected');
+  const selectedOwner = document.querySelector('#sheet .owner-pill.selected, #sheet .owner-option.selected');
   const owner = selectedOwner?.dataset.owner ?? Object.keys(USERS)[0];
 
   const plant = getPlant(pid);
@@ -2143,10 +2156,22 @@ async function handleEvent(e) {
       break;
     }
 
-    case 'mark-done':
+    case 'mark-done': {
+      const _doneTask = getTask(plantId, taskId);
+      const _doneName = getTaskConfig(_doneTask)?.name ?? _doneTask?.name ?? 'Task';
       markTaskDone(plantId, taskId);
       renderPlantDetail(state.plantId);
+      showDoneToast(plantId, taskId, _doneName);
       break;
+    }
+
+    case 'toast-add-note': {
+      const pid = target.dataset.plant;
+      const tid = target.dataset.task;
+      document.getElementById('toast')?.classList.remove('visible');
+      if (pid && tid) renderPostTaskNoteSheet(pid, tid);
+      break;
+    }
 
     case 'mark-done-with-note':
       markTaskDone(plantId, taskId);
@@ -2158,10 +2183,14 @@ async function handleEvent(e) {
       renderPlantDetail(state.plantId);
       break;
 
-    case 'schedule-mark-done':
+    case 'schedule-mark-done': {
+      const _schedTask = getTask(plantId, taskId);
+      const _schedName = getTaskConfig(_schedTask)?.name ?? _schedTask?.name ?? 'Task';
       markTaskDone(plantId, taskId);
       renderHome();
+      showDoneToast(plantId, taskId, _schedName);
       break;
+    }
 
     case 'schedule-mark-done-with-note':
       markTaskDone(plantId, taskId);
@@ -2317,7 +2346,7 @@ async function handleEvent(e) {
       break;
 
     case 'sheet-set-owner':
-      document.querySelectorAll('#sheet .owner-option').forEach(btn => btn.classList.remove('selected'));
+      document.querySelectorAll('#sheet .owner-option, #sheet .owner-pill').forEach(btn => btn.classList.remove('selected'));
       target.classList.add('selected');
       break;
 
@@ -2354,7 +2383,7 @@ async function handleEvent(e) {
         if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
       }
 
-      const selectedOwner = document.querySelector('#sheet .owner-option.selected');
+      const selectedOwner = document.querySelector('#sheet .owner-pill.selected, #sheet .owner-option.selected');
       const lastDoneVal = document.getElementById('sheet-last-done')?.value;
       const overrideVal = document.getElementById('sheet-next-due-override')?.value;
 
@@ -2464,6 +2493,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('app').addEventListener('click', handleEvent);
   document.getElementById('sheet').addEventListener('click', handleEvent);
   document.getElementById('menu-panel').addEventListener('click', handleEvent);
+  document.getElementById('toast').addEventListener('click', handleEvent);
   document.getElementById('overlay').addEventListener('click', closeSheet);
   document.getElementById('menu-overlay').addEventListener('click', closeMenu);
   document.addEventListener('keydown', e => {

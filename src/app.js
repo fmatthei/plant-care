@@ -2668,50 +2668,29 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function registerServiceWorker() {
-  console.log('[SW] registerServiceWorker() called — page load');
-  if (!('serviceWorker' in navigator)) {
-    console.warn('[SW] serviceWorker not supported in this browser');
-    return;
-  }
+  if (!('serviceWorker' in navigator)) return;
   try {
     swRegistration = await navigator.serviceWorker.register('/sw.js');
-    console.log('[SW] registered — scope:', swRegistration.scope);
   } catch (err) {
     console.error('[SW] registration failed:', err);
   }
 }
 
 async function subscribeToPush() {
-  console.log('[Push] subscribeToPush() called — swRegistration:', !!swRegistration, '| PushManager:', 'PushManager' in window);
-  if (!swRegistration || !('PushManager' in window)) {
-    console.warn('[Push] early exit — missing swRegistration or PushManager');
-    return;
-  }
+  if (!swRegistration || !('PushManager' in window)) return;
 
   let permission = Notification.permission;
-  console.log('[Push] Notification.permission:', permission);
   if (permission === 'default') permission = await Notification.requestPermission();
-  console.log('[Push] permission after prompt:', permission);
-  if (permission !== 'granted') {
-    console.warn('[Push] early exit — permission not granted:', permission);
-    return;
-  }
+  if (permission !== 'granted') return;
 
   try {
-    console.log('[Push] calling pushManager.subscribe()…');
     const subscription = await swRegistration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     });
-    console.log('[Push] subscription obtained:', subscription.endpoint);
 
-    console.log('[Push] looking up member — activeUser:', activeUser, '| membersCache:', membersCache.map(m => m.display_name));
     const member = membersCache.find(m => m.display_name === activeUser);
-    if (!member) {
-      console.warn('[Push] early exit — member not found for activeUser:', activeUser);
-      return;
-    }
-    console.log('[Push] member found — id:', member.id, '| upserting to push_subscriptions…');
+    if (!member) return;
 
     const { error } = await supabaseClient
       .from('push_subscriptions')
@@ -2719,11 +2698,7 @@ async function subscribeToPush() {
         { household_member_id: member.id, subscription: subscription.toJSON() },
         { onConflict: 'household_member_id' }
       );
-    if (error) {
-      console.error('[Push] upsert error:', error);
-    } else {
-      console.log('[Push] upsert successful');
-    }
+    if (error) console.error('[Push] upsert error:', error);
   } catch (err) {
     console.error('[Push] subscription failed:', err);
   }

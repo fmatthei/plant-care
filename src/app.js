@@ -103,6 +103,7 @@ let careLogSegment = 'full';
 let membersCache = []; // household_members rows: { id, display_name }
 let householdId = null;
 let activityFeed = []; // merged care_log + notes, top 5 across all plants
+let currentUserId = null;
 
 // ============================================================
 // ACTIVE USER
@@ -118,6 +119,7 @@ function setActiveUser(name) {
 }
 
 function renderLoginScreen(errorMsg) {
+  hideFeedbackBtn();
   document.getElementById('app').innerHTML = `
     <div class="user-select-screen">
       <h2>Plant Care</h2>
@@ -151,6 +153,7 @@ async function handleLogin() {
 }
 
 function renderPasswordResetScreen(errorMsg) {
+  hideFeedbackBtn();
   document.getElementById('app').innerHTML = `
     <div class="user-select-screen">
       <h2>Set New Password</h2>
@@ -192,6 +195,7 @@ async function handlePasswordReset() {
 }
 
 function renderUserSelect() {
+  hideFeedbackBtn();
   document.getElementById('app').innerHTML = `
     <div class="user-select-screen">
       <h2>Who are you?</h2>
@@ -230,6 +234,7 @@ async function loadFromSupabase() {
   // 1. Get the logged-in user
   const { data: { user } } = await supabaseClient.auth.getUser();
   if (!user) return;
+  currentUserId = user.id;
 
   // 2. Look up household_id from household_members
   const { data: member } = await supabaseClient
@@ -2158,6 +2163,7 @@ async function handleSaveNewTask() {
 
 function navigateTo(view, plantId = null) {
   closeSheet();
+  showFeedbackBtn();
   state.view = view;
   state.plantId = plantId;
   if (view === 'home') renderHome();
@@ -2621,6 +2627,41 @@ async function handleEvent(e) {
 }
 
 // ============================================================
+// FEEDBACK FAB
+// ============================================================
+
+function showFeedbackBtn() {
+  document.getElementById('feedback-fab')?.classList.remove('hidden');
+}
+
+function hideFeedbackBtn() {
+  document.getElementById('feedback-fab')?.classList.add('hidden');
+}
+
+function handleFeedbackTap() {
+  const key = `feedbackCaseCount_${currentUserId ?? 'anon'}`;
+  const count = (parseInt(localStorage.getItem(key) ?? '0', 10) || 0) + 1;
+  localStorage.setItem(key, String(count));
+
+  const displayName = activeUser ?? membersCache.find(m => m.display_name)?.display_name ?? 'User';
+  const caseNum = String(count).padStart(3, '0');
+  const buildTime = typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'dev';
+
+  const message = [
+    '[Plant Care Feedback]',
+    `Case: ${displayName}-#${caseNum} · PC-${Date.now()}`,
+    `Build: ${buildTime}`,
+    `Device: ${navigator.userAgent}`,
+    '',
+    'What happened:',
+  ].join('\n');
+
+  try { navigator.clipboard.writeText(message); } catch (_) {}
+
+  window.open('https://chat.whatsapp.com/KTRpRjdxYmI8JagRD8oBUE', '_blank', 'noopener');
+}
+
+// ============================================================
 // INIT
 // ============================================================
 
@@ -2631,6 +2672,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('toast').addEventListener('click', handleEvent);
   document.getElementById('overlay').addEventListener('click', closeSheet);
   document.getElementById('menu-overlay').addEventListener('click', closeMenu);
+  document.getElementById('feedback-fab').addEventListener('click', handleFeedbackTap);
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && document.getElementById('sheet').classList.contains('active')) closeSheet();
   });

@@ -17,6 +17,8 @@ const TASK_CONFIG = {
 
 const WEEKDAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
+const VAPID_PUBLIC_KEY = 'BLVM0ZnxinWDENKHaZ5QslyAmUJNjf-9w4q3Sxc0mFuVKS19lVLePh39yuaZIc_a_PX5PPnIECGUFeQl2XkOpWQ';
+
 const CARE_VERB = {
   water:     'watered',
   refill:    'refilled',
@@ -104,6 +106,7 @@ let membersCache = []; // household_members rows: { id, display_name }
 let householdId = null;
 let activityFeed = []; // merged care_log + notes, top 5 across all plants
 let currentUserId = null;
+let swRegistration = null;
 
 // ============================================================
 // ACTIVE USER
@@ -2284,6 +2287,7 @@ async function handleEvent(e) {
       const user = target.dataset.user;
       setActiveUser(user);
       navigateTo('home');
+      subscribeToPush();
       break;
     }
 
@@ -2627,6 +2631,53 @@ async function handleEvent(e) {
 }
 
 // ============================================================
+// PUSH NOTIFICATIONS
+// ============================================================
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    swRegistration = await navigator.serviceWorker.register('/sw.js');
+  } catch (err) {
+    console.error('SW registration failed:', err);
+  }
+}
+
+async function subscribeToPush() {
+  if (!swRegistration || !('PushManager' in window)) return;
+
+  let permission = Notification.permission;
+  if (permission === 'default') permission = await Notification.requestPermission();
+  if (permission !== 'granted') return;
+
+  try {
+    const subscription = await swRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+
+    const member = membersCache.find(m => m.display_name === activeUser);
+    if (!member) return;
+
+    await supabaseClient
+      .from('push_subscriptions')
+      .upsert(
+        { household_member_id: member.id, subscription: subscription.toJSON() },
+        { onConflict: 'household_member_id' }
+      );
+  } catch (err) {
+    console.error('Push subscription failed:', err);
+  }
+}
+
+// ============================================================
 // FEEDBACK FAB
 // ============================================================
 
@@ -2692,11 +2743,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     await loadFromSupabase();
+    await registerServiceWorker();
 
     const saved = getActiveUser();
     if (saved) {
       activeUser = saved;
       navigateTo('home');
+      subscribeToPush();
     } else {
       renderUserSelect();
     }

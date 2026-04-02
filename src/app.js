@@ -17,6 +17,28 @@ const TASK_CONFIG = {
 
 const WEEKDAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
+const CARE_VERB = {
+  water:     'watered',
+  refill:    'refilled',
+  fertilize: 'fertilized',
+  check:     'checked',
+  repot:     'repotted',
+  prune:     'pruned',
+  pest:      'checked pests on',
+  rotate:    'rotated',
+};
+
+const CARE_ICON = {
+  water:     '💧',
+  refill:    '🪣',
+  fertilize: '🌱',
+  check:     '🔍',
+  repot:     '🪴',
+  prune:     '✂️',
+  pest:      '🐛',
+  rotate:    '🔄',
+};
+
 const CUSTOM_ICONS = ['🌿', '💦', '🧴', '🌊', '✂️', '🔍', '🪴', '🐛', '🔄', '🌞', '🧪', '🌸', '🍃', '🌼', '🌡️', '🪥'];
 
 const USERS = {
@@ -80,6 +102,7 @@ let plantDetailTab = 'summary';
 let careLogSegment = 'full';
 let membersCache = []; // household_members rows: { id, display_name }
 let householdId = null;
+let activityFeed = []; // merged care_log + notes, top 5 across all plants
 
 // ============================================================
 // ACTIVE USER
@@ -239,6 +262,7 @@ async function loadFromSupabase() {
   if (plantRows.length === 0) {
     plants = [];
     notes  = [];
+    activityFeed = [];
     return;
   }
 
@@ -328,6 +352,53 @@ async function loadFromSupabase() {
       careLog,
     };
   });
+
+  await loadActivityFeed();
+}
+
+async function loadActivityFeed() {
+  if (!householdId || plants.length === 0) { activityFeed = []; return; }
+
+  const plantIds = plants.map(p => p.id);
+  const plantMap = Object.fromEntries(plants.map(p => [p.id, p]));
+  const ownerMap = Object.fromEntries(membersCache.map(m => [m.id, m.display_name]));
+
+  const [{ data: careRows }, { data: noteRows }] = await Promise.all([
+    supabaseClient
+      .from('care_log')
+      .select('plant_id, task_name, task_type, household_member_id, created_at')
+      .in('plant_id', plantIds)
+      .order('created_at', { ascending: false })
+      .limit(10),
+    supabaseClient
+      .from('notes')
+      .select('plant_id, note, household_member_id, created_at')
+      .in('plant_id', plantIds)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(10),
+  ]);
+
+  const careItems = (careRows ?? []).map(r => ({
+    type:      'care',
+    sortKey:   r.created_at,
+    plantName: plantMap[r.plant_id]?.name ?? '',
+    taskName:  r.task_name,
+    taskType:  r.task_type,
+    member:    ownerMap[r.household_member_id] ?? '',
+  }));
+
+  const noteItems = (noteRows ?? []).map(r => ({
+    type:      'note',
+    sortKey:   r.created_at,
+    plantName: plantMap[r.plant_id]?.name ?? '',
+    note:      r.note,
+    member:    ownerMap[r.household_member_id] ?? '',
+  }));
+
+  activityFeed = [...careItems, ...noteItems]
+    .sort((a, b) => (b.sortKey ?? '').localeCompare(a.sortKey ?? ''))
+    .slice(0, 5);
 }
 
 // ============================================================
@@ -350,6 +421,22 @@ function todayStr() {
 function daysBetween(a, b) {
   const msPerDay = 1000 * 60 * 60 * 24;
   return Math.round((new Date(b) - new Date(a)) / msPerDay);
+}
+
+// Formats an ISO timestamp as "2h ago", "Yesterday", "Mar 28", etc.
+function formatActivityTime(isoStr) {
+  if (!isoStr) return '';
+  const date = new Date(isoStr);
+  const diffMs = Date.now() - date.getTime();
+  const diffMins  = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  if (diffMins < 60)  return diffMins <= 1 ? 'Just now' : `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const entry = new Date(date); entry.setHours(0, 0, 0, 0);
+  const dayDiff = Math.round((today - entry) / 86400000);
+  if (dayDiff === 1) return 'Yesterday';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function addDays(dateStr, n) {
@@ -545,6 +632,8 @@ async function markTaskDone(plantId, taskId) {
       date:                todayStr(),
     })
     .then(({ error }) => { if (error) console.error('markTaskDone care_log insert error:', error); });
+
+  loadActivityFeed().then(() => { if (state.view === 'home') renderHome(); });
 }
 
 async function undoMarkTaskDone(plantId, taskId) {
@@ -691,6 +780,7 @@ async function addNote(plantId, noteText, taskId) {
     createdAt: inserted.created_at,
     taskId:    inserted.task_id ?? null,
   });
+  await loadActivityFeed();
 }
 
 async function deleteNote(noteId) {
@@ -780,6 +870,41 @@ function renderHeaderRight() {
     </div>`;
 }
 
+function renderHomeActivityFeed() {
+  if (activityFeed.length === 0) return '';
+
+  let html = `
+  <div class="home-section-label">Recent activity</div>
+  <div class="home-activity-feed"><div class="activity-list">`;
+
+  for (const item of activityFeed) {
+    const time = formatActivityTime(item.sortKey);
+    if (item.type === 'care') {
+      const verb = CARE_VERB[item.taskType];
+      const icon = CARE_ICON[item.taskType] ?? '🌿';
+      const text = verb
+        ? `${escapeHtml(item.member)} ${escapeHtml(verb)} ${escapeHtml(item.plantName)}`
+        : `${escapeHtml(item.member)} · ${escapeHtml(item.taskName)} — ${escapeHtml(item.plantName)}`;
+      html += `
+      <div class="activity-row">
+        <span class="activity-icon">${icon}</span>
+        <span class="activity-text">${text}</span>
+        <span class="activity-time">${time}</span>
+      </div>`;
+    } else {
+      html += `
+      <div class="activity-row">
+        <span class="activity-icon">📝</span>
+        <span class="activity-text">${escapeHtml(item.member)} · <span class="activity-note-preview">${escapeHtml(item.note)}</span> — ${escapeHtml(item.plantName)}</span>
+        <span class="activity-time">${time}</span>
+      </div>`;
+    }
+  }
+
+  html += `</div></div>`;
+  return html;
+}
+
 function renderHome() {
   let html = `
     <div class="app-header">
@@ -801,6 +926,8 @@ function renderHome() {
       &#9888;&#65039; ${totalDue} task${totalDue !== 1 ? 's' : ''} due today
     </div>`;
     }
+
+    html += renderHomeActivityFeed();
 
     if (plants.length === 0) {
       html += `

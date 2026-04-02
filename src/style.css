@@ -147,6 +147,20 @@ body {
   color: var(--due);
 }
 
+/* ===== Home Activity Feed ===== */
+.home-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  padding: 14px 16px 6px;
+}
+
+.home-activity-feed {
+  padding: 0 16px 4px;
+}
+
 /* ===== Plant Cards (Home) ===== */
 .plants-list {
   padding: 14px 16px;

@@ -932,10 +932,6 @@ function renderHomeActivityFeed() {
 function shouldShowPushBanner() {
   if (!('Notification' in window)) return false;
   if (Notification.permission === 'denied') return false;
-  if (Notification.permission === 'granted') {
-    localStorage.setItem(`push_accepted_${activeUser}`, '1');
-    return false;
-  }
   return !localStorage.getItem(`push_accepted_${activeUser}`);
 }
 
@@ -2319,9 +2315,6 @@ async function handleEvent(e) {
 
     case 'enable-notifications': {
       await subscribeToPush();
-      if (Notification.permission === 'granted') {
-        localStorage.setItem(`push_accepted_${activeUser}`, '1');
-      }
       renderHome();
       break;
     }
@@ -2715,7 +2708,11 @@ async function subscribeToPush() {
         { household_member_id: member.id, subscription: subscription.toJSON() },
         { onConflict: 'household_member_id' }
       );
-    if (error) console.error('[Push] upsert error:', error);
+    if (error) {
+      console.error('[Push] upsert error:', error);
+    } else {
+      localStorage.setItem(`push_accepted_${activeUser}`, '1');
+    }
   } catch (err) {
     console.error('[Push] subscription failed:', err);
   }

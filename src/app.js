@@ -913,6 +913,16 @@ function renderHomeActivityFeed() {
   return html;
 }
 
+function shouldShowPushBanner() {
+  if (!('Notification' in window)) return false;
+  if (Notification.permission === 'denied') return false;
+  if (Notification.permission === 'granted') {
+    localStorage.setItem(`push_accepted_${activeUser}`, '1');
+    return false;
+  }
+  return !localStorage.getItem(`push_accepted_${activeUser}`);
+}
+
 function renderHome() {
   let html = `
     <div class="app-header">
@@ -932,6 +942,14 @@ function renderHome() {
       html += `
     <div class="due-banner">
       &#9888;&#65039; ${totalDue} task${totalDue !== 1 ? 's' : ''} due today
+    </div>`;
+    }
+
+    if (shouldShowPushBanner()) {
+      html += `
+    <div class="push-banner">
+      <span class="push-banner-text">Enable notifications to stay in sync with your household</span>
+      <button class="push-banner-btn" data-action="enable-notifications">Enable</button>
     </div>`;
     }
 
@@ -2283,11 +2301,19 @@ async function handleEvent(e) {
       break;
     }
 
+    case 'enable-notifications': {
+      await subscribeToPush();
+      if (Notification.permission === 'granted') {
+        localStorage.setItem(`push_accepted_${activeUser}`, '1');
+      }
+      renderHome();
+      break;
+    }
+
     case 'select-user': {
       const user = target.dataset.user;
       setActiveUser(user);
       navigateTo('home');
-      subscribeToPush();
       break;
     }
 
@@ -2776,7 +2802,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (saved) {
       activeUser = saved;
       navigateTo('home');
-      subscribeToPush();
     } else {
       renderUserSelect();
     }

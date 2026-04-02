@@ -2314,6 +2314,7 @@ async function handleEvent(e) {
     }
 
     case 'enable-notifications': {
+      console.log('enable-notifications handler reached');
       await subscribeToPush();
       renderHome();
       break;

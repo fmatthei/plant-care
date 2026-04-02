@@ -2705,6 +2705,7 @@ async function subscribeToPush() {
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     });
 
+    if (membersCache.length === 0) await loadFromSupabase();
     const member = membersCache.find(m => m.display_name === activeUser);
     if (!member) return;
 

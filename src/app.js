@@ -2649,9 +2649,8 @@ function handleFeedbackTap() {
 
   const message = [
     '[Plant Care Feedback]',
-    `Case: ${displayName}-#${caseNum} · PC-${Date.now()}`,
+    `Case: ${displayName}-#${caseNum}`,
     `Build: ${buildTime}`,
-    `Device: ${navigator.userAgent}`,
     '',
     'What happened:',
   ].join('\n');

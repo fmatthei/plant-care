@@ -2642,11 +2642,16 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function registerServiceWorker() {
-  if (!('serviceWorker' in navigator)) return;
+  console.log('[SW] registerServiceWorker() called');
+  if (!('serviceWorker' in navigator)) {
+    console.warn('[SW] serviceWorker not supported in this browser');
+    return;
+  }
   try {
     swRegistration = await navigator.serviceWorker.register('/sw.js');
+    console.log('[SW] registered — scope:', swRegistration.scope);
   } catch (err) {
-    console.error('SW registration failed:', err);
+    console.error('[SW] registration failed:', err);
   }
 }
 
@@ -2743,6 +2748,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     await loadFromSupabase();
+    console.log('[SW] loadFromSupabase() complete, registering SW…');
     await registerServiceWorker();
 
     const saved = getActiveUser();

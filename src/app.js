@@ -641,6 +641,22 @@ async function markTaskDone(plantId, taskId) {
     })
     .then(({ error }) => { if (error) console.error('markTaskDone care_log insert error:', error); });
 
+  fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/notify-care-log`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({
+      care_log_id:  null,
+      plant_name:   plant.name,
+      task_name:    taskCfg.name,
+      task_type:    taskCfg.type,
+      actor_name:   activeUser,
+      household_id: householdId,
+    }),
+  }).catch(() => {});
+
   loadActivityFeed().then(() => { if (state.view === 'home') renderHome(); });
 }
 

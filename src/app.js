@@ -2656,9 +2656,7 @@ function handleFeedbackTap() {
     'What happened:',
   ].join('\n');
 
-  try { navigator.clipboard.writeText(message); } catch (_) {}
-
-  window.open('https://chat.whatsapp.com/KTRpRjdxYmI8JagRD8oBUE', '_blank', 'noopener');
+  window.open(`https://wa.me/56994343285?text=${encodeURIComponent(message)}`, '_blank', 'noopener');
 }
 
 // ============================================================

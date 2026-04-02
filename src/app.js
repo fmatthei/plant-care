@@ -1604,9 +1604,9 @@ function renderEditTaskSheet(plantId, taskId) {
     </div>
 
     <div class="form-group">
-      <label class="form-label">Override Next Due Date</label>
+      <label class="form-label">Next due date</label>
       <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-next-due-override" value="${task.nextDueOverride ?? ''}"></div>
-      <div class="form-hint">Leave empty to use automatic calculation</div>
+      <div class="form-hint">Leave empty to calculate automatically</div>
     </div>
 
     <div class="form-group">

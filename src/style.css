@@ -64,6 +64,8 @@ body {
   --soon-bg: #fff3e0;
   --ok: #1b5e20;
   --ok-bg: #e8f5e9;
+
+  --header-height: 62px;
 }
 
 /* ===== App Container ===== */
@@ -78,7 +80,8 @@ body {
 .app-header {
   background: var(--primary);
   color: white;
-  padding: 14px 16px;
+  height: var(--header-height);
+  padding: 0 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1124,7 +1127,7 @@ body {
   border-bottom: 1px solid var(--border);
   padding: 0 16px;
   position: sticky;
-  top: 62px;
+  top: var(--header-height);
   z-index: 9;
 }
 
@@ -1753,7 +1756,7 @@ body {
   border-bottom: 1px solid var(--border);
   padding: 0 4px;
   position: sticky;
-  top: 62px;
+  top: var(--header-height);
   z-index: 9;
 }
 

@@ -2642,7 +2642,7 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function registerServiceWorker() {
-  console.log('[SW] registerServiceWorker() called');
+  console.log('[SW] registerServiceWorker() called — page load');
   if (!('serviceWorker' in navigator)) {
     console.warn('[SW] serviceWorker not supported in this browser');
     return;
@@ -2719,6 +2719,8 @@ function handleFeedbackTap() {
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+  registerServiceWorker();
+
   document.getElementById('app').addEventListener('click', handleEvent);
   document.getElementById('sheet').addEventListener('click', handleEvent);
   document.getElementById('menu-panel').addEventListener('click', handleEvent);
@@ -2748,8 +2750,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     await loadFromSupabase();
-    console.log('[SW] loadFromSupabase() complete, registering SW…');
-    await registerServiceWorker();
 
     const saved = getActiveUser();
     if (saved) {

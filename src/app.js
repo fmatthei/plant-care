@@ -103,6 +103,7 @@ let scheduleShowAll = false;
 let plantDetailTab = 'summary';
 let careLogSegment = 'full';
 let careLogMode = 'tasks'; // 'tasks' | 'all'
+let careLogFiltersOpen = false;
 let plantActivityLogCache = { plantId: null, entries: [] };
 let membersCache = []; // household_members rows: { id, display_name }
 let householdId = null;
@@ -447,6 +448,10 @@ function formatActivityTime(isoStr) {
   const dayDiff = Math.round((today - entry) / 86400000);
   if (dayDiff === 1) return 'Yesterday';
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function isNonDefaultCareLog() {
+  return careLogSegment !== 'full' || careLogMode !== 'tasks';
 }
 
 function formatCareLogTime(isoStr) {
@@ -1427,11 +1432,35 @@ function renderNotesTab(plant) {
 
 function renderCareLogTab(plant) {
   let html = `
-  <div class="carelog-segmented">
-    <button class="carelog-seg-btn${careLogSegment === 'past'     ? ' active' : ''}" data-action="carelog-segment" data-segment="past">Past</button>
-    <button class="carelog-seg-btn${careLogSegment === 'upcoming' ? ' active' : ''}" data-action="carelog-segment" data-segment="upcoming">Upcoming</button>
-    <button class="carelog-seg-btn${careLogSegment === 'full'     ? ' active' : ''}" data-action="carelog-segment" data-segment="full">Full Log</button>
-  </div>`;
+  <div class="carelog-filter-row">
+    <button class="carelog-filter-btn${isNonDefaultCareLog() ? ' active' : ''}" data-action="carelog-toggle-filters">&#9776; Filters${isNonDefaultCareLog() ? ' &#9679;' : ''}</button>
+  </div>
+  ${careLogFiltersOpen ? `
+  <div class="carelog-filter-panel">
+    <div class="carelog-filter-group">
+      <div class="carelog-filter-group-header">
+        <div class="carelog-filter-group-icon carelog-filter-icon-time">&#128197;</div>
+        <div class="carelog-filter-group-title">Time range</div>
+        <div class="carelog-filter-group-desc">What period to show</div>
+      </div>
+      <div class="carelog-filter-seg">
+        <button class="carelog-seg-btn${careLogSegment === 'past'     ? ' active' : ''}" data-action="carelog-segment" data-segment="past">Past</button>
+        <button class="carelog-seg-btn${careLogSegment === 'full'     ? ' active' : ''}" data-action="carelog-segment" data-segment="full">Full log</button>
+        <button class="carelog-seg-btn${careLogSegment === 'upcoming' ? ' active' : ''}" data-action="carelog-segment" data-segment="upcoming">Upcoming</button>
+      </div>
+    </div>
+    <div class="carelog-filter-group carelog-filter-group-bordered">
+      <div class="carelog-filter-group-header">
+        <div class="carelog-filter-group-icon carelog-filter-icon-type">&#128203;</div>
+        <div class="carelog-filter-group-title">Activity type</div>
+        <div class="carelog-filter-group-desc">What actions to include</div>
+      </div>
+      <div class="carelog-filter-seg">
+        <button class="carelog-seg-btn${careLogMode === 'tasks' ? ' active' : ''}" data-action="carelog-mode" data-mode="tasks">Tasks only</button>
+        <button class="carelog-seg-btn${careLogMode === 'all'   ? ' active' : ''}" data-action="carelog-mode" data-mode="all">All activity</button>
+      </div>
+    </div>
+  </div>` : ''}`;
 
   const showUpcoming = careLogSegment === 'upcoming' || careLogSegment === 'full';
   const showPast     = careLogSegment === 'past'     || careLogSegment === 'full';
@@ -1464,12 +1493,6 @@ function renderCareLogTab(plant) {
   }
 
   if (showPast) {
-    html += `
-    <div class="carelog-segmented carelog-mode-segmented">
-      <button class="carelog-seg-btn${careLogMode === 'tasks' ? ' active' : ''}" data-action="carelog-mode" data-mode="tasks">Tasks only</button>
-      <button class="carelog-seg-btn${careLogMode === 'all'   ? ' active' : ''}" data-action="carelog-mode" data-mode="all">All activity</button>
-    </div>`;
-
     if (careLogMode === 'tasks') {
       const careEntries = [...plant.careLog].sort((a, b) => b.date.localeCompare(a.date));
       if (careEntries.length === 0) {
@@ -2864,6 +2887,11 @@ async function handleEvent(e) {
 
     case 'plant-detail-tab':
       plantDetailTab = target.dataset.tab;
+      renderPlantDetail(state.plantId);
+      break;
+
+    case 'carelog-toggle-filters':
+      careLogFiltersOpen = !careLogFiltersOpen;
       renderPlantDetail(state.plantId);
       break;
 

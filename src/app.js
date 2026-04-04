@@ -1482,7 +1482,7 @@ function renderCareLogTab(plant) {
             n.taskId === entry.taskId &&
             (n.createdAt ?? '').startsWith(entry.date)
           );
-          html += renderCareLogPastRow(entry, linkedNote);
+          html += renderCareLogPastRow(entry, linkedNote, plant);
         }
         html += `</div>`;
       }
@@ -1536,8 +1536,10 @@ function renderCareLogUpcomingRow(task) {
   </div>`;
 }
 
-function renderCareLogPastRow(entry, linkedNote) {
-  const icon       = '✅';
+function renderCareLogPastRow(entry, linkedNote, plant) {
+  const matchedTask = plant?.tasks?.find(t => t.id === entry.taskId);
+  const cfg         = matchedTask ? getTaskConfig(matchedTask) : null;
+  const icon        = cfg?.icon ?? '✅';
   const authorCls  = (entry.author ?? '').toLowerCase();
   const diff       = daysBetween(entry.date, todayStr());
   const when       = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;

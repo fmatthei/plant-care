@@ -1094,7 +1094,7 @@ function renderHome() {
       html += `<button class="fab-add-plant" data-action="add-plant">&#43; Add Plant</button>`;
     }
 
-    html += `<div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${typeof __BUILD_TIME__ !== 'undefined' ? new Date(__BUILD_TIME__).toLocaleString('es-CL', { timeZone: 'America/Santiago' }) : 'dev'}</div>`;
+    html += `<div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${new Date().toLocaleString('es-CL', { timeZone: 'America/Santiago' })}</div>`;
   } else {
     html += renderSchedule();
   }

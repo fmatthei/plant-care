@@ -1445,7 +1445,7 @@ function renderCareLogPastRow(entry, linkedNote, plant) {
     <span class="carelog-row-icon">✅</span>
     <div class="carelog-past-meta">
       <div class="carelog-past-main">
-        <span style="background:${color}20;color:${color};font-weight:500;border-radius:20px;padding:2px 9px;font-size:13px;display:inline-block;">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)} ${taskIcon}
+        <span style="background:${color}20;color:${color};font-weight:500;border-radius:20px;padding:2px 9px;font-size:13px;display:inline-block;">${escapeHtml(entry.author)}</span> ${taskIcon} ${escapeHtml(entry.taskName)}
       </div>
       ${noteLine}
     </div>

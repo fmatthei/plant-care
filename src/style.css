@@ -594,6 +594,9 @@ body {
   color: var(--text-muted);
 }
 
+.author-label        { font-weight: 700; }
+.author-label.matu   { color: var(--matu); }
+.author-label.vale   { color: var(--vale); }
 
 .health-note-btns {
   display: flex;
@@ -2201,110 +2204,65 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
-/* ===== Care Log Filters Button + Panel ===== */
-.carelog-filter-row {
+/* ===== Care Log Segmented Control ===== */
+.carelog-segmented {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 12px;
+  border-bottom: 1.5px solid var(--border);
+  margin-bottom: 16px;
 }
 
-.carelog-filter-btn {
-  font-size: 12px;
-  padding: 5px 12px;
-  border-radius: var(--radius-xs);
-  border: 0.5px solid var(--border);
-  background: var(--card);
+.carelog-seg-btn {
+  flex: 1;
+  padding: 6px 14px 8px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font-size: 13px;
   color: var(--text-muted);
   cursor: pointer;
-  font-family: inherit;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  font-family: inherit;
+  transition: color 0.15s, border-color 0.15s;
 }
 
-.carelog-filter-btn.active {
-  border-color: var(--text);
-  background: var(--primary-light);
+.carelog-seg-btn.active {
   color: var(--text);
+  border-bottom: 2px solid var(--text);
   font-weight: 500;
 }
 
-.carelog-filter-panel {
-  background: var(--border);
-  border: none;
-  border-radius: var(--radius-sm);
-  margin-bottom: 12px;
-  overflow: hidden;
-}
-
-.carelog-filter-group {
-  padding: 12px 14px;
-}
-
-.carelog-filter-group-bordered {
-  border-top: 0.5px solid rgba(0,0,0,0.08);
-}
-
-.carelog-filter-group-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.carelog-filter-group-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.carelog-filter-icon-time { background: #dbeafe; }
-.carelog-filter-icon-type { background: #dcfce7; }
-
-.carelog-filter-group-title {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-}
-
-.carelog-filter-group-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-left: auto;
-}
-
-.carelog-filter-seg {
+/* ===== Care Log Mode Filter (filled box) ===== */
+.carelog-mode-segmented {
   display: flex;
   background: var(--border);
   border-radius: var(--radius-xs);
   padding: 3px;
   gap: 2px;
+  border-bottom: none;
+  margin-top: 0;
+  margin-bottom: 12px;
 }
 
-.carelog-filter-seg .carelog-seg-btn {
+.carelog-mode-segmented .carelog-seg-btn {
   flex: 1;
   text-align: center;
-  font-size: 12px;
-  padding: 7px 4px;
   border-radius: 6px;
   border: none;
+  border-bottom: none;
+  font-size: 12px;
+  padding: 6px 4px;
   color: var(--text-muted);
   background: transparent;
-  cursor: pointer;
-  font-family: inherit;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
+  font-weight: 400;
 }
 
-.carelog-filter-seg .carelog-seg-btn.active {
+.carelog-mode-segmented .carelog-seg-btn.active {
   background: var(--card);
   color: var(--text);
   font-weight: 500;
   border: 0.5px solid var(--border);
+  box-shadow: none;
 }
 
 /* ===== Care Log Rows ===== */
@@ -2318,65 +2276,7 @@ body {
   overflow: hidden;
 }
 
-.carelog-past-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 0.5px solid var(--border);
-}
-
-.carelog-past-row:last-child {
-  border-bottom: none;
-}
-
-.carelog-past-icon-circle {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: #dcfce7;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.carelog-past-meta {
-  flex: 1;
-  min-width: 0;
-}
-
-.carelog-past-main {
-  font-size: 13px;
-  color: var(--text);
-  line-height: 1.5;
-}
-
-.carelog-user-pill {
-  display: inline-block;
-  padding: 1px 8px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 500;
-  vertical-align: middle;
-}
-
-.carelog-past-note {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-style: italic;
-  margin-top: 3px;
-}
-
-.carelog-past-date {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-
+.carelog-past-row,
 .carelog-upcoming-row {
   display: flex;
   align-items: center;
@@ -2385,6 +2285,7 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.carelog-past-row:last-child,
 .carelog-upcoming-row:last-child {
   border-bottom: none;
 }
@@ -2396,9 +2297,15 @@ body {
   text-align: center;
 }
 
+.carelog-past-meta,
 .carelog-upcoming-meta {
   flex: 1;
   min-width: 0;
+}
+
+.carelog-past-main {
+  font-size: 13px;
+  color: var(--text);
 }
 
 .carelog-row-name {
@@ -2415,10 +2322,30 @@ body {
   margin-top: 1px;
 }
 
+.carelog-past-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 3px;
+}
+
+.carelog-past-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .carelog-divider {
   height: 1px;
   background: var(--border);
   margin: 20px 0 0;
+}
+
+/* ===== Care Log Mode Toggle ===== */
+.carelog-mode-segmented {
+  margin-top: 0;
+  margin-bottom: 12px;
 }
 
 /* ===== Care Log All-Activity List ===== */

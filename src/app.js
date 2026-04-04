@@ -345,7 +345,7 @@ async function loadFromSupabase() {
     const careLog = careLogRows.map(r => ({
       id:       r.id,
       date:     r.date,
-      author:   r.task_name,
+      author:   ownerMap[r.household_member_id] ?? 'Unknown',
       taskId:   r.task_id,
       taskName: r.task_name,
       taskType: r.task_type,
@@ -1020,7 +1020,7 @@ function renderHome() {
       html += `<button class="fab-add-plant" data-action="add-plant">&#43; Add Plant</button>`;
     }
 
-    html += `<div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${new Date().toLocaleString('es-CL', { timeZone: 'America/Santiago' })}</div>`;
+    html += `<div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${typeof __BUILD_TIME__ !== 'undefined' ? new Date(__BUILD_TIME__).toLocaleString('es-CL', { timeZone: 'America/Santiago' }) : 'dev'}</div>`;
   } else {
     html += renderSchedule();
   }

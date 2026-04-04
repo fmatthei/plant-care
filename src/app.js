@@ -1401,7 +1401,7 @@ function renderCareLogTab(plant) {
           n.taskId === entry.taskId &&
           (n.createdAt ?? '').startsWith(entry.date)
         );
-        html += renderCareLogPastRow(entry, linkedNote);
+        html += renderCareLogPastRow(entry, linkedNote, plant);
       }
       html += `</div>`;
     }
@@ -1428,9 +1428,12 @@ function renderCareLogUpcomingRow(task) {
   </div>`;
 }
 
-function renderCareLogPastRow(entry, linkedNote) {
-  const icon       = '✅';
-  const authorCls  = (entry.author ?? '').toLowerCase();
+function renderCareLogPastRow(entry, linkedNote, plant) {
+  const matchedTask = plant?.tasks?.find(t => t.id === entry.taskId);
+  const cfg         = matchedTask ? getTaskConfig(matchedTask) : null;
+  const taskIcon    = cfg?.icon ?? '';
+  const member      = membersCache.find(m => m.display_name === entry.author);
+  const color       = member?.color ?? '#888';
   const diff       = daysBetween(entry.date, todayStr());
   const when       = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
   const noteLine   = linkedNote
@@ -1439,10 +1442,10 @@ function renderCareLogPastRow(entry, linkedNote) {
 
   return `
   <div class="carelog-past-row">
-    <span class="carelog-row-icon">${icon}</span>
+    <span class="carelog-row-icon">✅ ${taskIcon}</span>
     <div class="carelog-past-meta">
       <div class="carelog-past-main">
-        <span class="author-label ${authorCls}">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)}
+        <span style="background:${color}20;color:${color};font-weight:500;border-radius:20px;padding:2px 9px;font-size:13px;display:inline-block;">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)}
       </div>
       ${noteLine}
     </div>
@@ -1560,7 +1563,6 @@ function renderTaskCard(plantId, task) {
 }
 
 function renderNoteCard(note) {
-  const authorCls = (note.author ?? '').toLowerCase();
   const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
   const isOwn = note.memberId && note.memberId === activeMemberId;
   const isEditing = editingNoteId === note.id;
@@ -1593,7 +1595,7 @@ function renderNoteCard(note) {
   <div class="health-note-card">
     <div class="health-note-header">
       <span class="health-note-meta">
-        <span class="author-label ${authorCls}">${escapeHtml(note.author ?? '')}</span>
+        <span style="background:${color}20;color:${color};font-weight:500;border-radius:20px;padding:2px 9px;font-size:13px;display:inline-block;">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)}
         &middot; ${formatNoteDate(note.createdAt)}${taskMeta}
       </span>
       ${actions}
@@ -1604,13 +1606,12 @@ function renderNoteCard(note) {
 
 function renderCareLogEntry(entry) {
   const type = entry.taskType ?? TASK_CONFIG[entry.taskId]?.type ?? 'custom';
-  const authorCls = entry.author.toLowerCase();
   return `
   <div class="care-log-entry">
     <div class="care-log-dot ${type}"></div>
     <div class="care-log-info">
       <div class="care-log-task">${escapeHtml(entry.taskName)}</div>
-      <div class="care-log-who"><span class="author-label ${authorCls}">${escapeHtml(entry.author)}</span></div>
+        <span style="background:${color}20;color:${color};font-weight:500;border-radius:20px;padding:2px 9px;font-size:13px;display:inline-block;">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)}
     </div>
     <div class="care-log-date">${formatDateShort(entry.date)}</div>
   </div>`;

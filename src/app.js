@@ -1505,7 +1505,7 @@ function renderCareLogTab(plant) {
             n.taskId === entry.taskId &&
             (n.createdAt ?? '').startsWith(entry.date)
           );
-          html += renderCareLogPastRow(entry, linkedNote);
+          html += renderCareLogPastRow(entry, linkedNote, plant);
         }
         html += `</div>`;
       }
@@ -1559,22 +1559,22 @@ function renderCareLogUpcomingRow(task) {
   </div>`;
 }
 
-function renderCareLogPastRow(entry, linkedNote) {
-  const icon     = '✅';
-  const member   = membersCache.find(m => m.display_name === entry.author);
-  const color    = member?.color ?? '#888';
-  const diff     = daysBetween(entry.date, todayStr());
-  const when     = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
-  const noteLine = linkedNote
+function renderCareLogPastRow(entry, linkedNote, plant) {
+  const member      = membersCache.find(m => m.display_name === entry.author);
+  const color       = member?.color ?? '#888';
+  const diff        = daysBetween(entry.date, todayStr());
+  const when        = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
+  const noteLine    = linkedNote
     ? `<div class="carelog-past-note">${escapeHtml(linkedNote.note)}</div>`
     : '';
-
+  const matchedTask = plant?.tasks?.find(t => t.id === entry.taskId);
+  const taskIcon    = matchedTask ? getTaskConfig(matchedTask).icon : '✅';
   return `
   <div class="carelog-past-row">
-    <span class="carelog-row-icon">${icon}</span>
+    <div class="carelog-past-icon-circle">${taskIcon}</div>
     <div class="carelog-past-meta">
       <div class="carelog-past-main">
-        <span style="background:${color}20;color:${color};font-weight:500;border-radius:20px;padding:2px 9px;font-size:13px;display:inline-block;">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)}
+        <span class="carelog-user-pill" style="background:${color}20;color:${color};">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)}
       </div>
       ${noteLine}
     </div>

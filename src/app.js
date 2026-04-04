@@ -347,7 +347,7 @@ async function loadFromSupabase() {
     const careLog = careLogRows.map(r => ({
       id:       r.id,
       date:     r.date,
-      author:   r.task_name,
+      author:   ownerMap[r.household_member_id] ?? 'Unknown',
       taskId:   r.task_id,
       taskName: r.task_name,
       taskType: r.task_type,

@@ -102,8 +102,6 @@ let activeTab = 'plants';
 let scheduleShowAll = false;
 let plantDetailTab = 'summary';
 let careLogSegment = 'full';
-let careLogMode = 'tasks'; // 'tasks' | 'all'
-let plantActivityLogCache = { plantId: null, entries: [] };
 let membersCache = []; // household_members rows: { id, display_name }
 let householdId = null;
 let activityFeed = []; // merged care_log + notes, top 5 across all plants
@@ -347,7 +345,7 @@ async function loadFromSupabase() {
     const careLog = careLogRows.map(r => ({
       id:       r.id,
       date:     r.date,
-      author:   ownerMap[r.household_member_id] ?? 'Unknown',
+      author:   r.task_name,
       taskId:   r.task_id,
       taskName: r.task_name,
       taskType: r.task_type,
@@ -447,19 +445,6 @@ function formatActivityTime(isoStr) {
   const dayDiff = Math.round((today - entry) / 86400000);
   if (dayDiff === 1) return 'Yesterday';
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function formatCareLogTime(isoStr) {
-  if (!isoStr) return '';
-  const date = new Date(isoStr);
-  const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
-  const entryMidnight = new Date(date); entryMidnight.setHours(0, 0, 0, 0);
-  if (todayMidnight.getTime() === entryMidnight.getTime()) {
-    return formatActivityTime(isoStr); // relative: "2h ago", "30m ago"
-  }
-  const monthDay = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const hhmm     = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  return `${monthDay} · ${hhmm}`;
 }
 
 function addDays(dateStr, n) {
@@ -699,14 +684,11 @@ async function undoMarkTaskDone(plantId, taskId) {
     .eq('task_id', taskId)
     .eq('date', todayStr())
     .then(({ error }) => { if (error) console.error('undoMarkTaskDone care_log delete error:', error); });
-
-  logActivity('task', getTaskConfig(task).name, 'task_undone', { plant_name: plant?.name ?? '' }, plantId);
 }
 
 async function reassignTask(plantId, taskId) {
   const task = getTask(plantId, taskId);
   if (!task) return;
-  const fromOwner = task.owner;
   task.owner = task.owner === 'Matu' ? 'Vale' : 'Matu';
 
   const member = membersCache.find(m => m.display_name === task.owner);
@@ -715,8 +697,6 @@ async function reassignTask(plantId, taskId) {
     .update({ owner_id: member?.id ?? null })
     .eq('id', taskId)
     .then(({ error }) => { if (error) console.error('reassignTask error:', error); });
-
-  logActivity('task', getTaskConfig(task).name, 'task_reassigned', { from: fromOwner, to: task.owner }, plantId);
 }
 
 async function updateTask(plantId, taskId, updates) {
@@ -762,11 +742,6 @@ async function pauseTask(plantId, taskId) {
     .update({ paused: true })
     .eq('id', taskId)
     .then(({ error }) => { if (error) console.error('pauseTask error:', error); });
-
-  if (task) {
-    const plant = getPlant(plantId);
-    logActivity('task', getTaskConfig(task).name, 'task_paused', { plant_name: plant?.name ?? '' }, plantId);
-  }
 }
 
 async function resumeTask(plantId, taskId) {
@@ -778,52 +753,6 @@ async function resumeTask(plantId, taskId) {
     .update({ paused: false })
     .eq('id', taskId)
     .then(({ error }) => { if (error) console.error('resumeTask error:', error); });
-
-  if (task) {
-    const plant = getPlant(plantId);
-    logActivity('task', getTaskConfig(task).name, 'task_resumed', { plant_name: plant?.name ?? '' }, plantId);
-  }
-}
-
-async function logActivity(entityType, entityName, action, metadata, plantId) {
-  const member = membersCache.find(m => m.display_name === activeUser);
-  await supabaseClient
-    .from('activity_log')
-    .insert({
-      household_id:        householdId,
-      household_member_id: member?.id ?? null,
-      entity_type:         entityType,
-      entity_name:         entityName,
-      action,
-      metadata:            metadata ?? null,
-      plant_id:            plantId ?? null,
-    })
-    .then(({ error }) => { if (error) console.error('logActivity error:', error); });
-}
-
-async function loadPlantActivityLog(plantId) {
-  const [{ data: careRows }, { data: activityRows }] = await Promise.all([
-    supabaseClient
-      .from('care_log')
-      .select('id, task_id, task_name, task_type, household_member_id, created_at')
-      .eq('plant_id', plantId)
-      .order('created_at', { ascending: false })
-      .limit(100),
-    supabaseClient
-      .from('activity_log')
-      .select('id, entity_type, entity_name, action, metadata, household_member_id, created_at')
-      .eq('plant_id', plantId)
-      .order('created_at', { ascending: false })
-      .limit(100),
-  ]);
-
-  const entries = [
-    ...(careRows    ?? []).map(r => ({ type: 'care',     ...r })),
-    ...(activityRows ?? []).map(r => ({ type: 'activity', ...r })),
-  ].sort((a, b) => b.created_at.localeCompare(a.created_at));
-
-  plantActivityLogCache = { plantId, entries };
-  renderPlantDetail(plantId);
 }
 
 async function deleteTask(plantId, taskId) {
@@ -839,9 +768,6 @@ async function deleteTask(plantId, taskId) {
 }
 
 async function deletePlant(plantId) {
-  const plant = getPlant(plantId);
-  logActivity('plant', plant?.name ?? '', 'plant_deleted', null, plantId);
-
   const now = new Date().toISOString();
 
   await Promise.all([
@@ -1464,54 +1390,20 @@ function renderCareLogTab(plant) {
   }
 
   if (showPast) {
-    html += `
-    <div class="carelog-segmented carelog-mode-segmented">
-      <button class="carelog-seg-btn${careLogMode === 'tasks' ? ' active' : ''}" data-action="carelog-mode" data-mode="tasks">Tasks only</button>
-      <button class="carelog-seg-btn${careLogMode === 'all'   ? ' active' : ''}" data-action="carelog-mode" data-mode="all">All activity</button>
-    </div>`;
-
-    if (careLogMode === 'tasks') {
-      const careEntries = [...plant.careLog].sort((a, b) => b.date.localeCompare(a.date));
-      if (careEntries.length === 0) {
-        html += `<div class="detail-empty">No care history yet</div>`;
-      } else {
-        html += `<div class="carelog-past-list">`;
-        for (const entry of careEntries) {
-          const linkedNote = notes.find(n =>
-            n.plantId === plant.id &&
-            n.taskId === entry.taskId &&
-            (n.createdAt ?? '').startsWith(entry.date)
-          );
-          html += renderCareLogPastRow(entry, linkedNote, plant);
-        }
-        html += `</div>`;
-      }
+    const careEntries = [...plant.careLog].sort((a, b) => b.date.localeCompare(a.date));
+    if (careEntries.length === 0) {
+      html += `<div class="detail-empty">No care history yet</div>`;
     } else {
-      // All activity: use cached merged entries, or trigger load
-      if (plantActivityLogCache.plantId !== plant.id) {
-        loadPlantActivityLog(plant.id);
-        html += `<div class="detail-empty">Loading…</div>`;
-      } else {
-        const entries = plantActivityLogCache.entries;
-        if (entries.length === 0) {
-          html += `<div class="detail-empty">No activity yet</div>`;
-        } else {
-          html += `<div class="carelog-activity-list">`;
-          let lastDateStr = null;
-          for (const entry of entries) {
-            const entryDateStr = (entry.created_at ?? '').slice(0, 10);
-            if (entryDateStr !== lastDateStr) {
-              const label = entryDateStr === todayStr()
-                ? 'Today'
-                : new Date(entryDateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-              html += `<div class="carelog-date-divider">${escapeHtml(label)}</div>`;
-              lastDateStr = entryDateStr;
-            }
-            html += renderCareLogActivityEntry(plant, entry);
-          }
-          html += `</div>`;
-        }
+      html += `<div class="carelog-past-list">`;
+      for (const entry of careEntries) {
+        const linkedNote = notes.find(n =>
+          n.plantId === plant.id &&
+          n.taskId === entry.taskId &&
+          (n.createdAt ?? '').startsWith(entry.date)
+        );
+        html += renderCareLogPastRow(entry, linkedNote);
       }
+      html += `</div>`;
     }
   }
 
@@ -1536,10 +1428,8 @@ function renderCareLogUpcomingRow(task) {
   </div>`;
 }
 
-function renderCareLogPastRow(entry, linkedNote, plant) {
-  const matchedTask = plant?.tasks?.find(t => t.id === entry.taskId);
-  const cfg         = matchedTask ? getTaskConfig(matchedTask) : null;
-  const icon        = cfg?.icon ?? '✅';
+function renderCareLogPastRow(entry, linkedNote) {
+  const icon       = '✅';
   const authorCls  = (entry.author ?? '').toLowerCase();
   const diff       = daysBetween(entry.date, todayStr());
   const when       = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
@@ -1557,106 +1447,6 @@ function renderCareLogPastRow(entry, linkedNote, plant) {
       ${noteLine}
     </div>
     <div class="carelog-past-date">${when}</div>
-  </div>`;
-}
-
-function renderCareLogActivityEntry(plant, entry) {
-  const member    = membersCache.find(m => m.id === entry.household_member_id);
-  const authorName = member?.display_name ?? activeUser ?? '';
-  const color      = member?.color ?? '#888';
-  const pillStyle  = `background:${color}20;color:${color};font-weight:500;border-radius:20px;padding:2px 9px;font-size:13px;display:inline-block;`;
-  const pill       = `<span style="${escapeHtml(pillStyle)}">${escapeHtml(authorName)}</span>`;
-  const timestamp  = formatCareLogTime(entry.created_at);
-
-  if (entry.type === 'care') {
-    // Task completion entry
-    const matchedTask = plant.tasks.find(t => t.id === entry.task_id);
-    const taskIcon    = matchedTask ? getTaskConfig(matchedTask).icon : '⚙️';
-    const linkedNote  = notes.find(n =>
-      n.plantId === plant.id &&
-      n.taskId  === entry.task_id &&
-      (n.createdAt ?? '').startsWith((entry.created_at ?? '').slice(0, 10))
-    );
-    const noteBubble = linkedNote
-      ? `<div class="carelog-activity-note-bubble">${escapeHtml(linkedNote.note)}</div>`
-      : '';
-    return `
-  <div class="carelog-activity-row">
-    <div class="carelog-activity-icon-circle carelog-icon-task">${taskIcon}</div>
-    <div class="carelog-activity-meta">
-      <div class="carelog-activity-main">${pill} marked <strong>${escapeHtml(entry.task_name)}</strong> as done</div>
-      ${noteBubble}
-    </div>
-    <div class="carelog-activity-time">${escapeHtml(timestamp)}</div>
-  </div>`;
-  }
-
-  // activity_log entry
-  const { entity_type: etype, entity_name: ename, action, metadata: meta } = entry;
-
-  let iconCircleCls, iconChar;
-  if (etype === 'plant') {
-    iconCircleCls = 'carelog-icon-plant';
-    iconChar      = '🪴';
-  } else if (etype === 'note') {
-    iconCircleCls = 'carelog-icon-note';
-    iconChar      = '📝';
-  } else {
-    iconCircleCls = 'carelog-icon-task';
-    iconChar      = '⚙️';
-  }
-
-  let badgeCls, badgeLabel;
-  if (etype === 'note') {
-    badgeCls   = 'carelog-badge-note';
-    badgeLabel = 'note';
-  } else if (etype === 'plant') {
-    badgeCls   = 'carelog-badge-plant';
-    badgeLabel = 'plant';
-  } else {
-    badgeCls   = 'carelog-badge-admin';
-    badgeLabel = 'admin';
-  }
-
-  let mainText;
-  switch (action) {
-    case 'plant_added':
-      mainText = `${pill} added <strong>${escapeHtml(ename)}</strong>`;
-      break;
-    case 'plant_deleted':
-      mainText = `${pill} deleted <strong>${escapeHtml(ename)}</strong>`;
-      break;
-    case 'task_paused':
-      mainText = `${pill} paused <strong>${escapeHtml(ename)}</strong> on ${escapeHtml(meta?.plant_name ?? '')}`;
-      break;
-    case 'task_resumed':
-      mainText = `${pill} resumed <strong>${escapeHtml(ename)}</strong> on ${escapeHtml(meta?.plant_name ?? '')}`;
-      break;
-    case 'task_undone':
-      mainText = `${pill} undid <strong>${escapeHtml(ename)}</strong> on ${escapeHtml(meta?.plant_name ?? '')}`;
-      break;
-    case 'task_reassigned':
-      mainText = `${pill} reassigned <strong>${escapeHtml(ename)}</strong> to ${escapeHtml(meta?.to ?? '')}`;
-      break;
-    case 'note_added':
-      mainText = `${pill} added a note to <strong>${escapeHtml(ename)}</strong>`;
-      break;
-    default:
-      mainText = `${pill} ${escapeHtml(action)} <strong>${escapeHtml(ename)}</strong>`;
-  }
-
-  const noteBubble = (action === 'note_added' && meta?.content)
-    ? `<div class="carelog-activity-note-bubble">${escapeHtml(meta.content)}</div>`
-    : '';
-
-  return `
-  <div class="carelog-activity-row">
-    <div class="carelog-activity-icon-circle ${escapeHtml(iconCircleCls)}">${iconChar}</div>
-    <div class="carelog-activity-meta">
-      <div class="carelog-activity-main">${mainText} <span class="carelog-badge ${escapeHtml(badgeCls)}">${escapeHtml(badgeLabel)}</span></div>
-      ${noteBubble}
-    </div>
-    <div class="carelog-activity-time">${escapeHtml(timestamp)}</div>
   </div>`;
 }
 
@@ -2282,10 +2072,6 @@ async function handleSaveNewPlant() {
     console.error('handleSaveNewPlant: Supabase insert error:', error);
   }
 
-  if (inserted?.id) {
-    logActivity('plant', name, 'plant_added', null, inserted.id);
-  }
-
   const newPlant = {
     id:           inserted?.id ?? uid(),
     name,
@@ -2871,14 +2657,6 @@ async function handleEvent(e) {
 
     case 'carelog-segment':
       careLogSegment = target.dataset.segment;
-      renderPlantDetail(state.plantId);
-      break;
-
-    case 'carelog-mode':
-      careLogMode = target.dataset.mode;
-      if (careLogMode === 'all' && plantActivityLogCache.plantId !== state.plantId) {
-        loadPlantActivityLog(state.plantId);
-      }
       renderPlantDetail(state.plantId);
       break;
 

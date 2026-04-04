@@ -1431,7 +1431,7 @@ function renderCareLogUpcomingRow(task) {
 function renderCareLogPastRow(entry, linkedNote, plant) {
   const matchedTask = plant?.tasks?.find(t => t.id === entry.taskId);
   const cfg         = matchedTask ? getTaskConfig(matchedTask) : null;
-  const taskIcon    = cfg?.icon ?? '';
+  const taskIcon    = cfg?.icon ?? getTaskConfig({ type: entry.taskType, name: entry.taskName })?.icon ?? '✅';
   const member      = membersCache.find(m => m.display_name === entry.author);
   const color       = member?.color ?? '#888';
   const diff       = daysBetween(entry.date, todayStr());

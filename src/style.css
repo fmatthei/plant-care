@@ -2232,19 +2232,19 @@ body {
 }
 
 .carelog-filter-panel {
-  background: var(--card);
-  border: 0.5px solid var(--border);
+  background: var(--border);
+  border: none;
   border-radius: var(--radius-sm);
   margin-bottom: 12px;
   overflow: hidden;
 }
 
 .carelog-filter-group {
-  padding: 14px;
+  padding: 12px 14px;
 }
 
 .carelog-filter-group-bordered {
-  border-top: 0.5px solid var(--border);
+  border-top: 0.5px solid rgba(0,0,0,0.08);
 }
 
 .carelog-filter-group-header {

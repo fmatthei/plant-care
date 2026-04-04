@@ -1560,11 +1560,12 @@ function renderCareLogUpcomingRow(task) {
 }
 
 function renderCareLogPastRow(entry, linkedNote) {
-  const icon       = '✅';
-  const authorCls  = (entry.author ?? '').toLowerCase();
-  const diff       = daysBetween(entry.date, todayStr());
-  const when       = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
-  const noteLine   = linkedNote
+  const icon     = '✅';
+  const member   = membersCache.find(m => m.display_name === entry.author);
+  const color    = member?.color ?? '#888';
+  const diff     = daysBetween(entry.date, todayStr());
+  const when     = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
+  const noteLine = linkedNote
     ? `<div class="carelog-past-note">${escapeHtml(linkedNote.note)}</div>`
     : '';
 
@@ -1573,7 +1574,7 @@ function renderCareLogPastRow(entry, linkedNote) {
     <span class="carelog-row-icon">${icon}</span>
     <div class="carelog-past-meta">
       <div class="carelog-past-main">
-        <span class="author-label ${authorCls}">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)}
+        <span style="background:${color}20;color:${color};font-weight:500;border-radius:20px;padding:2px 9px;font-size:13px;display:inline-block;">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)}
       </div>
       ${noteLine}
     </div>

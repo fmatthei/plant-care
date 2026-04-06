@@ -1135,6 +1135,37 @@ body {
   line-height: 1;
 }
 
+/* ===== Arrival Date Button ===== */
+.arrival-date-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  position: relative;
+}
+.arrival-date-text {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.arrival-date-text.has-value {
+  color: var(--text);
+}
+.sheet-field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.sheet-field-optional {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 /* ===== Form Hint ===== */
 .form-hint {
   font-size: 12px;
@@ -1297,7 +1328,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 12px 6px 16px;
+  padding: 7px 12px;
   gap: 8px;
 }
 
@@ -1713,44 +1744,16 @@ body {
   margin-top: 8px;
 }
 
-/* ===== Feedback FAB ===== */
-.feedback-fab {
-  position: fixed;
-  bottom: 24px;
-  left: calc(50% - 240px + 20px);
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+/* ===== Header Feedback Button ===== */
+.header-feedback-btn {
+  background: transparent;
   border: none;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-  font-size: 22px;
+  font-size: 18px;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 80;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  transition: opacity 0.18s, transform 0.12s;
-  line-height: 1;
-}
-
-.feedback-fab.hidden {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.feedback-fab:active {
-  transform: scale(0.93);
+  padding: 2px 6px;
   opacity: 0.8;
 }
-
-@media (max-width: 480px) {
-  .feedback-fab {
-    left: 20px;
-  }
-}
+.header-feedback-btn:hover { opacity: 1; }
 
 /* ===== Toast ===== */
 .toast {
@@ -1970,6 +1973,40 @@ body {
   font-family: inherit;
 }
 
+/* ===== Section Header Bar ===== */
+.section-header-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-xs);
+  margin-bottom: 6px;
+}
+.section-header-bar + .section-header-bar,
+.card + .section-header-bar,
+.carelog-upcoming-list + .section-header-bar,
+.carelog-past-list + .section-header-bar {
+  margin-top: 20px;
+}
+.section-header-bar-accent {
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.section-header-bar-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.section-header-bar-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
 .detail-all-clear {
   font-size: 14px;
   color: var(--ok);
@@ -1982,6 +2019,18 @@ body {
   color: var(--text-muted);
   padding: 6px 0;
 }
+
+/* ===== Tasks Empty State ===== */
+.tasks-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+.tasks-empty-icon { font-size: 36px; margin-bottom: 12px; }
+.tasks-empty-title { font-size: 15px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+.tasks-empty-sub { font-size: 13px; color: var(--text-muted); }
 
 /* ===== Expanded Task Row (Due Now in Summary) ===== */
 .expanded-task-row {
@@ -2107,7 +2156,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border);
 }
 

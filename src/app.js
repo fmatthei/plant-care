@@ -122,7 +122,6 @@ function setActiveUser(name) {
 }
 
 function renderLoginScreen(errorMsg) {
-  hideFeedbackBtn();
   document.getElementById('app').innerHTML = `
     <div class="user-select-screen">
       <h2>Plant Care</h2>
@@ -156,7 +155,6 @@ async function handleLogin() {
 }
 
 function renderPasswordResetScreen(errorMsg) {
-  hideFeedbackBtn();
   document.getElementById('app').innerHTML = `
     <div class="user-select-screen">
       <h2>Set New Password</h2>
@@ -198,7 +196,6 @@ async function handlePasswordReset() {
 }
 
 function renderUserSelect() {
-  hideFeedbackBtn();
   document.getElementById('app').innerHTML = `
     <div class="user-select-screen">
       <h2>Who are you?</h2>
@@ -890,6 +887,7 @@ function renderHeaderRight() {
   return `
     <div class="header-right">
       <span class="date-label">${todayFormatted()}</span>
+      <button class="header-feedback-btn" data-action="feedback">💬</button>
       <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
     </div>`;
 }
@@ -1104,8 +1102,8 @@ function renderSchedule() {
     </div>`;
 
   if (overdueItems.length > 0) {
-    html += `<div class="sched-section sched-section-overdue">
-      <div class="sched-section-title">⚠️ Overdue</div>`;
+    html += `<div class="sched-section sched-section-overdue">`;
+    html += sectionHeader('⚠️ Overdue', '#BA7517', overdueItems.length);
     for (const { plant, task } of overdueItems) {
       const daysAgo = Math.abs(daysUntilDue(task));
       const cfg = getTaskConfig(task);
@@ -1127,16 +1125,19 @@ function renderSchedule() {
     html += `</div>`;
   }
 
-  html += `<div class="sched-section">
-      <div class="sched-section-title">This Week</div>`;
+  const thisWeekCount = thisWeekDays.reduce((sum, d) => sum + itemsForDay(d).length, 0);
+  const nextWeekCount = nextWeekDays.reduce((sum, d) => sum + itemsForDay(d).length, 0);
+
+  html += `<div class="sched-section">`;
+  html += sectionHeader('This Week', '#185FA5', thisWeekCount);
 
   for (const day of thisWeekDays) {
     html += renderDay(day);
   }
 
   html += `</div>
-    <div class="sched-section">
-      <div class="sched-section-title">Next Week</div>`;
+    <div class="sched-section">`;
+  html += sectionHeader('Next Week', '#3B6D11', nextWeekCount);
 
   for (const day of nextWeekDays) {
     html += renderDay(day);
@@ -1165,6 +1166,7 @@ function renderPlantDetail(plantId) {
       <span class="detail-header-emoji-circle">${plant.emoji}</span>
       <span class="detail-header-name">${escapeHtml(plant.name)}</span>
     </div>
+    <button class="header-feedback-btn" data-action="feedback">💬</button>
     <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
   </div>
   <div class="plant-detail-tabs">
@@ -1203,6 +1205,17 @@ function renderPlantDetail(plantId) {
   window.scrollTo(0, 0);
 }
 
+function sectionHeader(label, accentColor, count) {
+  const countHtml = count != null
+    ? `<span class="section-header-bar-count">${count} task${count !== 1 ? 's' : ''}</span>`
+    : '';
+  return `<div class="section-header-bar">
+    <div class="section-header-bar-accent" style="background:${accentColor};"></div>
+    <span class="section-header-bar-text">${label}</span>
+    ${countHtml}
+  </div>`;
+}
+
 function renderSummaryTab(plant) {
   let html = '';
 
@@ -1239,7 +1252,7 @@ function renderSummaryTab(plant) {
   const dueTodayTasks = plant.tasks.filter(t => !t.paused && daysUntilDue(t) === 0);
 
   if (overdueTasks.length > 0) {
-    html += `<div class="detail-section-label detail-section-label--overdue">&#9888; Overdue</div>`;
+    html += sectionHeader('⚠️ Overdue', '#BA7517');
     for (const task of overdueTasks) {
       html += renderExpandedTaskRow(plant.id, task);
     }
@@ -1247,7 +1260,7 @@ function renderSummaryTab(plant) {
 
   // ── Due today ─────────────────────────────────────────────
   if (dueTodayTasks.length > 0) {
-    html += `<div class="detail-section-label">Due today</div>`;
+    html += sectionHeader('Due today', '#888780');
     for (const task of dueTodayTasks) {
       html += renderExpandedTaskRow(plant.id, task);
     }
@@ -1261,11 +1274,7 @@ function renderSummaryTab(plant) {
   const upcomingTasks = plant.tasks
     .filter(t => !t.paused && daysUntilDue(t) > 0 && daysUntilDue(t) !== Infinity)
     .sort((a, b) => daysUntilDue(a) - daysUntilDue(b));
-  html += `
-  <div class="detail-section-row">
-    <span class="detail-section-label">Upcoming</span>
-    <button class="detail-section-link" data-action="plant-detail-tab" data-tab="tasks">see all</button>
-  </div>`;
+  html += sectionHeader('Upcoming', '#185FA5');
   if (upcomingTasks.length === 0) {
     html += `<div class="detail-empty">No upcoming tasks</div>`;
   } else {
@@ -1283,11 +1292,7 @@ function renderSummaryTab(plant) {
     ...plantNotes.map(n     => ({ type: 'note', sortKey: (n.createdAt ?? '').split('T')[0], data: n })),
   ].sort((a, b) => b.sortKey.localeCompare(a.sortKey)).slice(0, 5);
 
-  html += `
-  <div class="detail-section-row">
-    <span class="detail-section-label">Recent activity</span>
-    <button class="detail-section-link" data-action="plant-detail-tab" data-tab="carelog">view log</button>
-  </div>`;
+  html += sectionHeader('Recent activity', '#888780');
   if (activityItems.length === 0) {
     html += `<div class="detail-empty">No activity yet</div>`;
   } else {
@@ -1325,7 +1330,11 @@ function renderSummaryTab(plant) {
 
 function renderTasksTab(plant) {
   if (plant.tasks.length === 0) {
-    return `<div class="detail-empty">No tasks yet</div>`;
+    return `<div class="tasks-empty-state">
+  <div class="tasks-empty-icon">🌱</div>
+  <div class="tasks-empty-title">No tasks yet</div>
+  <div class="tasks-empty-sub">Add a task to start tracking care for this plant</div>
+</div>`;
   }
   let html = `<div class="task-list">`;
   for (const task of plant.tasks) {
@@ -1364,7 +1373,8 @@ function renderCareLogTab(plant) {
 
   if (showUpcoming) {
     if (careLogSegment === 'full') {
-      html += `<div class="detail-section-label">Upcoming</div>`;
+      const upcomingCount = plant.tasks.filter(t => !t.paused).length;
+      html += sectionHeader('Upcoming', '#185FA5', upcomingCount);
     }
     const upcomingTasks = plant.tasks
       .filter(t => !t.paused)
@@ -1386,7 +1396,8 @@ function renderCareLogTab(plant) {
 
   if (careLogSegment === 'full') {
     html += `<div class="carelog-divider"></div>`;
-    html += `<div class="detail-section-label">Past</div>`;
+    const pastCount = plant.careLog.length;
+    html += sectionHeader('Past', '#888780', pastCount);
   }
 
   if (showPast) {
@@ -1565,6 +1576,8 @@ function renderTaskCard(plantId, task) {
 function renderNoteCard(note) {
   const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
   const isOwn = note.memberId && note.memberId === activeMemberId;
+  const noteMember = membersCache.find(m => m.display_name === note.author);
+  const noteColor = noteMember?.color ?? '#888';
   const isEditing = editingNoteId === note.id;
 
   const actions = isOwn
@@ -1595,7 +1608,7 @@ function renderNoteCard(note) {
   <div class="health-note-card">
     <div class="health-note-header">
       <span class="health-note-meta">
-        <span style="background:${color}20;color:${color};font-weight:500;border-radius:20px;padding:2px 9px;font-size:13px;display:inline-block;">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)}
+        <span style="background:${noteColor}20;color:${noteColor};font-weight:500;border-radius:20px;padding:2px 9px;font-size:13px;display:inline-block;">${escapeHtml(note.author)}</span>
         &middot; ${formatNoteDate(note.createdAt)}${taskMeta}
       </span>
       ${actions}
@@ -1611,7 +1624,6 @@ function renderCareLogEntry(entry) {
     <div class="care-log-dot ${type}"></div>
     <div class="care-log-info">
       <div class="care-log-task">${escapeHtml(entry.taskName)}</div>
-        <span style="background:${color}20;color:${color};font-weight:500;border-radius:20px;padding:2px 9px;font-size:13px;display:inline-block;">${escapeHtml(entry.author)}</span> ${escapeHtml(entry.taskName)}
     </div>
     <div class="care-log-date">${formatDateShort(entry.date)}</div>
   </div>`;
@@ -1971,9 +1983,12 @@ function renderEditPlantSheet(plantId) {
       ${renderEmojiPickerHtml(plant.emoji)}
     </div>
     <div class="form-group">
-      <label class="form-label">Arrival date (optional)</label>
-      <div class="date-input-wrapper" style="cursor:pointer" onclick="this.querySelector('input').click()"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-acquired-date" value="${plant.dateAcquired ?? ''}"></div>
-      <p class="form-hint">Track how long you've cared for it</p>
+      <div class="sheet-field-label">Arrival date <span class="sheet-field-optional">optional</span></div>
+      <div class="arrival-date-btn" onclick="this.querySelector('input').click()">
+        <span style="font-size:16px;">📅</span>
+        <span class="arrival-date-text${plant.dateAcquired ? ' has-value' : ''}" id="arrival-date-display">${plant.dateAcquired ? new Date(plant.dateAcquired + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select a date'}</span>
+        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;pointer-events:none;" value="${plant.dateAcquired ?? ''}">
+      </div>
     </div>
     <div class="sheet-footer-sticky">
       <div class="sheet-actions">
@@ -1985,6 +2000,7 @@ function renderEditPlantSheet(plantId) {
       </div>
     </div>
   `);
+  attachArrivalDateListener();
 }
 
 async function handleSavePlant() {
@@ -2037,15 +2053,19 @@ function renderAddPlantSheet() {
       ${renderEmojiPickerHtml('🪴')}
     </div>
     <div class="form-group">
-      <label class="form-label">Arrival date (optional)</label>
-      <div class="date-input-wrapper" style="cursor:pointer" onclick="this.querySelector('input').click()"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-acquired-date"></div>
-      <p class="form-hint">Track how long you've cared for it</p>
+      <div class="sheet-field-label">Arrival date <span class="sheet-field-optional">optional</span></div>
+      <div class="arrival-date-btn" onclick="this.querySelector('input').click()">
+        <span style="font-size:16px;">📅</span>
+        <span class="arrival-date-text" id="arrival-date-display">Select a date</span>
+        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;pointer-events:none;">
+      </div>
     </div>
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
       <button class="btn btn-primary" data-action="sheet-save-new-plant">Save</button>
     </div>
   `);
+  attachArrivalDateListener();
 }
 
 async function handleSaveNewPlant() {
@@ -2197,7 +2217,6 @@ async function handleSaveNewTask() {
 
 function navigateTo(view, plantId = null) {
   closeSheet();
-  showFeedbackBtn();
   state.view = view;
   state.plantId = plantId;
   if (view === 'home') renderHome();
@@ -2229,6 +2248,10 @@ async function handleEvent(e) {
 
     case 'sign-out':
       supabaseClient.auth.signOut().then(() => renderLoginScreen());
+      break;
+
+    case 'feedback':
+      handleFeedbackTap();
       break;
 
     case 'open-menu':
@@ -2721,16 +2744,26 @@ async function subscribeToPush() {
 }
 
 // ============================================================
-// FEEDBACK FAB
+// ARRIVAL DATE LISTENER
 // ============================================================
 
-function showFeedbackBtn() {
-  document.getElementById('feedback-fab')?.classList.remove('hidden');
+function attachArrivalDateListener() {
+  document.getElementById('sheet-acquired-date')?.addEventListener('change', function() {
+    const display = document.getElementById('arrival-date-display');
+    if (!display) return;
+    if (this.value) {
+      display.textContent = new Date(this.value + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      display.classList.add('has-value');
+    } else {
+      display.textContent = 'Select a date';
+      display.classList.remove('has-value');
+    }
+  });
 }
 
-function hideFeedbackBtn() {
-  document.getElementById('feedback-fab')?.classList.add('hidden');
-}
+// ============================================================
+// FEEDBACK
+// ============================================================
 
 function handleFeedbackTap() {
   const key = `feedbackCaseCount_${currentUserId ?? 'anon'}`;
@@ -2765,7 +2798,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('toast').addEventListener('click', handleEvent);
   document.getElementById('overlay').addEventListener('click', closeSheet);
   document.getElementById('menu-overlay').addEventListener('click', closeMenu);
-  document.getElementById('feedback-fab').addEventListener('click', handleFeedbackTap);
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && document.getElementById('sheet').classList.contains('active')) closeSheet();
   });

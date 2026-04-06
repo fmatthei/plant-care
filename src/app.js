@@ -99,7 +99,11 @@ let notesShowAll = new Set(); // plantIds where "Show all" is expanded
 let editingNoteId = null;
 let activeUser = null;
 let activeTab = 'plants';
-let scheduleShowAll = false;
+let scheduleFilter = null; // null = uninitialized; array of display_names to show
+let tasksFilter = null;    // null = uninitialized
+let careLogFilter = 'all'; // 'all' = all users selected
+let careLogFiltersOpen = false;
+let careLogMode = 'tasks'; // 'tasks' | 'all'
 let plantDetailTab = 'summary';
 let careLogSegment = 'full';
 let membersCache = []; // household_members rows: { id, display_name }
@@ -263,6 +267,8 @@ async function loadFromSupabase() {
   // Cache members for write operations — must be set before any early return
   // so handleSaveNewPlant() always has a valid membersCache even with no plants.
   membersCache = memberRows ?? [];
+  if (activeUser && scheduleFilter === null) scheduleFilter = [activeUser];
+  if (activeUser && tasksFilter === null) tasksFilter = [activeUser];
 
   if (plantRows.length === 0) {
     plants = [];
@@ -1035,12 +1041,14 @@ function renderSchedule() {
   const thisMonday = getMondayOfWeek(today);
   const nextMonday = addDays(thisMonday, 7);
 
+  const activeFilter = scheduleFilter ?? [activeUser];
+
   // Collect relevant (non-paused) task items
   const items = [];
   for (const plant of plants) {
     for (const task of plant.tasks) {
       if (task.paused) continue;
-      if (!scheduleShowAll && task.owner !== activeUser) continue;
+      if (!activeFilter.includes(task.owner)) continue;
       items.push({ plant, task });
     }
   }
@@ -1057,7 +1065,8 @@ function renderSchedule() {
 
   function renderTaskRow(plant, task, extraClass) {
     const cfg = getTaskConfig(task);
-    const ownerTag = scheduleShowAll
+    const showOwner = activeFilter.length > 1;
+    const ownerTag = showOwner
       ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'};background:${(USERS[task.owner]?.color ?? '#666666')}26">👤 ${escapeHtml(task.owner)}</span>`
       : '';
     const doneToday = task.lastDone === today;
@@ -1093,13 +1102,7 @@ function renderSchedule() {
     return h;
   }
 
-  let html = `
-    <div class="sched-toolbar">
-      <label class="sched-toggle-label">
-        <input type="checkbox" class="sched-toggle-cb" data-action="schedule-toggle-all"${scheduleShowAll ? ' checked' : ''}>
-        Show all tasks
-      </label>
-    </div>`;
+  let html = renderUserFilterPills('schedule', activeFilter);
 
   if (overdueItems.length > 0) {
     html += `<div class="sched-section sched-section-overdue">`;
@@ -1107,7 +1110,8 @@ function renderSchedule() {
     for (const { plant, task } of overdueItems) {
       const daysAgo = Math.abs(daysUntilDue(task));
       const cfg = getTaskConfig(task);
-      const ownerTag = scheduleShowAll
+      const showOwner = activeFilter.length > 1;
+      const ownerTag = showOwner
         ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'};background:${(USERS[task.owner]?.color ?? '#666666')}26">👤 ${escapeHtml(task.owner)}</span>`
         : '';
       const doneToday = task.lastDone === today;
@@ -1203,6 +1207,23 @@ function renderPlantDetail(plantId) {
 
   document.getElementById('app').innerHTML = html;
   window.scrollTo(0, 0);
+}
+
+function renderUserFilterPills(filterId, selectedUsers) {
+  const allSelected = membersCache.every(m => selectedUsers.includes(m.display_name));
+  const allPillCls = allSelected ? 'user-pill user-pill-all active' : 'user-pill user-pill-all';
+  let html = `<div class="user-filter-row" data-filter="${filterId}">`;
+  html += `<div class="${allPillCls}" data-action="user-filter-all" data-filter="${filterId}">All</div>`;
+  for (const m of membersCache) {
+    const active = selectedUsers.includes(m.display_name);
+    const opacity = active ? '1' : '0.35';
+    html += `<div class="user-pill" data-action="user-filter-toggle" data-filter="${filterId}" data-user="${escapeHtml(m.display_name)}" style="background:${m.color}20;color:${m.color};border-color:${m.color};opacity:${opacity};">
+      <div class="user-pill-dot" style="background:${m.color};"></div>
+      ${escapeHtml(m.display_name)}
+    </div>`;
+  }
+  html += `</div>`;
+  return html;
 }
 
 function sectionHeader(label, accentColor, count) {
@@ -1336,8 +1357,15 @@ function renderTasksTab(plant) {
   <div class="tasks-empty-sub">Add a task to start tracking care for this plant</div>
 </div>`;
   }
-  let html = `<div class="task-list">`;
-  for (const task of plant.tasks) {
+  const activeFilter = tasksFilter ?? [activeUser];
+  let html = renderUserFilterPills('tasks', activeFilter);
+  const filtered = plant.tasks.filter(t => activeFilter.includes(t.owner));
+  if (filtered.length === 0) {
+    html += `<div class="detail-empty">No tasks for selected users</div>`;
+    return html;
+  }
+  html += `<div class="task-list">`;
+  for (const task of filtered) {
     html += renderTaskCard(plant.id, task);
   }
   html += `</div>`;
@@ -1361,12 +1389,42 @@ function renderNotesTab(plant) {
 }
 
 function renderCareLogTab(plant) {
-  let html = `
-  <div class="carelog-segmented">
-    <button class="carelog-seg-btn${careLogSegment === 'past'     ? ' active' : ''}" data-action="carelog-segment" data-segment="past">Past</button>
-    <button class="carelog-seg-btn${careLogSegment === 'upcoming' ? ' active' : ''}" data-action="carelog-segment" data-segment="upcoming">Upcoming</button>
-    <button class="carelog-seg-btn${careLogSegment === 'full'     ? ' active' : ''}" data-action="carelog-segment" data-segment="full">Full Log</button>
+  const isNonDefault = careLogSegment !== 'full' || careLogMode !== 'tasks';
+  let html = `<div class="carelog-filter-row">
+  <button class="carelog-filter-btn${isNonDefault ? ' active' : ''}" data-action="carelog-toggle-filters">
+    ☰ Filters${isNonDefault ? ' ●' : ''}
+  </button>
+</div>`;
+
+  if (careLogFiltersOpen) {
+    html += `<div class="carelog-filter-panel">
+    <div class="carelog-filter-group">
+      <div class="carelog-filter-group-header">
+        <div class="carelog-filter-group-icon carelog-filter-icon-time">📅</div>
+        <div class="carelog-filter-group-title">Time range</div>
+        <div class="carelog-filter-group-desc">What period to show</div>
+      </div>
+      <div class="carelog-filter-seg">
+        <button class="carelog-seg-btn${careLogSegment === 'past' ? ' active' : ''}" data-action="carelog-segment" data-segment="past">Past</button>
+        <button class="carelog-seg-btn${careLogSegment === 'full' ? ' active' : ''}" data-action="carelog-segment" data-segment="full">Full log</button>
+        <button class="carelog-seg-btn${careLogSegment === 'upcoming' ? ' active' : ''}" data-action="carelog-segment" data-segment="upcoming">Upcoming</button>
+      </div>
+    </div>
+    <div class="carelog-filter-group carelog-filter-group-bordered">
+      <div class="carelog-filter-group-header">
+        <div class="carelog-filter-group-icon carelog-filter-icon-type">📋</div>
+        <div class="carelog-filter-group-title">Activity type</div>
+        <div class="carelog-filter-group-desc">What actions to include</div>
+      </div>
+      <div class="carelog-filter-seg">
+        <button class="carelog-seg-btn${careLogMode === 'tasks' ? ' active' : ''}" data-action="carelog-mode" data-mode="tasks">Tasks only</button>
+        <button class="carelog-seg-btn${careLogMode === 'all' ? ' active' : ''}" data-action="carelog-mode" data-mode="all">All activity</button>
+      </div>
+    </div>
   </div>`;
+  }
+
+  html += renderUserFilterPills('carelog', membersCache.map(m => m.display_name));
 
   const showUpcoming = careLogSegment === 'upcoming' || careLogSegment === 'full';
   const showPast     = careLogSegment === 'past'     || careLogSegment === 'full';
@@ -1982,13 +2040,16 @@ function renderEditPlantSheet(plantId) {
       <label class="form-label">Emoji</label>
       ${renderEmojiPickerHtml(plant.emoji)}
     </div>
-    <div class="form-group">
-      <div class="sheet-field-label">Arrival date <span class="sheet-field-optional">optional</span></div>
-      <div class="arrival-date-btn" onclick="this.querySelector('input').click()">
-        <span style="font-size:16px;">📅</span>
-        <span class="arrival-date-text${plant.dateAcquired ? ' has-value' : ''}" id="arrival-date-display">${plant.dateAcquired ? new Date(plant.dateAcquired + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select a date'}</span>
-        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;pointer-events:none;" value="${plant.dateAcquired ?? ''}">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;">
+      <div>
+        <div class="sheet-field-label">Arrival date <span class="sheet-field-optional">optional</span></div>
+        <div class="sheet-field-hint">🌱 Track how long you've cared for it</div>
       </div>
+      <label class="arrival-date-btn${plant.dateAcquired ? ' has-value' : ''}" for="sheet-acquired-date">
+        <span style="font-size:14px;">📅</span>
+        <span class="arrival-date-text" id="arrival-date-display">${plant.dateAcquired ? new Date(plant.dateAcquired + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select a date'}</span>
+        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;width:0;height:0;" value="${plant.dateAcquired ?? ''}">
+      </label>
     </div>
     <div class="sheet-footer-sticky">
       <div class="sheet-actions">
@@ -2052,13 +2113,16 @@ function renderAddPlantSheet() {
       <label class="form-label">Emoji</label>
       ${renderEmojiPickerHtml('🪴')}
     </div>
-    <div class="form-group">
-      <div class="sheet-field-label">Arrival date <span class="sheet-field-optional">optional</span></div>
-      <div class="arrival-date-btn" onclick="this.querySelector('input').click()">
-        <span style="font-size:16px;">📅</span>
-        <span class="arrival-date-text" id="arrival-date-display">Select a date</span>
-        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;pointer-events:none;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;">
+      <div>
+        <div class="sheet-field-label">Arrival date <span class="sheet-field-optional">optional</span></div>
+        <div class="sheet-field-hint">🌱 Track how long you've cared for it</div>
       </div>
+      <label class="arrival-date-btn" for="sheet-acquired-date">
+        <span style="font-size:14px;">📅</span>
+        <span class="arrival-date-text" id="arrival-date-display">Select a date</span>
+        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;width:0;height:0;">
+      </label>
     </div>
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
@@ -2215,8 +2279,15 @@ async function handleSaveNewTask() {
 // NAVIGATION
 // ============================================================
 
+function renderApp() {
+  if (state.view === 'home') renderHome();
+  else if (state.view === 'plant') renderPlantDetail(state.plantId);
+}
+
 function navigateTo(view, plantId = null) {
   closeSheet();
+  if (scheduleFilter === null) scheduleFilter = [activeUser];
+  if (tasksFilter === null) tasksFilter = [activeUser];
   state.view = view;
   state.plantId = plantId;
   if (view === 'home') renderHome();
@@ -2407,9 +2478,43 @@ async function handleEvent(e) {
       renderHome();
       break;
 
-    case 'schedule-toggle-all':
-      scheduleShowAll = target.checked;
-      renderHome();
+    case 'user-filter-all': {
+      const filterId = target.dataset.filter;
+      const allNames = membersCache.map(m => m.display_name);
+      if (filterId === 'schedule') scheduleFilter = [...allNames];
+      if (filterId === 'tasks') tasksFilter = [...allNames];
+      if (filterId === 'carelog') careLogFilter = 'all';
+      renderApp();
+      break;
+    }
+
+    case 'user-filter-toggle': {
+      const filterId = target.dataset.filter;
+      const user = target.dataset.user;
+      if (filterId === 'schedule') {
+        scheduleFilter = scheduleFilter.includes(user)
+          ? scheduleFilter.filter(u => u !== user)
+          : [...scheduleFilter, user];
+        if (scheduleFilter.length === 0) scheduleFilter = [user];
+      }
+      if (filterId === 'tasks') {
+        tasksFilter = tasksFilter.includes(user)
+          ? tasksFilter.filter(u => u !== user)
+          : [...tasksFilter, user];
+        if (tasksFilter.length === 0) tasksFilter = [user];
+      }
+      renderApp();
+      break;
+    }
+
+    case 'carelog-toggle-filters':
+      careLogFiltersOpen = !careLogFiltersOpen;
+      renderPlantDetail(state.plantId);
+      break;
+
+    case 'carelog-mode':
+      careLogMode = target.dataset.mode;
+      renderPlantDetail(state.plantId);
       break;
 
     case 'reassign-task':
@@ -2750,13 +2855,13 @@ async function subscribeToPush() {
 function attachArrivalDateListener() {
   document.getElementById('sheet-acquired-date')?.addEventListener('change', function() {
     const display = document.getElementById('arrival-date-display');
-    if (!display) return;
+    const btn = this.closest('.arrival-date-btn');
     if (this.value) {
-      display.textContent = new Date(this.value + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      display.classList.add('has-value');
+      if (display) display.textContent = new Date(this.value + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      btn?.classList.add('has-value');
     } else {
-      display.textContent = 'Select a date';
-      display.classList.remove('has-value');
+      if (display) display.textContent = 'Select a date';
+      btn?.classList.remove('has-value');
     }
   });
 }

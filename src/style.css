@@ -1771,6 +1771,228 @@ body {
   margin-top: 8px;
 }
 
+/* ===== Add Plant Two-Step Flow ===== */
+.add-plant-subtitle {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-top: -10px;
+  margin-bottom: 16px;
+}
+
+.emoji-cat-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.emoji-cat-tab {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.emoji-cat-tab.active {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.add-plant-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 40px);
+  gap: 6px;
+  justify-content: start;
+  overflow-y: auto;
+  padding: 4px 0 6px;
+}
+
+.add-plant-emoji-grid.clipped {
+  /* 4 full rows (178px) + gap (6px) + half 5th row (20px) */
+  max-height: 204px;
+  overflow-y: auto;
+}
+
+.emoji-custom-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 12px 0 10px;
+}
+
+.emoji-custom-trigger {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  margin-bottom: 8px;
+}
+
+.emoji-custom-trigger:active { opacity: 0.7; }
+
+.emoji-custom-input {
+  display: none;
+}
+
+/* Step 2 — emoji confirm row */
+.add-plant-emoji-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: var(--primary-light);
+  border: 1.5px solid var(--primary);
+  border-radius: var(--radius-xs);
+  padding: 10px 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.add-plant-confirm-emoji {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.add-plant-confirm-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  text-align: left;
+}
+
+.add-plant-confirm-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.add-plant-confirm-change {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Step 2 — name suggestion pills */
+.name-suggestion-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -4px;
+  margin-bottom: 16px;
+}
+
+.name-pill {
+  padding: 6px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.name-pill:active {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Step 2 — arrival date row */
+.arrival-step2-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.arrival-step2-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.arrival-optional-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: transparent;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  position: relative;
+  flex-shrink: 0;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.arrival-optional-pill.has-value {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Step 2 — back link */
+.add-plant-back-link {
+  display: block;
+  width: 100%;
+  text-align: center;
+  background: transparent;
+  border: none;
+  padding: 10px;
+  font-size: 14px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  margin-top: 4px;
+}
+
+.add-plant-back-link:active { opacity: 0.7; }
+
+/* Duplicate nudge */
+.duplicate-nudge {
+  background: #fff8e1;
+  border: 1.5px solid #f9a825;
+  border-radius: var(--radius-xs);
+  padding: 12px 14px;
+}
+
+.duplicate-nudge-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e65100;
+  margin-bottom: 4px;
+}
+
+.duplicate-nudge-body {
+  font-size: 13px;
+  color: #5d4037;
+  line-height: 1.4;
+}
+
 /* ===== Header Feedback Button ===== */
 .header-feedback-btn {
   background: transparent;

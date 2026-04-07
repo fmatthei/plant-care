@@ -867,7 +867,16 @@ function showDoneToast(plantId, taskId, taskName) {
 // PLANT EMOJI PICKER
 // ============================================================
 
-const PLANT_EMOJIS = ['🌱','🪴','🌿','🍃','🌵','🎋','🎍','🌾','🌲','🌳','🌴','🍀','🍁','🍂','🌸','🌺','🌻','🌹','🌷','💐','🍊','🍋','🍇','🍓','🫐','🥦','🌶️','🧅','🧄'];
+const EMOJI_CATEGORIES = {
+  foliage: ['🌱','🪴','🌿','🍃','🎋','🎍','🌾','🍀','🌵','🌲','🌳','🌴','🫘'],
+  flowers: ['🌸','🌺','🌻','🌹','🌷','💐','🪷','🌼'],
+  edibles: ['🍊','🍋','🍇','🍓','🫐','🥦','🌶️','🧅','🧄','🍄','🥕','🍅','🌽','🥬'],
+};
+const PLANT_EMOJIS = [
+  ...EMOJI_CATEGORIES.foliage,
+  ...EMOJI_CATEGORIES.flowers,
+  ...EMOJI_CATEGORIES.edibles,
+];
 
 function renderEmojiPickerHtml(currentEmoji) {
   const gridItems = PLANT_EMOJIS.map(e => {
@@ -880,6 +889,98 @@ function renderEmojiPickerHtml(currentEmoji) {
     <div class="emoji-custom-row">
       <input type="text" class="form-input" id="sheet-plant-emoji" placeholder="Or paste custom emoji" autocomplete="off" value="${escapeHtml(customVal)}">
     </div>`;
+}
+
+// ============================================================
+// ADD PLANT — TWO-STEP FLOW
+// ============================================================
+
+function renderAddPlantEmojiItems(emojis, selectedEmoji) {
+  return emojis.map(e => {
+    const sel = e === selectedEmoji ? ' selected' : '';
+    return `<div class="emoji-option${sel}" data-action="pick-plant-emoji" data-emoji="${e}">${e}</div>`;
+  }).join('');
+}
+
+function renderAddPlantStep1Html(activeTab, selectedEmoji) {
+  const emojis = activeTab === 'all' ? PLANT_EMOJIS : (EMOJI_CATEGORIES[activeTab] ?? PLANT_EMOJIS);
+  return `
+    <div class="sheet-title">Add a plant</div>
+    <div class="add-plant-subtitle">Pick an icon that looks like yours</div>
+    <div class="emoji-cat-tabs">
+      <button class="emoji-cat-tab${activeTab === 'all' ? ' active' : ''}" data-action="add-plant-tab" data-tab="all">All (35)</button>
+      <button class="emoji-cat-tab${activeTab === 'foliage' ? ' active' : ''}" data-action="add-plant-tab" data-tab="foliage">🌿 Foliage</button>
+      <button class="emoji-cat-tab${activeTab === 'flowers' ? ' active' : ''}" data-action="add-plant-tab" data-tab="flowers">🌸 Flowers</button>
+      <button class="emoji-cat-tab${activeTab === 'edibles' ? ' active' : ''}" data-action="add-plant-tab" data-tab="edibles">🍋 Edibles</button>
+    </div>
+    <div class="add-plant-emoji-grid${activeTab === 'all' ? ' clipped' : ''}" id="add-plant-emoji-grid">
+      ${renderAddPlantEmojiItems(emojis, selectedEmoji)}
+    </div>
+    <div class="emoji-custom-divider"></div>
+    <button class="emoji-custom-trigger" data-action="add-plant-custom-emoji-trigger">
+      Can't find yours? Use any emoji from your keyboard →
+    </button>
+    <input type="text" id="sheet-plant-custom-emoji" class="emoji-custom-input form-input" placeholder="Paste emoji here" autocomplete="off">
+    <div class="sheet-actions" style="margin-top:16px;">
+      <button class="btn btn-primary" data-action="add-plant-next" style="flex:1;">Next →</button>
+    </div>`;
+}
+
+function renderAddPlantStep2Html(selectedEmoji) {
+  return `
+    <button class="add-plant-emoji-confirm" data-action="add-plant-change-emoji">
+      <span class="add-plant-confirm-emoji">${escapeHtml(selectedEmoji)}</span>
+      <div class="add-plant-confirm-info">
+        <span class="add-plant-confirm-label">Looking good</span>
+        <span class="add-plant-confirm-change">Tap to change</span>
+      </div>
+    </button>
+    <div class="form-group" style="margin-top:16px;">
+      <label class="form-label">What do you call it?</label>
+      <input type="text" class="form-input" id="sheet-plant-name" placeholder="e.g. Monstera" autocomplete="off">
+    </div>
+    <div id="add-plant-duplicate-nudge" class="duplicate-nudge" style="display:none;margin-bottom:12px;"></div>
+    <div class="name-suggestion-pills">
+      <button class="name-pill" data-action="add-plant-name-pill" data-name="Monstera">Monstera</button>
+      <button class="name-pill" data-action="add-plant-name-pill" data-name="My green one">My green one</button>
+      <button class="name-pill" data-action="add-plant-name-pill" data-name="The big one">The big one</button>
+      <button class="name-pill" data-action="add-plant-name-pill" data-name="Bathroom plant">Bathroom plant</button>
+    </div>
+    <div class="arrival-step2-row">
+      <div class="arrival-step2-left">
+        <span>🌱</span>
+        <span>When did it arrive home?</span>
+      </div>
+      <label class="arrival-optional-pill" for="sheet-acquired-date">
+        <span id="arrival-date-display">Optional</span>
+        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;width:0;height:0;">
+      </label>
+    </div>
+    <div class="sheet-actions" style="margin-top:16px;">
+      <button class="btn btn-primary" data-action="sheet-save-new-plant" style="flex:1;">Welcome it home</button>
+    </div>
+    <button class="add-plant-back-link" data-action="add-plant-back">← Back</button>`;
+}
+
+function attachAddPlantNameListener() {
+  const nameInput = document.getElementById('sheet-plant-name');
+  if (!nameInput) return;
+  nameInput.addEventListener('input', function() {
+    const val = this.value.trim();
+    const nudge = document.getElementById('add-plant-duplicate-nudge');
+    if (!nudge) return;
+    const isDuplicate = val && plants.some(p => p.name.toLowerCase() === val.toLowerCase());
+    if (isDuplicate) {
+      nudge.style.display = '';
+      nudge.innerHTML = `
+        <div class="duplicate-nudge-title">You already have a ${escapeHtml(val)}</div>
+        <div class="duplicate-nudge-body">Give this one a different name so you can tell them apart — or skip and we'll call it '${escapeHtml(val)} 2'.</div>
+        <input type="text" class="form-input" id="sheet-plant-alt-name" placeholder="Alternative name…" autocomplete="off" style="margin-top:8px;">`;
+    } else {
+      nudge.style.display = 'none';
+      nudge.innerHTML = '';
+    }
+  });
 }
 
 // ============================================================
@@ -2101,43 +2202,26 @@ async function handleSavePlant() {
 
 function renderAddPlantSheet() {
   state.sheetMode = 'add-plant';
-  state.sheetData = {};
-
-  openSheet(`
-    <div class="sheet-title">Add Plant</div>
-    <div class="form-group">
-      <label class="form-label">Plant Name</label>
-      <input type="text" class="form-input" id="sheet-plant-name" placeholder="e.g. Monstera" autocomplete="off">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Emoji</label>
-      ${renderEmojiPickerHtml('🪴')}
-    </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;">
-      <div>
-        <div class="sheet-field-label">Arrival date <span class="sheet-field-optional">optional</span></div>
-        <div class="sheet-field-hint">🌱 Track how long you've cared for it</div>
-      </div>
-      <label class="arrival-date-btn" for="sheet-acquired-date">
-        <span style="font-size:14px;">📅</span>
-        <span class="arrival-date-text" id="arrival-date-display">Select a date</span>
-        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;width:0;height:0;">
-      </label>
-    </div>
-    <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
-      <button class="btn btn-primary" data-action="sheet-save-new-plant">Save</button>
-    </div>
-  `);
-  attachArrivalDateListener();
+  state.sheetData = { step: 1, selectedEmoji: '🪴', activeTab: 'all' };
+  openSheet(renderAddPlantStep1Html('all', '🪴'));
 }
 
 async function handleSaveNewPlant() {
-  const name = document.getElementById('sheet-plant-name')?.value?.trim();
-  if (!name) { alert('Please enter a plant name.'); return; }
+  const typedName = document.getElementById('sheet-plant-name')?.value?.trim();
+  if (!typedName) { alert('Please enter a plant name.'); return; }
 
-  const selectedGridEmoji = document.querySelector('#sheet .emoji-option.selected')?.dataset.emoji ?? '';
-  const emoji = selectedGridEmoji || document.getElementById('sheet-plant-emoji')?.value?.trim() || '🪴';
+  const isDuplicate = plants.some(p => p.name.toLowerCase() === typedName.toLowerCase());
+  let name;
+  if (isDuplicate) {
+    const altName = document.getElementById('sheet-plant-alt-name')?.value?.trim();
+    name = altName || `${typedName} 2`;
+  } else {
+    name = typedName;
+  }
+
+  const emoji = state.sheetData.selectedEmoji
+    || document.getElementById('sheet-plant-custom-emoji')?.value?.trim()
+    || '🪴';
   const dateAcquired = document.getElementById('sheet-acquired-date')?.value || null;
   const sortOrder = plants.length + 1;
 
@@ -2616,6 +2700,58 @@ async function handleEvent(e) {
       renderAddPlantSheet();
       break;
 
+    case 'add-plant-tab': {
+      const tab = target.dataset.tab;
+      state.sheetData.activeTab = tab;
+      const tabEmojis = tab === 'all' ? PLANT_EMOJIS : (EMOJI_CATEGORIES[tab] ?? PLANT_EMOJIS);
+      const grid = document.getElementById('add-plant-emoji-grid');
+      if (grid) {
+        grid.className = `add-plant-emoji-grid${tab === 'all' ? ' clipped' : ''}`;
+        grid.innerHTML = renderAddPlantEmojiItems(tabEmojis, state.sheetData.selectedEmoji);
+      }
+      document.querySelectorAll('#sheet .emoji-cat-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.tab === tab);
+      });
+      break;
+    }
+
+    case 'add-plant-next': {
+      const customEmoji = document.getElementById('sheet-plant-custom-emoji')?.value?.trim();
+      const emoji = customEmoji || state.sheetData.selectedEmoji || '🪴';
+      state.sheetData.selectedEmoji = emoji;
+      state.sheetData.step = 2;
+      openSheet(renderAddPlantStep2Html(emoji));
+      attachArrivalDateListener('Optional');
+      attachAddPlantNameListener();
+      setTimeout(() => document.getElementById('sheet-plant-name')?.focus(), 80);
+      break;
+    }
+
+    case 'add-plant-back':
+    case 'add-plant-change-emoji':
+      state.sheetData.step = 1;
+      openSheet(renderAddPlantStep1Html(state.sheetData.activeTab || 'all', state.sheetData.selectedEmoji || '🪴'));
+      break;
+
+    case 'add-plant-name-pill': {
+      const nameInput = document.getElementById('sheet-plant-name');
+      if (nameInput) {
+        nameInput.value = target.dataset.name;
+        nameInput.dispatchEvent(new Event('input'));
+      }
+      break;
+    }
+
+    case 'add-plant-custom-emoji-trigger': {
+      const customInput = document.getElementById('sheet-plant-custom-emoji');
+      if (customInput) {
+        customInput.style.display = 'block';
+        target.style.display = 'none';
+        customInput.focus();
+      }
+      break;
+    }
+
     case 'add-task':
       renderAddTaskStep1(plantId);
       break;
@@ -2641,6 +2777,7 @@ async function handleEvent(e) {
     case 'pick-plant-emoji':
       document.querySelectorAll('#sheet .emoji-option').forEach(o => o.classList.remove('selected'));
       target.classList.add('selected');
+      if (state.sheetMode === 'add-plant') state.sheetData.selectedEmoji = target.dataset.emoji;
       break;
 
     case 'sheet-save-new-plant':
@@ -2852,15 +2989,15 @@ async function subscribeToPush() {
 // ARRIVAL DATE LISTENER
 // ============================================================
 
-function attachArrivalDateListener() {
+function attachArrivalDateListener(emptyText = 'Select a date') {
   document.getElementById('sheet-acquired-date')?.addEventListener('change', function() {
     const display = document.getElementById('arrival-date-display');
-    const btn = this.closest('.arrival-date-btn');
+    const btn = this.closest('.arrival-date-btn') ?? this.closest('.arrival-optional-pill');
     if (this.value) {
       if (display) display.textContent = new Date(this.value + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       btn?.classList.add('has-value');
     } else {
-      if (display) display.textContent = 'Select a date';
+      if (display) display.textContent = emptyText;
       btn?.classList.remove('has-value');
     }
   });

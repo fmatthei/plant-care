@@ -913,13 +913,14 @@ function renderAddPlantStep1Html(activeTab, selectedEmoji) {
       <button class="emoji-cat-tab${activeTab === 'flowers' ? ' active' : ''}" data-action="add-plant-tab" data-tab="flowers">🌸 Flowers</button>
       <button class="emoji-cat-tab${activeTab === 'edibles' ? ' active' : ''}" data-action="add-plant-tab" data-tab="edibles">🍋 Edibles</button>
     </div>
-    <div class="add-plant-emoji-grid${activeTab === 'all' ? ' clipped' : ''}" id="add-plant-emoji-grid">
+    <div class="add-plant-emoji-grid" id="add-plant-emoji-grid">
       ${renderAddPlantEmojiItems(emojis, selectedEmoji)}
     </div>
     <div class="emoji-custom-divider"></div>
-    <button class="emoji-custom-trigger" data-action="add-plant-custom-emoji-trigger">
-      Can't find yours? Use any emoji from your keyboard →
-    </button>
+    <div class="emoji-custom-row-split">
+      <span class="emoji-custom-label">Can't find yours? Paste any emoji</span>
+      <button class="emoji-paste-btn" data-action="add-plant-custom-emoji-trigger">📋 Paste emoji</button>
+    </div>
     <input type="text" id="sheet-plant-custom-emoji" class="emoji-custom-input form-input" placeholder="Paste emoji here" autocomplete="off">
     <div class="sheet-actions" style="margin-top:16px;">
       <button class="btn btn-primary" data-action="add-plant-next" style="flex:1;">Next →</button>
@@ -939,13 +940,8 @@ function renderAddPlantStep2Html(selectedEmoji) {
       <label class="form-label">What do you call it?</label>
       <input type="text" class="form-input" id="sheet-plant-name" placeholder="e.g. Monstera" autocomplete="off">
     </div>
+    <div class="name-hint">e.g. Monstera, My green one, The big one, Bathroom plant</div>
     <div id="add-plant-duplicate-nudge" class="duplicate-nudge" style="display:none;margin-bottom:12px;"></div>
-    <div class="name-suggestion-pills">
-      <button class="name-pill" data-action="add-plant-name-pill" data-name="Monstera">Monstera</button>
-      <button class="name-pill" data-action="add-plant-name-pill" data-name="My green one">My green one</button>
-      <button class="name-pill" data-action="add-plant-name-pill" data-name="The big one">The big one</button>
-      <button class="name-pill" data-action="add-plant-name-pill" data-name="Bathroom plant">Bathroom plant</button>
-    </div>
     <div class="arrival-step2-row">
       <div class="arrival-step2-left">
         <span>🌱</span>
@@ -1317,9 +1313,14 @@ function renderUserFilterPills(filterId, selectedUsers) {
   html += `<div class="${allPillCls}" data-action="user-filter-all" data-filter="${filterId}">All</div>`;
   for (const m of membersCache) {
     const active = selectedUsers.includes(m.display_name);
-    const opacity = active ? '1' : '0.35';
-    html += `<div class="user-pill" data-action="user-filter-toggle" data-filter="${filterId}" data-user="${escapeHtml(m.display_name)}" style="background:${m.color}20;color:${m.color};border-color:${m.color};opacity:${opacity};">
-      <div class="user-pill-dot" style="background:${m.color};"></div>
+    const pillStyle = active
+      ? `background:${m.color};color:#fff;border-color:transparent;`
+      : `background:#fff;color:#6b7c6b;border-color:#dde8dd;`;
+    const dotStyle = active
+      ? `background:rgba(255,255,255,0.65);`
+      : `background:${m.color};`;
+    html += `<div class="user-pill" data-action="user-filter-toggle" data-filter="${filterId}" data-user="${escapeHtml(m.display_name)}" style="${pillStyle}">
+      <div class="user-pill-dot" style="${dotStyle}"></div>
       ${escapeHtml(m.display_name)}
     </div>`;
   }
@@ -2706,7 +2707,6 @@ async function handleEvent(e) {
       const tabEmojis = tab === 'all' ? PLANT_EMOJIS : (EMOJI_CATEGORIES[tab] ?? PLANT_EMOJIS);
       const grid = document.getElementById('add-plant-emoji-grid');
       if (grid) {
-        grid.className = `add-plant-emoji-grid${tab === 'all' ? ' clipped' : ''}`;
         grid.innerHTML = renderAddPlantEmojiItems(tabEmojis, state.sheetData.selectedEmoji);
       }
       document.querySelectorAll('#sheet .emoji-cat-tab').forEach(t => {
@@ -2732,15 +2732,6 @@ async function handleEvent(e) {
       state.sheetData.step = 1;
       openSheet(renderAddPlantStep1Html(state.sheetData.activeTab || 'all', state.sheetData.selectedEmoji || '🪴'));
       break;
-
-    case 'add-plant-name-pill': {
-      const nameInput = document.getElementById('sheet-plant-name');
-      if (nameInput) {
-        nameInput.value = target.dataset.name;
-        nameInput.dispatchEvent(new Event('input'));
-      }
-      break;
-    }
 
     case 'add-plant-custom-emoji-trigger': {
       const customInput = document.getElementById('sheet-plant-custom-emoji');

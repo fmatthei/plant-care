@@ -1273,7 +1273,7 @@ function renderPlantDetail(plantId) {
     <div class="detail-header-title">
       <span class="detail-header-emoji-circle">${plant.emoji}</span>
       <span class="detail-header-name">${escapeHtml(plant.name)}</span>
-      <button class="header-edit-plant-btn" data-action="open-edit-plant" data-plant="${plant.id}">✏️</button>
+      <button class="header-edit-plant-btn" data-action="open-edit-plant" data-plant="${plant.id}">Edit</button>
     </div>
     <button class="header-feedback-btn" data-action="feedback">💬</button>
     <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
@@ -1826,6 +1826,8 @@ function closeSheet() {
   document.getElementById('overlay').classList.remove('active');
   state.sheetMode = null;
   state.sheetData = {};
+  // Clear content after transition to release DOM listeners and touch state
+  setTimeout(() => { document.getElementById('sheet-content').innerHTML = ''; }, 320);
 }
 
 function openMenu() {
@@ -2153,26 +2155,28 @@ function renderEditPlantStep2Html(plant, selectedEmoji) {
     ? new Date(plant.dateAcquired + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : 'Optional';
   return `
-    <div class="sheet-title">Edit plant</div>
-    <div class="edit-plant-icon-name-row">
+    <div class="sheet-title edit-plant-sheet-title">Edit plant</div>
+    <div class="edit-plant-field-label">ICON &amp; NAME</div>
+    <div class="edit-plant-icon-name-row" id="edit-plant-fields">
       <button class="edit-plant-emoji-tile" data-action="add-plant-change-emoji">${escapeHtml(emoji)}</button>
       <input type="text" class="form-input" id="sheet-plant-name" value="${escapeHtml(plant.name)}" placeholder="Plant name" style="flex:1;">
     </div>
-    <div class="arrival-step2-row" style="margin-top:16px;">
+    <div class="edit-plant-field-label" style="margin-top:14px;">ARRIVAL DATE</div>
+    <div class="arrival-step2-row">
       <div class="arrival-step2-left">
         <span>🌱</span>
         <span>When did it arrive home?</span>
       </div>
-      <label class="arrival-optional-pill${plant.dateAcquired ? ' has-value' : ''}" for="sheet-acquired-date">
+      <label class="arrival-optional-pill${plant.dateAcquired ? ' has-value' : ''}" id="edit-plant-arrival-pill" for="sheet-acquired-date">
         <span id="arrival-date-display">${escapeHtml(dateDisplay)}</span>
         <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;width:0;height:0;" value="${escapeHtml(plant.dateAcquired ?? '')}">
       </label>
     </div>
-    <div class="sheet-actions" style="margin-top:20px;">
+    <div class="sheet-actions" style="margin-top:20px;" id="edit-plant-save-row">
       <button class="btn btn-primary" data-action="sheet-save-plant" style="flex:1;">Save changes</button>
     </div>
     <div class="edit-plant-delete-section">
-      <button class="sheet-danger-link delete" data-action="edit-plant-show-delete" id="edit-plant-delete-btn">Delete plant</button>
+      <button class="edit-plant-delete-btn" data-action="edit-plant-show-delete" id="edit-plant-delete-btn">Delete plant</button>
       <div class="edit-plant-delete-confirm" id="edit-plant-delete-confirm" style="display:none;">
         <div class="edit-plant-delete-confirm-body">This will permanently delete the plant and all its tasks, notes, and care history. This cannot be undone.</div>
         <div class="edit-plant-delete-confirm-actions">
@@ -2679,15 +2683,24 @@ async function handleEvent(e) {
       renderEditPlantSheet(plantId);
       break;
 
-    case 'edit-plant-show-delete':
+    case 'edit-plant-show-delete': {
       document.getElementById('edit-plant-delete-btn').style.display = 'none';
       document.getElementById('edit-plant-delete-confirm').style.display = '';
+      const lockStyle = 'pointer-events:none;opacity:0.4;';
+      document.getElementById('edit-plant-fields').style.cssText = lockStyle;
+      document.getElementById('edit-plant-arrival-pill').style.cssText = lockStyle;
+      document.getElementById('edit-plant-save-row').style.cssText = lockStyle;
       break;
+    }
 
-    case 'edit-plant-hide-delete':
+    case 'edit-plant-hide-delete': {
       document.getElementById('edit-plant-delete-btn').style.display = '';
       document.getElementById('edit-plant-delete-confirm').style.display = 'none';
+      document.getElementById('edit-plant-fields').style.cssText = '';
+      document.getElementById('edit-plant-arrival-pill').style.cssText = '';
+      document.getElementById('edit-plant-save-row').style.cssText = '';
       break;
+    }
 
     case 'add-note':
       renderAddNoteSheet(plantId);

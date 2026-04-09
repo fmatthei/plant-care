@@ -803,7 +803,7 @@ body {
   transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
   max-height: 90vh;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .sheet.active {
@@ -1943,6 +1943,8 @@ body {
   position: relative;
   flex-shrink: 0;
   transition: border-color 0.12s, background 0.12s, color 0.12s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .arrival-optional-pill.has-value {
@@ -1969,6 +1971,19 @@ body {
 .add-plant-back-link:active { opacity: 0.7; }
 
 /* ===== Edit Plant Sheet ===== */
+.edit-plant-sheet-title {
+  font-weight: 500;
+}
+
+.edit-plant-field-label {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 5px;
+  margin-top: 10px;
+}
+
 .edit-plant-icon-name-row {
   display: flex;
   align-items: center;
@@ -1980,7 +1995,7 @@ body {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: var(--color-bg-secondary, #f5f7f4);
+  background: #f4f6f2;
   border: 1.5px solid var(--border);
   font-size: 24px;
   cursor: pointer;
@@ -1990,6 +2005,8 @@ body {
   flex-shrink: 0;
   padding: 0;
   line-height: 1;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .edit-plant-emoji-tile:active { opacity: 0.7; }
 
@@ -1997,8 +2014,24 @@ body {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 0.5px solid var(--border);
-  text-align: center;
 }
+
+.edit-plant-delete-btn {
+  width: 100%;
+  background: #fff5f5;
+  border: 0.5px solid #f0c0c0;
+  color: #c0392b;
+  border-radius: 10px;
+  padding: 11px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.edit-plant-delete-btn:active { opacity: 0.7; }
 
 .edit-plant-delete-confirm {
   margin-top: 12px;
@@ -2124,21 +2157,19 @@ body {
 }
 
 .header-edit-plant-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
+  background: none;
   border: none;
-  font-size: 14px;
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  margin-left: 5px;
+  padding: 2px 0;
   flex-shrink: 0;
-  padding: 0;
-  line-height: 1;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
-.header-edit-plant-btn:active { opacity: 0.7; }
+.header-edit-plant-btn:active { opacity: 0.6; }
 
 .user-initial-circle {
   width: 34px;

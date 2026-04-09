@@ -101,7 +101,7 @@ let activeUser = null;
 let activeTab = 'plants';
 let scheduleFilter = null; // null = uninitialized; array of display_names to show
 let tasksFilter = null;    // null = uninitialized
-let careLogFilter = 'all'; // 'all' = all users selected
+let careLogFilter = []; // [] = all users (no individual selection)
 let careLogFiltersOpen = false;
 let careLogMode = 'tasks'; // 'tasks' | 'all'
 let plantDetailTab = 'summary';
@@ -581,6 +581,13 @@ function getTask(plantId, taskId) {
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 function escapeHtml(str) {
@@ -1145,7 +1152,7 @@ function renderSchedule() {
   for (const plant of plants) {
     for (const task of plant.tasks) {
       if (task.paused) continue;
-      if (!activeFilter.includes(task.owner)) continue;
+      if (activeFilter.length > 0 && !activeFilter.includes(task.owner)) continue;
       items.push({ plant, task });
     }
   }
@@ -1162,7 +1169,7 @@ function renderSchedule() {
 
   function renderTaskRow(plant, task, extraClass) {
     const cfg = getTaskConfig(task);
-    const showOwner = activeFilter.length > 1;
+    const showOwner = activeFilter.length !== 1;
     const ownerTag = showOwner
       ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'};background:${(USERS[task.owner]?.color ?? '#666666')}26">👤 ${escapeHtml(task.owner)}</span>`
       : '';
@@ -1207,7 +1214,7 @@ function renderSchedule() {
     for (const { plant, task } of overdueItems) {
       const daysAgo = Math.abs(daysUntilDue(task));
       const cfg = getTaskConfig(task);
-      const showOwner = activeFilter.length > 1;
+      const showOwner = activeFilter.length !== 1;
       const ownerTag = showOwner
         ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'};background:${(USERS[task.owner]?.color ?? '#666666')}26">👤 ${escapeHtml(task.owner)}</span>`
         : '';
@@ -1266,6 +1273,7 @@ function renderPlantDetail(plantId) {
     <div class="detail-header-title">
       <span class="detail-header-emoji-circle">${plant.emoji}</span>
       <span class="detail-header-name">${escapeHtml(plant.name)}</span>
+      <button class="header-edit-plant-btn" data-action="open-edit-plant" data-plant="${plant.id}">✏️</button>
     </div>
     <button class="header-feedback-btn" data-action="feedback">💬</button>
     <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
@@ -1307,21 +1315,27 @@ function renderPlantDetail(plantId) {
 }
 
 function renderUserFilterPills(filterId, selectedUsers) {
-  const allSelected = membersCache.every(m => selectedUsers.includes(m.display_name));
-  const allPillCls = allSelected ? 'user-pill user-pill-all active' : 'user-pill user-pill-all';
+  const noneSelected = selectedUsers.length === 0;
+  const allPillCls = noneSelected ? 'user-pill user-pill-all active' : 'user-pill user-pill-all';
   let html = `<div class="user-filter-row" data-filter="${filterId}">`;
   html += `<div class="${allPillCls}" data-action="user-filter-all" data-filter="${filterId}">All</div>`;
+  html += `<div class="user-filter-sep"></div>`;
   for (const m of membersCache) {
     const active = selectedUsers.includes(m.display_name);
+    const color = m.color ?? '#666';
+    const borderColor = hexToRgba(color, 0.5);
     const pillStyle = active
-      ? `background:${m.color};color:#fff;border-color:transparent;`
-      : `background:#fff;color:#6b7c6b;border-color:#dde8dd;`;
+      ? `background:${color};color:#fff;border:0.5px solid transparent;`
+      : `background:#fff;color:#333;border:0.5px solid ${borderColor};`;
     const dotStyle = active
       ? `background:rgba(255,255,255,0.65);`
-      : `background:${m.color};`;
+      : `background:${color};`;
+    const checkStyle = active ? `color:#fff;` : `color:#aaa;`;
+    const checkChar = active ? '✓' : '✕';
     html += `<div class="user-pill" data-action="user-filter-toggle" data-filter="${filterId}" data-user="${escapeHtml(m.display_name)}" style="${pillStyle}">
       <div class="user-pill-dot" style="${dotStyle}"></div>
       ${escapeHtml(m.display_name)}
+      <span class="user-pill-check" style="${checkStyle}">${checkChar}</span>
     </div>`;
   }
   html += `</div>`;
@@ -1461,7 +1475,9 @@ function renderTasksTab(plant) {
   }
   const activeFilter = tasksFilter ?? [activeUser];
   let html = renderUserFilterPills('tasks', activeFilter);
-  const filtered = plant.tasks.filter(t => activeFilter.includes(t.owner));
+  const filtered = activeFilter.length === 0
+    ? plant.tasks
+    : plant.tasks.filter(t => activeFilter.includes(t.owner));
   if (filtered.length === 0) {
     html += `<div class="detail-empty">No tasks for selected users</div>`;
     return html;
@@ -1526,18 +1542,19 @@ function renderCareLogTab(plant) {
   </div>`;
   }
 
-  html += renderUserFilterPills('carelog', membersCache.map(m => m.display_name));
+  html += renderUserFilterPills('carelog', careLogFilter);
 
   const showUpcoming = careLogSegment === 'upcoming' || careLogSegment === 'full';
   const showPast     = careLogSegment === 'past'     || careLogSegment === 'full';
 
   if (showUpcoming) {
+    const filteredUpcoming = careLogFilter.length === 0
+      ? plant.tasks.filter(t => !t.paused)
+      : plant.tasks.filter(t => !t.paused && careLogFilter.includes(t.owner));
     if (careLogSegment === 'full') {
-      const upcomingCount = plant.tasks.filter(t => !t.paused).length;
-      html += sectionHeader('Upcoming', '#185FA5', upcomingCount);
+      html += sectionHeader('Upcoming', '#185FA5', filteredUpcoming.length);
     }
-    const upcomingTasks = plant.tasks
-      .filter(t => !t.paused)
+    const upcomingTasks = filteredUpcoming
       .sort((a, b) => {
         const da = computeNextDue(a) ?? '9999-99-99';
         const db = computeNextDue(b) ?? '9999-99-99';
@@ -1556,12 +1573,17 @@ function renderCareLogTab(plant) {
 
   if (careLogSegment === 'full') {
     html += `<div class="carelog-divider"></div>`;
-    const pastCount = plant.careLog.length;
-    html += sectionHeader('Past', '#888780', pastCount);
+    const filteredPastCount = careLogFilter.length === 0
+      ? plant.careLog.length
+      : plant.careLog.filter(e => careLogFilter.includes(e.author)).length;
+    html += sectionHeader('Past', '#888780', filteredPastCount);
   }
 
   if (showPast) {
-    const careEntries = [...plant.careLog].sort((a, b) => b.date.localeCompare(a.date));
+    const allEntries = [...plant.careLog].sort((a, b) => b.date.localeCompare(a.date));
+    const careEntries = careLogFilter.length === 0
+      ? allEntries
+      : allEntries.filter(e => careLogFilter.includes(e.author));
     if (careEntries.length === 0) {
       html += `<div class="detail-empty">No care history yet</div>`;
     } else {
@@ -2125,45 +2147,51 @@ function renderAddNoteSheet(plantId) {
   `);
 }
 
+function renderEditPlantStep2Html(plant, selectedEmoji) {
+  const emoji = selectedEmoji ?? plant.emoji ?? '🪴';
+  const dateDisplay = plant.dateAcquired
+    ? new Date(plant.dateAcquired + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : 'Optional';
+  return `
+    <div class="sheet-title">Edit plant</div>
+    <div class="edit-plant-icon-name-row">
+      <button class="edit-plant-emoji-tile" data-action="add-plant-change-emoji">${escapeHtml(emoji)}</button>
+      <input type="text" class="form-input" id="sheet-plant-name" value="${escapeHtml(plant.name)}" placeholder="Plant name" style="flex:1;">
+    </div>
+    <div class="arrival-step2-row" style="margin-top:16px;">
+      <div class="arrival-step2-left">
+        <span>🌱</span>
+        <span>When did it arrive home?</span>
+      </div>
+      <label class="arrival-optional-pill${plant.dateAcquired ? ' has-value' : ''}" for="sheet-acquired-date">
+        <span id="arrival-date-display">${escapeHtml(dateDisplay)}</span>
+        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;width:0;height:0;" value="${escapeHtml(plant.dateAcquired ?? '')}">
+      </label>
+    </div>
+    <div class="sheet-actions" style="margin-top:20px;">
+      <button class="btn btn-primary" data-action="sheet-save-plant" style="flex:1;">Save changes</button>
+    </div>
+    <div class="edit-plant-delete-section">
+      <button class="sheet-danger-link delete" data-action="edit-plant-show-delete" id="edit-plant-delete-btn">Delete plant</button>
+      <div class="edit-plant-delete-confirm" id="edit-plant-delete-confirm" style="display:none;">
+        <div class="edit-plant-delete-confirm-body">This will permanently delete the plant and all its tasks, notes, and care history. This cannot be undone.</div>
+        <div class="edit-plant-delete-confirm-actions">
+          <button class="btn btn-ghost" data-action="edit-plant-hide-delete" style="flex:1;">Cancel</button>
+          <button class="btn" data-action="delete-plant" data-plant="${escapeHtml(String(plant.id))}" style="flex:1;background:#c62828;color:#fff;">Yes, delete forever</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderEditPlantSheet(plantId) {
   const plant = getPlant(plantId);
   if (!plant) return;
 
   state.sheetMode = 'edit-plant';
-  state.sheetData = { plantId };
+  state.sheetData = { plantId, step: 2, selectedEmoji: plant.emoji, activeTab: 'all' };
 
-  openSheet(`
-    <div class="sheet-title">Edit Plant Info</div>
-    <div class="form-group">
-      <label class="form-label">Plant Name</label>
-      <input type="text" class="form-input" id="sheet-plant-name" value="${escapeHtml(plant.name)}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Emoji</label>
-      ${renderEmojiPickerHtml(plant.emoji)}
-    </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;">
-      <div>
-        <div class="sheet-field-label">Arrival date <span class="sheet-field-optional">optional</span></div>
-        <div class="sheet-field-hint">🌱 Track how long you've cared for it</div>
-      </div>
-      <label class="arrival-date-btn${plant.dateAcquired ? ' has-value' : ''}" for="sheet-acquired-date">
-        <span style="font-size:14px;">📅</span>
-        <span class="arrival-date-text" id="arrival-date-display">${plant.dateAcquired ? new Date(plant.dateAcquired + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select a date'}</span>
-        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;width:0;height:0;" value="${plant.dateAcquired ?? ''}">
-      </label>
-    </div>
-    <div class="sheet-footer-sticky">
-      <div class="sheet-actions">
-        <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
-        <button class="btn btn-primary" data-action="sheet-save-plant">Save</button>
-      </div>
-      <div class="sheet-danger-links">
-        <button class="sheet-danger-link delete" data-action="delete-plant" data-plant="${plantId}">Delete Plant</button>
-      </div>
-    </div>
-  `);
-  attachArrivalDateListener();
+  openSheet(renderEditPlantStep2Html(plant, plant.emoji));
+  attachArrivalDateListener('Optional');
 }
 
 async function handleSavePlant() {
@@ -2172,8 +2200,9 @@ async function handleSavePlant() {
   if (!plant) return;
 
   const name  = document.getElementById('sheet-plant-name')?.value?.trim();
-  const selectedGridEmoji = document.querySelector('#sheet .emoji-option.selected')?.dataset.emoji ?? '';
-  const emoji = selectedGridEmoji || document.getElementById('sheet-plant-emoji')?.value?.trim();
+  const emoji = state.sheetData.selectedEmoji
+    || document.querySelector('#sheet .emoji-option.selected')?.dataset.emoji
+    || document.getElementById('sheet-plant-emoji')?.value?.trim();
   const date  = document.getElementById('sheet-acquired-date')?.value;
 
   const localUpdates = {
@@ -2565,10 +2594,9 @@ async function handleEvent(e) {
 
     case 'user-filter-all': {
       const filterId = target.dataset.filter;
-      const allNames = membersCache.map(m => m.display_name);
-      if (filterId === 'schedule') scheduleFilter = [...allNames];
-      if (filterId === 'tasks') tasksFilter = [...allNames];
-      if (filterId === 'carelog') careLogFilter = 'all';
+      if (filterId === 'schedule') scheduleFilter = [];
+      if (filterId === 'tasks') tasksFilter = [];
+      if (filterId === 'carelog') careLogFilter = [];
       renderApp();
       break;
     }
@@ -2580,13 +2608,16 @@ async function handleEvent(e) {
         scheduleFilter = scheduleFilter.includes(user)
           ? scheduleFilter.filter(u => u !== user)
           : [...scheduleFilter, user];
-        if (scheduleFilter.length === 0) scheduleFilter = [user];
       }
       if (filterId === 'tasks') {
         tasksFilter = tasksFilter.includes(user)
           ? tasksFilter.filter(u => u !== user)
           : [...tasksFilter, user];
-        if (tasksFilter.length === 0) tasksFilter = [user];
+      }
+      if (filterId === 'carelog') {
+        careLogFilter = careLogFilter.includes(user)
+          ? careLogFilter.filter(u => u !== user)
+          : [...careLogFilter, user];
       }
       renderApp();
       break;
@@ -2621,13 +2652,12 @@ async function handleEvent(e) {
 
     case 'delete-plant': {
       const plantToDelete = getPlant(plantId);
-      if (plantToDelete && confirm(`Delete ${plantToDelete.name}? This will remove the plant and all its tasks. This cannot be undone.`)) {
-        const deletedName = plantToDelete.name;
-        await deletePlant(plantId);
-        closeSheet();
-        navigateTo('home');
-        showToast(`🗑️ ${deletedName} deleted`);
-      }
+      if (!plantToDelete) break;
+      const deletedName = plantToDelete.name;
+      await deletePlant(plantId);
+      closeSheet();
+      navigateTo('home');
+      showToast(`🗑️ ${deletedName} deleted`);
       break;
     }
 
@@ -2645,7 +2675,18 @@ async function handleEvent(e) {
       break;
 
     case 'edit-plant':
+    case 'open-edit-plant':
       renderEditPlantSheet(plantId);
+      break;
+
+    case 'edit-plant-show-delete':
+      document.getElementById('edit-plant-delete-btn').style.display = 'none';
+      document.getElementById('edit-plant-delete-confirm').style.display = '';
+      break;
+
+    case 'edit-plant-hide-delete':
+      document.getElementById('edit-plant-delete-btn').style.display = '';
+      document.getElementById('edit-plant-delete-confirm').style.display = 'none';
       break;
 
     case 'add-note':
@@ -2720,10 +2761,16 @@ async function handleEvent(e) {
       const emoji = customEmoji || state.sheetData.selectedEmoji || '🪴';
       state.sheetData.selectedEmoji = emoji;
       state.sheetData.step = 2;
-      openSheet(renderAddPlantStep2Html(emoji));
-      attachArrivalDateListener('Optional');
-      attachAddPlantNameListener();
-      setTimeout(() => document.getElementById('sheet-plant-name')?.focus(), 80);
+      if (state.sheetMode === 'edit-plant') {
+        const editPlant = getPlant(state.sheetData.plantId);
+        openSheet(renderEditPlantStep2Html(editPlant, emoji));
+        attachArrivalDateListener('Optional');
+      } else {
+        openSheet(renderAddPlantStep2Html(emoji));
+        attachArrivalDateListener('Optional');
+        attachAddPlantNameListener();
+        setTimeout(() => document.getElementById('sheet-plant-name')?.focus(), 80);
+      }
       break;
     }
 
@@ -2768,7 +2815,7 @@ async function handleEvent(e) {
     case 'pick-plant-emoji':
       document.querySelectorAll('#sheet .emoji-option').forEach(o => o.classList.remove('selected'));
       target.classList.add('selected');
-      if (state.sheetMode === 'add-plant') state.sheetData.selectedEmoji = target.dataset.emoji;
+      if (state.sheetMode === 'add-plant' || state.sheetMode === 'edit-plant') state.sheetData.selectedEmoji = target.dataset.emoji;
       break;
 
     case 'sheet-save-new-plant':

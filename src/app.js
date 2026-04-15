@@ -107,6 +107,7 @@ let careLogMode = 'tasks'; // 'tasks' | 'all'
 let plantDetailTab = 'summary';
 let careLogSegment = 'full';
 let membersCache = []; // household_members rows: { id, display_name }
+let currentMemberId = null;
 let householdId = null;
 let activityFeed = []; // merged care_log + notes, top 5 across all plants
 let currentUserId = null;
@@ -210,6 +211,56 @@ function renderUserSelect() {
     </div>`;
 }
 
+function renderNameCaptureScreen() {
+  document.getElementById('app').innerHTML = `
+    <div class="name-capture-screen">
+      <div class="app-header">
+        <h1>Plant Care</h1>
+      </div>
+      <div class="name-capture-body">
+        <div class="name-capture-emoji">🌿</div>
+        <h2 class="name-capture-heading">What should we call you?</h2>
+        <p class="name-capture-sub">This is how you'll appear to your household.</p>
+        <input class="form-input" type="text" id="name-capture-input" placeholder="Your first name" autocomplete="given-name" maxlength="50">
+        <button class="btn btn-primary name-capture-btn" id="name-capture-btn" data-action="save-name" disabled>Let's go</button>
+      </div>
+    </div>`;
+  const input = document.getElementById('name-capture-input');
+  const btn   = document.getElementById('name-capture-btn');
+  input.addEventListener('input', () => {
+    btn.disabled = input.value.trim().length === 0;
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleNameCapture();
+  });
+  input.focus();
+}
+
+async function handleNameCapture() {
+  const input = document.getElementById('name-capture-input');
+  const name  = input?.value?.trim();
+  if (!name || !currentMemberId) return;
+
+  const { error } = await supabaseClient
+    .from('household_members')
+    .update({ display_name: name })
+    .eq('id', currentMemberId);
+
+  if (error) return;
+
+  // Update the cache immediately so the rest of the app sees the new name
+  const m = membersCache.find(m => m.id === currentMemberId);
+  if (m) m.display_name = name;
+
+  const saved = getActiveUser();
+  if (saved) {
+    activeUser = saved;
+    navigateTo('home');
+  } else {
+    renderUserSelect();
+  }
+}
+
 // ============================================================
 // DATA PERSISTENCE
 // ============================================================
@@ -243,12 +294,13 @@ async function loadFromSupabase() {
   // 2. Look up household_id from household_members
   const { data: member } = await supabaseClient
     .from('household_members')
-    .select('household_id')
+    .select('household_id, id')
     .eq('user_id', user.id)
     .single();
   if (!member) return;
 
   householdId = member.household_id;
+  currentMemberId = member.id;
 
   // 3. Fetch all non-deleted plants and all household_members in parallel
   const [{ data: plantRows }, { data: memberRows }] = await Promise.all([
@@ -939,7 +991,7 @@ function renderAddPlantStep2Html(selectedEmoji) {
     <button class="add-plant-emoji-confirm" data-action="add-plant-change-emoji">
       <span class="add-plant-confirm-emoji">${escapeHtml(selectedEmoji)}</span>
       <div class="add-plant-confirm-info">
-        <span class="add-plant-confirm-label">Looking good</span>
+        <span class="add-plant-confirm-label">Your icon</span>
         <span class="add-plant-confirm-change">Tap to change</span>
       </div>
     </button>
@@ -949,18 +1001,19 @@ function renderAddPlantStep2Html(selectedEmoji) {
     </div>
     <div class="name-hint">e.g. Monstera, My green one, The big one, Bathroom plant</div>
     <div id="add-plant-duplicate-nudge" class="duplicate-nudge" style="display:none;margin-bottom:12px;"></div>
-    <div class="arrival-step2-row">
-      <div class="arrival-step2-left">
-        <span>🌱</span>
-        <span>When did it arrive home?</span>
+    <div class="arrival-date-card">
+      <div class="arrival-date-top-row">
+        <span class="arrival-date-icon">📅</span>
+        <span class="arrival-date-title">When did it arrive home?</span>
       </div>
-      <label class="arrival-optional-pill" for="sheet-acquired-date">
-        <span id="arrival-date-display">Optional</span>
-        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;width:0;height:0;">
-      </label>
+      <div class="arrival-date-sub">We'll show you how long you've cared for it. (Optional)</div>
+      <button class="arrival-date-btn" type="button">
+        <span id="arrival-date-display">Set arrival date</span>
+        <input type="date" id="sheet-acquired-date" style="position:absolute;width:1px;height:1px;opacity:0;" max="">
+      </button>
     </div>
     <div class="sheet-actions" style="margin-top:16px;">
-      <button class="btn btn-primary" data-action="sheet-save-new-plant" style="flex:1;">Welcome it home</button>
+      <button class="btn btn-primary" data-action="sheet-save-new-plant" style="flex:1;">Add your plant</button>
     </div>
     <button class="add-plant-back-link" data-action="add-plant-back">← Back</button>`;
 }
@@ -1038,12 +1091,107 @@ function renderHomeActivityFeed() {
 }
 
 function shouldShowPushBanner() {
+  if (shouldShowOnboardingBanner()) return false;
   if (!('Notification' in window)) return false;
   if (Notification.permission === 'denied') return false;
   return !localStorage.getItem(`push_accepted_${activeUser}`);
 }
 
+// ============================================================
+// ONBOARDING
+// ============================================================
+
+function getOnboardingStep() {
+  if (!currentMemberId) return null;
+  const stored = localStorage.getItem(`onboarding_step_${currentMemberId}`);
+  if (stored) return parseInt(stored, 10);
+  localStorage.setItem(`onboarding_step_${currentMemberId}`, '1');
+  return 1;
+}
+
+function setOnboardingStep(step) {
+  if (!currentMemberId) return;
+  localStorage.setItem(`onboarding_step_${currentMemberId}`, String(step));
+}
+
+function getOnboardingPlantId() {
+  return currentMemberId ? localStorage.getItem(`onboarding_plant_id_${currentMemberId}`) : null;
+}
+
+function setOnboardingPlantId(id) {
+  if (!currentMemberId) return;
+  localStorage.setItem(`onboarding_plant_id_${currentMemberId}`, id);
+}
+
+function getOnboardingTaskId() {
+  return currentMemberId ? localStorage.getItem(`onboarding_task_id_${currentMemberId}`) : null;
+}
+
+function setOnboardingTaskId(id) {
+  if (!currentMemberId) return;
+  localStorage.setItem(`onboarding_task_id_${currentMemberId}`, id);
+}
+
+function renderOnboardingInlineTaskCard() {
+  const onboardingPlantId = getOnboardingPlantId();
+  const onboardingTaskId  = getOnboardingTaskId();
+  if (!onboardingPlantId || !onboardingTaskId) return '';
+
+  return `
+    <div style="padding:0 16px;margin-top:12px;">
+      <div style="background:#f4faf4;border:1.5px solid #3a6b3a;border-radius:12px;padding:12px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span style="font-size:20px;">💧</span>
+          <div>
+            <div style="font-size:14px;font-weight:500;color:#1a1a1a;">First watering</div>
+            <div style="font-size:12px;color:#888;">One-off · Due today</div>
+          </div>
+        </div>
+        <button class="btn btn-primary" style="width:100%;" data-action="mark-done" data-plant="${onboardingPlantId}" data-task="${onboardingTaskId}">&#10003; Done</button>
+      </div>
+    </div>`;
+}
+
+function shouldShowOnboardingBanner() {
+  if (localStorage.getItem('onboarding_coordination_shown')) return false;
+  const step = getOnboardingStep();
+  return step !== null && step < 4;
+}
+
+function renderOnboardingBanner() {
+  const step = getOnboardingStep();
+  if (!step || step >= 4) return '';
+
+  const onboardingPlantId = getOnboardingPlantId();
+  const onboardingPlant = plants.find(p => p.id === onboardingPlantId);
+  const ctaStyle = 'width:100%;padding:10px 12px;font-size:13px;font-weight:500;background:#3a6b3a;color:#fff;border:none;border-radius:8px;cursor:pointer;text-align:center;-webkit-tap-highlight-color:transparent;';
+
+  let instruction, ctaHtml;
+  if (step === 1) {
+    instruction = 'Add your first plant to get started.';
+    ctaHtml = `<button style="${ctaStyle}" data-action="add-plant">+ Add Plant</button>`;
+  } else if (step === 2) {
+    instruction = 'Create your first task.';
+    ctaHtml = `<button style="${ctaStyle}" data-action="onboarding-open-plant" data-plant="${onboardingPlantId ?? ''}">Create your first task →</button>`;
+  } else {
+    instruction = 'Tap ✓ Done below to complete your setup ↓';
+    ctaHtml = '';
+  }
+
+  return `
+    <div class="onboarding-banner">
+      <div class="onboarding-banner-top">
+        <span class="onboarding-label">Get started</span>
+        <span style="font-size:11px;font-weight:500;color:#3a6b3a;">Step ${step} of 3</span>
+      </div>
+      <p class="onboarding-instruction" style="margin-bottom:${ctaHtml ? '8px' : '0'};">${instruction}</p>
+      ${ctaHtml}
+    </div>`;
+}
+
 function renderHome() {
+  if (document.querySelector('.onboarding-complete-overlay')) return;
+
   let html = `
     <div class="app-header">
       <h1>Plant Care</h1>
@@ -1055,15 +1203,19 @@ function renderHome() {
     </div>`;
 
   if (activeTab === 'plants') {
+    if (shouldShowOnboardingBanner()) html += renderOnboardingBanner();
+
     // isDue() already returns false for paused tasks, so the count is correct
     const totalDue = plants.reduce((sum, p) => sum + p.tasks.filter(isDue).length, 0);
 
-    if (totalDue > 0) {
+    if (totalDue > 0 && getOnboardingStep() !== 3) {
       html += `
     <div class="due-banner">
       &#9888;&#65039; ${totalDue} task${totalDue !== 1 ? 's' : ''} due today
     </div>`;
     }
+
+    if (getOnboardingStep() === 3) html += renderOnboardingInlineTaskCard();
 
     if (shouldShowPushBanner()) {
       html += `
@@ -1090,8 +1242,12 @@ function renderHome() {
     for (const plant of plants) {
       const dueTasks = plant.tasks.filter(isDue);
 
+      const suppressOnboarding = getOnboardingStep() === 3 && plant.id === getOnboardingPlantId();
+
       let dueBadgeHtml = '';
-      if (plant.tasks.length === 0) {
+      if (suppressOnboarding) {
+        dueBadgeHtml = '';
+      } else if (plant.tasks.length === 0) {
         dueBadgeHtml = '';
       } else if (dueTasks.length > 0) {
         dueBadgeHtml = `<span class="due-count-badge">${dueTasks.length} due</span>`;
@@ -1105,6 +1261,7 @@ function renderHome() {
         taskPillsHtml += `<span class="task-due-badge ${cfg.type}">${cfg.icon} ${cfg.name}</span>`;
       }
 
+      const suppressPills = suppressOnboarding;
       html += `
     <div class="plant-card" data-action="open-plant" data-plant="${plant.id}">
       <div class="plant-card-row">
@@ -1118,7 +1275,7 @@ function renderHome() {
           <span class="plant-card-arrow">&#8250;</span>
         </div>
       </div>
-      ${dueTasks.length > 0 ? `<div class="due-tasks-row">${taskPillsHtml}</div>` : ''}
+      ${!suppressPills && dueTasks.length > 0 ? `<div class="due-tasks-row">${taskPillsHtml}</div>` : ''}
     </div>`;
     }
 
@@ -1133,7 +1290,108 @@ function renderHome() {
     html += renderSchedule();
   }
 
+  const showCoachMark = localStorage.getItem(`onboarding_show_coachmark_${currentMemberId}`);
+  localStorage.removeItem(`onboarding_show_coachmark_${currentMemberId}`);
+
   document.getElementById('app').innerHTML = html;
+
+  if (showCoachMark) {
+    setTimeout(() => renderCoachMark(), 50);
+  }
+}
+
+function renderCoachMark() {
+  const currentMember = membersCache.find(m => m.id === currentMemberId);
+  const displayName   = currentMember?.display_name ?? activeUser ?? 'You';
+  const onboardingPlant = plants.find(p => p.id === getOnboardingPlantId());
+  const plantName     = onboardingPlant?.name ?? 'your plant';
+
+  const body = "Every care action appears here in real time. No more guessing who did what — your whole household stays in sync automatically.";
+
+  const appRect = document.getElementById('app').getBoundingClientRect();
+
+  // Layer 1 — dark backdrop
+  const darkEl = document.createElement('div');
+  darkEl.id = 'coachmark-dark';
+  darkEl.style.position = 'fixed';
+  darkEl.style.top      = appRect.top + 'px';
+  darkEl.style.left     = appRect.left + 'px';
+  darkEl.style.width    = appRect.width + 'px';
+  darkEl.style.height   = appRect.height + 'px';
+  darkEl.style.background = 'rgba(0,0,0,0.55)';
+  darkEl.style.zIndex   = '20';
+
+  // Layer 2 — coach block
+  const blockEl = document.createElement('div');
+  blockEl.id = 'coachmark-block';
+  blockEl.style.position  = 'fixed';
+  blockEl.style.top       = (appRect.top + 68) + 'px';
+  blockEl.style.left      = (appRect.left + 10) + 'px';
+  blockEl.style.width     = (appRect.width - 20) + 'px';
+  blockEl.style.zIndex    = '25';
+  blockEl.style.display   = 'flex';
+  blockEl.style.flexDirection = 'column';
+  blockEl.style.gap       = '14px';
+  blockEl.innerHTML = `
+    <div style="width:100%;box-sizing:border-box;background:#fff;border:2px solid #3a6b3a;border-radius:10px;padding:9px 11px;font-size:14px;color:#1a1a1a;">
+      💧 ${escapeHtml(displayName)} watered ${escapeHtml(plantName)} · just now
+    </div>
+    <div id="coachmark-tooltip" style="width:100%;box-sizing:border-box;background:#fff;border-radius:12px;padding:13px;position:relative;">
+      <div style="position:absolute;top:-9px;left:18px;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:9px solid #fff;"></div>
+      <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:6px;">This is your household's activity feed</div>
+      <div style="font-size:13px;color:#555;line-height:1.5;margin-bottom:14px;">${escapeHtml(body)}</div>
+      <button id="coachmark-got-it" style="width:100%;padding:12px;background:#3a6b3a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;">Got it</button>
+    </div>`;
+
+  document.body.appendChild(darkEl);
+  document.body.appendChild(blockEl);
+
+  function dismissCoachMark() {
+    darkEl.remove();
+    blockEl.remove();
+  }
+
+  function showNotifStep() {
+    const tooltipEl = document.getElementById('coachmark-tooltip');
+    tooltipEl.innerHTML = `
+      <div style="position:absolute;top:-9px;left:18px;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:9px solid #fff;"></div>
+      <div style="font-size:10px;font-weight:500;color:#3a6b3a;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">One last thing</div>
+      <div style="font-size:12px;font-weight:500;color:#222;margin-bottom:6px;">Get notified when it happens</div>
+      <div style="font-size:11px;color:#555;line-height:1.5;margin-bottom:12px;">Enable notifications and you'll get a heads-up on your phone whenever someone in your household completes a care task.</div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:9px;color:#aaa;font-style:italic;text-align:center;margin-bottom:6px;">Here's what you'll see:</div>
+        <div style="background:#f0f0f0;border-radius:10px;padding:8px 10px;display:flex;align-items:center;gap:8px;">
+          <div style="width:32px;height:32px;background:#3a6b3a;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">🌿</div>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;">
+              <div style="font-size:11px;font-weight:600;color:#1a1a1a;">Plant Care</div>
+              <div style="font-size:10px;color:#aaa;">now</div>
+            </div>
+            <div style="font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">A household member watered ${escapeHtml(plantName)}</div>
+          </div>
+        </div>
+      </div>
+      <button id="coachmark-enable-notif" style="width:100%;padding:12px;background:#3a6b3a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:8px;">Enable notifications</button>
+      <button id="coachmark-no-thanks" style="width:100%;padding:6px;background:none;border:none;font-size:11px;color:#888;cursor:pointer;">No thanks</button>`;
+
+    document.getElementById('coachmark-enable-notif').addEventListener('click', async () => {
+      await subscribeToPush();
+      if (currentMemberId) localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
+      dismissCoachMark();
+      renderHome();
+    });
+
+    document.getElementById('coachmark-no-thanks').addEventListener('click', () => {
+      if (currentMemberId) localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
+      dismissCoachMark();
+      showToast('You can enable notifications any time from the menu', { duration: 3500 });
+      renderHome();
+    });
+  }
+
+  document.getElementById('coachmark-got-it').addEventListener('click', () => {
+    showNotifStep();
+  });
 }
 
 // ============================================================
@@ -1299,8 +1557,11 @@ function renderPlantDetail(plantId) {
   html += `</div>`;
 
   // Context-aware FABs
+  const isOnboardingTasksView = plantDetailTab === 'tasks'
+    && plant.id === getOnboardingPlantId()
+    && (getOnboardingStep() === 2 || getOnboardingStep() === 3);
   const showNote = plantDetailTab === 'summary' || plantDetailTab === 'notes' || plantDetailTab === 'carelog';
-  const showTask = plantDetailTab === 'summary' || plantDetailTab === 'tasks' || plantDetailTab === 'carelog';
+  const showTask = !isOnboardingTasksView && (plantDetailTab === 'summary' || plantDetailTab === 'tasks' || plantDetailTab === 'carelog');
   html += `<div class="detail-fab-stack">`;
   if (showNote) {
     html += `<button class="detail-fab detail-fab-note" data-action="add-note" data-plant="${plant.id}">&#128221; Add note</button>`;
@@ -1466,6 +1727,26 @@ function renderSummaryTab(plant) {
 }
 
 function renderTasksTab(plant) {
+  const step = getOnboardingStep();
+  const isOnboardingPlant = plant.id === getOnboardingPlantId();
+
+  if (step === 2 && isOnboardingPlant) {
+    return `<div class="onboarding-first-task-prompt">
+  <div class="onboarding-first-task-emoji">💧</div>
+  <div class="onboarding-first-task-header">Your first care task</div>
+  <div class="onboarding-first-task-sub">We'll create a simple watering task to get you started.</div>
+  <button class="btn btn-primary onboarding-first-task-btn" data-action="onboarding-add-first-task" data-plant="${plant.id}">Add First Task</button>
+</div>`;
+  }
+
+  if (step === 3 && isOnboardingPlant) {
+    const onboardingTask = plant.tasks.find(t => t.id === getOnboardingTaskId());
+    if (onboardingTask) {
+      return `<div style="font-size:13px;font-weight:500;color:#3a6b3a;margin-bottom:8px;">Tap ✓ Done below to complete your setup</div>
+<div class="task-list">${renderTaskCard(plant.id, onboardingTask, true)}</div>`;
+    }
+  }
+
   if (plant.tasks.length === 0) {
     return `<div class="tasks-empty-state">
   <div class="tasks-empty-icon">🌱</div>
@@ -1696,14 +1977,18 @@ function renderCompactTaskRow(plantId, task) {
   </div>`;
 }
 
-function renderTaskCard(plantId, task) {
+function renderTaskCard(plantId, task, onboardingMode = false) {
   const cfg = getTaskConfig(task);
   const isPaused = task.paused ?? false;
   const ownerCls = task.owner.toLowerCase();
   const otherOwner = task.owner === 'Matu' ? 'Vale' : 'Matu';
 
+  const cardStyle = onboardingMode
+    ? ' style="border: 1.5px solid #3a6b3a; background: #f4faf4;"'
+    : '';
+
   let html = `
-  <div class="task-card${isPaused ? ' paused' : ''}">
+  <div class="task-card${isPaused ? ' paused' : ''}"${cardStyle}>
     <div class="task-card-inner">
       <div class="task-left-bar ${cfg.type}"></div>
       <div class="task-body">
@@ -1727,7 +2012,12 @@ function renderTaskCard(plantId, task) {
     html += `<div class="task-note-text">${escapeHtml(task.note)}</div>`;
   }
 
-  if (isPaused) {
+  if (onboardingMode) {
+    html += `
+        <div class="task-actions">
+          <button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>
+        </div>`;
+  } else if (isPaused) {
     html += `
         <div class="task-actions">
           <button class="btn btn-secondary" data-action="resume-task" data-plant="${plantId}" data-task="${task.id}">&#9654; Resume</button>
@@ -1848,6 +2138,9 @@ function renderMenuPanel() {
       <div class="menu-section-title">Profile</div>
       <div class="menu-user-name">&#128100; ${escapeHtml(activeUser)}</div>
       <button class="menu-item" data-action="change-password">Change Password</button>
+      ${localStorage.getItem(`push_accepted_${activeUser}`)
+        ? `<button class="menu-item" style="color:#3a6b3a;opacity:0.7;" disabled>🔔 Notifications &middot; On</button>`
+        : `<button class="menu-item" data-action="menu-notifications">🔔 Notifications &middot; <span style="color:#aaa;">Off</span></button>`}
     </div>
     <div class="menu-section">
       <div class="menu-section-title">Household</div>
@@ -1861,6 +2154,17 @@ function renderMenuPanel() {
       <button class="menu-item menu-item-danger" data-action="menu-sign-out">Sign Out</button>
     </div>
   `;
+}
+
+function renderNotificationsSheet() {
+  openSheet(`
+    <div class="sheet-title">Notifications</div>
+    <p style="font-size:14px;color:#555;line-height:1.5;margin-bottom:20px;">Get a heads-up on your phone whenever someone in your household completes a care task.</p>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" data-action="close-sheet">Cancel</button>
+      <button class="btn btn-primary" data-action="sheet-enable-notifications">Enable</button>
+    </div>
+  `);
 }
 
 function renderChangePasswordSheet() {
@@ -2153,7 +2457,7 @@ function renderEditPlantStep2Html(plant, selectedEmoji) {
   const emoji = selectedEmoji ?? plant.emoji ?? '🪴';
   const dateDisplay = plant.dateAcquired
     ? new Date(plant.dateAcquired + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : 'Optional';
+    : 'Set date';
   return `
     <div class="sheet-title edit-plant-sheet-title">Edit plant</div>
     <div class="edit-plant-field-label">ICON &amp; NAME</div>
@@ -2169,7 +2473,7 @@ function renderEditPlantStep2Html(plant, selectedEmoji) {
       </div>
       <label class="arrival-optional-pill${plant.dateAcquired ? ' has-value' : ''}" id="edit-plant-arrival-pill" for="sheet-acquired-date">
         <span id="arrival-date-display">${escapeHtml(dateDisplay)}</span>
-        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;width:0;height:0;" value="${escapeHtml(plant.dateAcquired ?? '')}">
+        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;width:1px;height:1px;" value="${escapeHtml(plant.dateAcquired ?? '')}">
       </label>
     </div>
     <div class="sheet-actions" style="margin-top:20px;" id="edit-plant-save-row">
@@ -2195,7 +2499,7 @@ function renderEditPlantSheet(plantId) {
   state.sheetData = { plantId, step: 2, selectedEmoji: plant.emoji, activeTab: 'all' };
 
   openSheet(renderEditPlantStep2Html(plant, plant.emoji));
-  attachArrivalDateListener('Optional');
+  attachArrivalDateListener('Set date');
 }
 
 async function handleSavePlant() {
@@ -2285,8 +2589,15 @@ async function handleSaveNewPlant() {
   };
 
   plants.push(newPlant);
-  closeSheet();
-  navigateTo('plant', newPlant.id);
+  if (getOnboardingStep() === 1) {
+    setOnboardingPlantId(newPlant.id);
+    setOnboardingStep(2);
+    closeSheet();
+    navigateTo('home');
+  } else {
+    closeSheet();
+    navigateTo('plant', newPlant.id);
+  }
   showToast('🌱 Plant added!');
 }
 
@@ -2393,6 +2704,59 @@ async function handleSaveNewTask() {
   showToast('✅ Task added!');
 }
 
+async function handleOnboardingFirstTask(plantId) {
+  const plant = getPlant(plantId);
+  if (!plant) return;
+
+  const sortOrder = plant.tasks.length + 1;
+  const ownerMember = membersCache.find(m => m.id === currentMemberId);
+
+  const { data: inserted, error } = await supabaseClient
+    .from('tasks')
+    .insert({
+      plant_id:          plantId,
+      name:              'First watering',
+      icon:              '💧',
+      type:              'water',
+      recurrence:        { type: 'one-off' },
+      owner_id:          currentMemberId,
+      paused:            false,
+      note:              '',
+      sort_order:        sortOrder,
+      next_due_override: todayStr(),
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('handleOnboardingFirstTask: insert error:', error);
+    return;
+  }
+
+  const taskId = inserted?.id ?? uid();
+
+  plant.tasks.push({
+    id:              taskId,
+    name:            'First watering',
+    icon:            '💧',
+    type:            'water',
+    recurrenceType:  'one-off',
+    frequencyDays:   7,
+    recurrenceUnit:  'days',
+    weekdays:        [],
+    lastDone:        null,
+    nextDueOverride: todayStr(),
+    paused:          false,
+    owner:           ownerMember?.display_name ?? activeUser,
+    note:            '',
+  });
+
+  setOnboardingTaskId(taskId);
+  setOnboardingStep(3);
+  navigateTo('home');
+  showToast('💧 Task added!', { duration: 4000 });
+}
+
 // ============================================================
 // NAVIGATION
 // ============================================================
@@ -2400,6 +2764,25 @@ async function handleSaveNewTask() {
 function renderApp() {
   if (state.view === 'home') renderHome();
   else if (state.view === 'plant') renderPlantDetail(state.plantId);
+}
+
+function showOnboardingCompletionOverlay() {
+  document.getElementById('app').innerHTML = `
+    <div class="onboarding-complete-overlay" id="onboarding-complete-overlay">
+      <div class="onboarding-complete-body">
+        <div style="font-size:64px;line-height:1;margin-bottom:20px;">🌱</div>
+        <h2 class="onboarding-complete-heading">You're all set!</h2>
+        <p class="onboarding-complete-sub">Your first care action is logged. Here's what happens next.</p>
+        <button class="onboarding-complete-btn" data-action="onboarding-complete-dismiss">Show me →</button>
+      </div>
+    </div>`;
+  document.getElementById('onboarding-complete-overlay').addEventListener('click', e => {
+    if (e.target.dataset.action === 'onboarding-complete-dismiss') {
+      document.querySelector('.onboarding-complete-overlay')?.remove();
+      if (currentMemberId) localStorage.setItem(`onboarding_show_coachmark_${currentMemberId}`, 'true');
+      navigateTo('home');
+    }
+  });
 }
 
 function navigateTo(view, plantId = null) {
@@ -2420,6 +2803,7 @@ async function handleEvent(e) {
   const target = e.target.closest('[data-action]');
   if (!target) return;
 
+  try {
   const action  = target.dataset.action;
   const plantId = target.dataset.plant;
   const taskId  = target.dataset.task;
@@ -2429,6 +2813,10 @@ async function handleEvent(e) {
 
     case 'login':
       handleLogin();
+      break;
+
+    case 'save-name':
+      handleNameCapture();
       break;
 
     case 'save-new-password':
@@ -2454,6 +2842,17 @@ async function handleEvent(e) {
     case 'change-password':
       closeMenu();
       renderChangePasswordSheet();
+      break;
+
+    case 'menu-notifications':
+      closeMenu();
+      renderNotificationsSheet();
+      break;
+
+    case 'sheet-enable-notifications':
+      await subscribeToPush();
+      closeSheet();
+      showToast('🔔 Notifications enabled!');
       break;
 
     case 'save-change-password':
@@ -2516,6 +2915,20 @@ async function handleEvent(e) {
       navigateTo('plant', plantId);
       break;
 
+    case 'onboarding-open-plant':
+      closeSheet();
+      if (scheduleFilter === null) scheduleFilter = [activeUser];
+      if (tasksFilter === null) tasksFilter = [activeUser];
+      state.view = 'plant';
+      state.plantId = plantId;
+      plantDetailTab = 'tasks';
+      renderPlantDetail(plantId);
+      break;
+
+    case 'onboarding-add-first-task':
+      handleOnboardingFirstTask(plantId);
+      break;
+
     case 'go-home':
       navigateTo('home');
       break;
@@ -2549,9 +2962,16 @@ async function handleEvent(e) {
     case 'mark-done': {
       const _doneTask = getTask(plantId, taskId);
       const _doneName = getTaskConfig(_doneTask)?.name ?? _doneTask?.name ?? 'Task';
+      const _isOnboardingDone = getOnboardingStep() === 3 && taskId === getOnboardingTaskId();
       markTaskDone(plantId, taskId);
-      renderPlantDetail(state.plantId);
-      showDoneToast(plantId, taskId, _doneName);
+      if (_isOnboardingDone) {
+        setOnboardingStep(4);
+        localStorage.setItem('onboarding_coordination_shown', '1');
+        showOnboardingCompletionOverlay();
+      } else {
+        renderPlantDetail(state.plantId);
+        showDoneToast(plantId, taskId, _doneName);
+      }
       break;
     }
 
@@ -2777,10 +3197,10 @@ async function handleEvent(e) {
       if (state.sheetMode === 'edit-plant') {
         const editPlant = getPlant(state.sheetData.plantId);
         openSheet(renderEditPlantStep2Html(editPlant, emoji));
-        attachArrivalDateListener('Optional');
+        attachArrivalDateListener('Set date');
       } else {
         openSheet(renderAddPlantStep2Html(emoji));
-        attachArrivalDateListener('Optional');
+        attachArrivalDateListener('Set arrival date');
         attachAddPlantNameListener();
         setTimeout(() => document.getElementById('sheet-plant-name')?.focus(), 80);
       }
@@ -2981,6 +3401,9 @@ async function handleEvent(e) {
       handleSavePlant();
       break;
   }
+  } catch (err) {
+    console.error('handleEvent error:', err);
+  }
 }
 
 // ============================================================
@@ -3040,8 +3463,24 @@ async function subscribeToPush() {
 // ARRIVAL DATE LISTENER
 // ============================================================
 
-function attachArrivalDateListener(emptyText = 'Select a date') {
-  document.getElementById('sheet-acquired-date')?.addEventListener('change', function() {
+function attachArrivalDateListener(emptyText = 'Set date') {
+  const input = document.getElementById('sheet-acquired-date');
+  if (!input) return;
+
+  input.max = new Date().toLocaleDateString('en-CA');
+
+  // Explicitly trigger the native date picker on pill tap.
+  // showPicker() is the modern API; fall back to .click() for older browsers.
+  document.querySelector('.arrival-date-btn, .arrival-optional-pill')?.addEventListener('click', function(e) {
+    e.preventDefault();
+    if (typeof input.showPicker === 'function') {
+      input.showPicker();
+    } else {
+      input.click();
+    }
+  });
+
+  input.addEventListener('change', function() {
     const display = document.getElementById('arrival-date-display');
     const btn = this.closest('.arrival-date-btn') ?? this.closest('.arrival-optional-pill');
     if (this.value) {
@@ -3082,8 +3521,12 @@ function handleFeedbackTap() {
 // INIT
 // ============================================================
 
-document.addEventListener('DOMContentLoaded', () => {
-  registerServiceWorker();
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    await registerServiceWorker();
+  } catch (e) {
+    console.warn('Service worker registration failed:', e);
+  }
 
   document.getElementById('app').addEventListener('click', handleEvent);
   document.getElementById('sheet').addEventListener('click', handleEvent);
@@ -3113,6 +3556,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     await loadFromSupabase();
+
+    const currentMember = membersCache.find(m => m.id === currentMemberId);
+    if (currentMemberId && !currentMember?.display_name) {
+      renderNameCaptureScreen();
+      return;
+    }
 
     const saved = getActiveUser();
     if (saved) {

@@ -1178,6 +1178,7 @@ body {
   padding-left: 24px;
 }
 .arrival-date-btn {
+  position: relative;
   background: #3a6b3a;
   color: white;
   border: none;
@@ -3049,4 +3050,22 @@ div + .section-header-bar {
   height: 1px;
   background: var(--border);
   margin: 20px 0 0;
+}
+
+/* DEV TOOLS — remove before public launch */
+.dev-tools-btn {
+  display: block;
+  width: 100%;
+  background: #fff;
+  border: 0.5px solid #dde3d8;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 400;
+  color: #222;
+  cursor: pointer;
+  text-align: left;
+  margin-bottom: 8px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }

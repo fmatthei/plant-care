@@ -1009,7 +1009,7 @@ function renderAddPlantStep2Html(selectedEmoji) {
       <div class="arrival-date-sub">We'll show you how long you've cared for it. (Optional)</div>
       <button class="arrival-date-btn" type="button">
         <span id="arrival-date-display">Set arrival date</span>
-        <input type="date" id="sheet-acquired-date" style="position:absolute;width:1px;height:1px;opacity:0;" max="">
+        <input type="date" id="sheet-acquired-date" style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;max-width:100%;" max="">
       </button>
     </div>
     <div class="sheet-actions" style="margin-top:16px;">
@@ -1285,7 +1285,7 @@ function renderHome() {
       html += `<button class="fab-add-plant" data-action="add-plant">&#43; Add Plant</button>`;
     }
 
-    html += `<div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${typeof __BUILD_TIME__ !== 'undefined' ? new Date(__BUILD_TIME__).toLocaleString('es-CL', { timeZone: 'America/Santiago' }) : 'dev'}</div>`;
+    html += `<div id="dev-build-ts" style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${typeof __BUILD_TIME__ !== 'undefined' ? new Date(__BUILD_TIME__).toLocaleString('es-CL', { timeZone: 'America/Santiago' }) : 'dev'}</div>`;
   } else {
     html += renderSchedule();
   }
@@ -1294,6 +1294,8 @@ function renderHome() {
   localStorage.removeItem(`onboarding_show_coachmark_${currentMemberId}`);
 
   document.getElementById('app').innerHTML = html;
+
+  attachDevToolsTrigger(); // DEV TOOLS — remove before public launch
 
   if (showCoachMark) {
     setTimeout(() => renderCoachMark(), 50);
@@ -1313,6 +1315,7 @@ function renderCoachMark() {
   // Layer 1 — dark backdrop
   const darkEl = document.createElement('div');
   darkEl.id = 'coachmark-dark';
+  darkEl.className = 'coach-overlay';
   darkEl.style.position = 'fixed';
   darkEl.style.top      = appRect.top + 'px';
   darkEl.style.left     = appRect.left + 'px';
@@ -2473,7 +2476,7 @@ function renderEditPlantStep2Html(plant, selectedEmoji) {
       </div>
       <label class="arrival-optional-pill${plant.dateAcquired ? ' has-value' : ''}" id="edit-plant-arrival-pill" for="sheet-acquired-date">
         <span id="arrival-date-display">${escapeHtml(dateDisplay)}</span>
-        <input type="date" id="sheet-acquired-date" style="position:absolute;opacity:0;width:1px;height:1px;" value="${escapeHtml(plant.dateAcquired ?? '')}">
+        <input type="date" id="sheet-acquired-date" style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;max-width:100%;" value="${escapeHtml(plant.dateAcquired ?? '')}">
       </label>
     </div>
     <div class="sheet-actions" style="margin-top:20px;" id="edit-plant-save-row">
@@ -3123,6 +3126,7 @@ async function handleEvent(e) {
     }
 
     case 'add-note':
+      if (document.querySelector('.coach-overlay, .notif-overlay')) return;
       renderAddNoteSheet(plantId);
       break;
 
@@ -3172,6 +3176,7 @@ async function handleEvent(e) {
       break;
 
     case 'add-plant':
+      if (document.querySelector('.coach-overlay, .notif-overlay')) return;
       renderAddPlantSheet();
       break;
 
@@ -3224,6 +3229,7 @@ async function handleEvent(e) {
     }
 
     case 'add-task':
+      if (document.querySelector('.coach-overlay, .notif-overlay')) return;
       renderAddTaskStep1(plantId);
       break;
 
@@ -3400,6 +3406,16 @@ async function handleEvent(e) {
     case 'sheet-save-plant':
       handleSavePlant();
       break;
+
+    // DEV TOOLS — remove before public launch
+    case 'dev-seed-empty':   showDevToolsConfirm('empty',  'Empty state');    break;
+    case 'dev-seed-medium':  showDevToolsConfirm('medium', 'Medium usage');   break;
+    case 'dev-seed-heavy':   showDevToolsConfirm('heavy',  'Heavy usage');    break;
+    case 'dev-tools-cancel': document.getElementById('dev-tools-body').innerHTML = `
+      <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
+      <button class="dev-tools-btn" data-action="dev-seed-medium">🌿 Medium usage</button>
+      <button class="dev-tools-btn" data-action="dev-seed-heavy">🌳 Heavy usage</button>`; break;
+    case 'dev-tools-confirm': await runDevSeed(target.dataset.scenario); break;
   }
   } catch (err) {
     console.error('handleEvent error:', err);
@@ -3469,17 +3485,6 @@ function attachArrivalDateListener(emptyText = 'Set date') {
 
   input.max = new Date().toLocaleDateString('en-CA');
 
-  // Explicitly trigger the native date picker on pill tap.
-  // showPicker() is the modern API; fall back to .click() for older browsers.
-  document.querySelector('.arrival-date-btn, .arrival-optional-pill')?.addEventListener('click', function(e) {
-    e.preventDefault();
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
-    } else {
-      input.click();
-    }
-  });
-
   input.addEventListener('change', function() {
     const display = document.getElementById('arrival-date-display');
     const btn = this.closest('.arrival-date-btn') ?? this.closest('.arrival-optional-pill');
@@ -3516,6 +3521,298 @@ function handleFeedbackTap() {
 
   window.open(`https://wa.me/56994343285?text=${encodeURIComponent(message)}`, '_blank', 'noopener');
 }
+
+// ============================================================
+// DEV TOOLS — remove before public launch
+// ============================================================
+
+function attachDevToolsTrigger() {
+  const el = document.getElementById('dev-build-ts');
+  if (!el) return;
+  let _lpTimer = null;
+  el.addEventListener('pointerdown', () => {
+    _lpTimer = setTimeout(() => openDevToolsPanel(), 500);
+  });
+  el.addEventListener('pointerup',   () => clearTimeout(_lpTimer));
+  el.addEventListener('pointerleave', () => clearTimeout(_lpTimer));
+}
+
+function openDevToolsPanel() {
+  openSheet(`
+    <div style="width:36px;height:4px;background:#ddd;border-radius:2px;margin:0 auto 16px;"></div>
+    <div style="font-size:13px;font-weight:500;color:#222;margin-bottom:4px;">Dev Tools</div>
+    <div style="font-size:11px;color:#888;margin-bottom:16px;">Seed data scenarios — replaces all current household data</div>
+    <div id="dev-tools-body">
+      <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
+      <button class="dev-tools-btn" data-action="dev-seed-medium">🌿 Medium usage</button>
+      <button class="dev-tools-btn" data-action="dev-seed-heavy">🌳 Heavy usage</button>
+    </div>
+    <button class="add-plant-back-link" data-action="close-sheet" style="margin-top:12px;">Cancel</button>
+  `);
+}
+
+function showDevToolsConfirm(scenario, label) {
+  document.getElementById('dev-tools-body').innerHTML = `
+    <p style="font-size:13px;color:#333;margin-bottom:16px;">
+      Replace all data with <strong>${escapeHtml(label)}</strong> state? This cannot be undone.
+    </p>
+    <div style="display:flex;gap:8px;">
+      <button class="dev-tools-btn" style="flex:1;" data-action="dev-tools-cancel">Cancel</button>
+      <button class="dev-tools-btn" style="flex:1;background:#c0392b;color:#fff;border-color:#c0392b;"
+              data-action="dev-tools-confirm" data-scenario="${escapeHtml(scenario)}">Yes, replace data</button>
+    </div>`;
+}
+
+async function runDevSeed(scenario) {
+  const labels = { empty: 'Empty state', medium: 'Medium usage', heavy: 'Heavy usage' };
+  try {
+    if (scenario === 'empty')  await seedEmpty();
+    if (scenario === 'medium') await seedMedium();
+    if (scenario === 'heavy')  await seedHeavy();
+    closeSheet();
+    await loadFromSupabase();
+    navigateTo('home');
+    showToast(`✅ ${labels[scenario]} data loaded`);
+  } catch (err) {
+    console.error('[DevTools] seed error:', err);
+    showToast('❌ Seed failed — check console');
+  }
+}
+
+// Wipe all plants in household (tasks/care_log/notes are plant-scoped)
+async function seedEmpty() {
+  const now = new Date().toISOString();
+  const { data: rows } = await supabaseClient
+    .from('plants').select('id').eq('household_id', householdId).is('deleted_at', null);
+  if (rows?.length) {
+    await supabaseClient.from('plants').update({ deleted_at: now })
+      .in('id', rows.map(r => r.id));
+  }
+}
+
+async function seedMedium() {
+  await seedEmpty();
+
+  const today  = todayStr();
+  const member0 = membersCache[0]?.id ?? null;
+  const member1 = (membersCache[1] ?? membersCache[0])?.id ?? null;
+
+  // ── Plants ──────────────────────────────────────────────────
+  const plantDefs = [
+    { emoji: '🌿', name: 'Monstera',        days_ago: 45  },
+    { emoji: '🌸', name: 'Bougainvillea',   days_ago: 120 },
+    { emoji: '🍊', name: 'Mandarin Tree',   days_ago: 200 },
+  ];
+
+  const insertedPlants = [];
+  for (let i = 0; i < plantDefs.length; i++) {
+    const def = plantDefs[i];
+    const { data } = await supabaseClient.from('plants').insert({
+      household_id:  householdId,
+      name:          def.name,
+      emoji:         def.emoji,
+      date_acquired: addDays(today, -def.days_ago),
+      sort_order:    i + 1,
+    }).select().single();
+    insertedPlants.push(data);
+  }
+
+  const [monstera, bougain, mandarin] = insertedPlants;
+
+  // ── Tasks ────────────────────────────────────────────────────
+  const taskDefs = [
+    { plant: monstera,  name: 'Normal Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 7,  unit: 'days', days: [] }, last_done: addDays(today, -3),  next_due_override: null },
+    { plant: monstera,  name: 'Fertilize',        icon: '🌱', type: 'fertilize', recurrence: { type: 'interval', every: 30, unit: 'days', days: [] }, last_done: addDays(today, -20), next_due_override: null },
+    { plant: bougain,   name: 'Normal Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 5,  unit: 'days', days: [] }, last_done: addDays(today, -6),  next_due_override: null },
+    { plant: bougain,   name: 'Check Pests',     icon: '🐛', type: 'pest',      recurrence: { type: 'interval', every: 14, unit: 'days', days: [] }, last_done: addDays(today, -10), next_due_override: null },
+    { plant: mandarin,  name: 'Normal Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 7,  unit: 'days', days: [] }, last_done: today,              next_due_override: null },
+    { plant: mandarin,  name: 'Repot',           icon: '🪴', type: 'repot',     recurrence: { type: 'one-off' },                                      last_done: null,               next_due_override: addDays(today, 5) },
+  ];
+
+  const insertedTasks = [];
+  for (let i = 0; i < taskDefs.length; i++) {
+    const t = taskDefs[i];
+    const { data } = await supabaseClient.from('tasks').insert({
+      plant_id:          t.plant.id,
+      name:              t.name,
+      icon:              t.icon,
+      type:              t.type,
+      recurrence:        t.recurrence,
+      owner_id:          member0,
+      paused:            false,
+      note:              '',
+      sort_order:        i + 1,
+      last_done:         t.last_done,
+      next_due_override: t.next_due_override,
+    }).select().single();
+    insertedTasks.push(data);
+  }
+
+  // ── Care log (5 entries over last 2 weeks) ───────────────────
+  const careEntries = [
+    { plant: monstera, task: insertedTasks[0], member: member0, days_ago: 3,  tname: 'Normal Watering', ttype: 'water'     },
+    { plant: monstera, task: insertedTasks[1], member: member1, days_ago: 20, tname: 'Fertilize',       ttype: 'fertilize' },
+    { plant: bougain,  task: insertedTasks[2], member: member0, days_ago: 6,  tname: 'Normal Watering', ttype: 'water'     },
+    { plant: bougain,  task: insertedTasks[3], member: member1, days_ago: 10, tname: 'Check Pests',     ttype: 'pest'      },
+    { plant: mandarin, task: insertedTasks[4], member: member0, days_ago: 0,  tname: 'Normal Watering', ttype: 'water'     },
+  ];
+  for (const e of careEntries) {
+    const ts = new Date(); ts.setDate(ts.getDate() - e.days_ago); ts.setHours(10, 0, 0, 0);
+    await supabaseClient.from('care_log').insert({
+      plant_id:            e.plant.id,
+      task_id:             e.task?.id ?? null,
+      household_member_id: e.member,
+      task_name:           e.tname,
+      task_type:           e.ttype,
+      created_at:          ts.toISOString(),
+    });
+  }
+
+  // ── Notes (2) ────────────────────────────────────────────────
+  const note1ts = new Date(); note1ts.setDate(note1ts.getDate() - 5);
+  const note2ts = new Date(); note2ts.setDate(note2ts.getDate() - 12);
+  await supabaseClient.from('notes').insert({ plant_id: monstera.id,  household_member_id: member0, note: 'New leaf coming in!',            created_at: note1ts.toISOString() });
+  await supabaseClient.from('notes').insert({ plant_id: bougain.id,   household_member_id: member1, note: 'Spotted a few spider mites.',    created_at: note2ts.toISOString() });
+}
+
+async function seedHeavy() {
+  await seedEmpty();
+
+  const today  = todayStr();
+  const member0 = membersCache[0]?.id ?? null;
+  const member1 = (membersCache[1] ?? membersCache[0])?.id ?? null;
+
+  // ── Plants ──────────────────────────────────────────────────
+  const plantDefs = [
+    { emoji: '🌿', name: 'Monstera',      days_ago: 365 },
+    { emoji: '🌸', name: 'Bougainvillea', days_ago: 300 },
+    { emoji: '🍊', name: 'Mandarin Tree', days_ago: 250 },
+    { emoji: '🌵', name: 'Cactus',        days_ago: 180 },
+    { emoji: '🎋', name: 'Bamboo',        days_ago: 90  },
+    { emoji: '🌻', name: 'Sunflower',     days_ago: 30  },
+  ];
+
+  const insertedPlants = [];
+  for (let i = 0; i < plantDefs.length; i++) {
+    const def = plantDefs[i];
+    const { data } = await supabaseClient.from('plants').insert({
+      household_id:  householdId,
+      name:          def.name,
+      emoji:         def.emoji,
+      date_acquired: addDays(today, -def.days_ago),
+      sort_order:    i + 1,
+    }).select().single();
+    insertedPlants.push(data);
+  }
+
+  // ── Tasks (3-4 per plant) ─────────────────────────────────────
+  const taskMatrix = [
+    // Monstera
+    [
+      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -2), ndo: null },
+      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -28), ndo: null },
+      { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -10), ndo: null },
+      { name: 'Rotate',          icon: '🔄', type: 'rotate',    rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -5),  ndo: null },
+    ],
+    // Bougainvillea
+    [
+      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 5,  unit: 'days', days: [] }, ld: addDays(today, -6),  ndo: null },
+      { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -25), ndo: null },
+      { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null },
+    ],
+    // Mandarin Tree
+    [
+      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: today,               ndo: null },
+      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null },
+      { name: 'Repot',           icon: '🪴', type: 'repot',     rec: { type: 'one-off' },                                     ld: null,                ndo: addDays(today, 3) },
+    ],
+    // Cactus
+    [
+      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null },
+      { name: 'Check',           icon: '🔍', type: 'check',     rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -29), ndo: null },
+    ],
+    // Bamboo
+    [
+      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 3,  unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null },
+      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null },
+      { name: 'Rotate',          icon: '🔄', type: 'rotate',    rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -2),  ndo: null },
+    ],
+    // Sunflower
+    [
+      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 2,  unit: 'days', days: [] }, ld: addDays(today, -2),  ndo: null },
+      { name: 'Check',           icon: '🔍', type: 'check',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -5),  ndo: null },
+      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -7),  ndo: null },
+    ],
+  ];
+
+  const allTasks = [];
+  for (let pi = 0; pi < insertedPlants.length; pi++) {
+    const plant = insertedPlants[pi];
+    for (let ti = 0; ti < taskMatrix[pi].length; ti++) {
+      const t = taskMatrix[pi][ti];
+      const { data } = await supabaseClient.from('tasks').insert({
+        plant_id:          plant.id,
+        name:              t.name,
+        icon:              t.icon,
+        type:              t.type,
+        recurrence:        t.rec,
+        owner_id:          ti % 2 === 0 ? member0 : member1,
+        paused:            false,
+        note:              '',
+        sort_order:        ti + 1,
+        last_done:         t.ld,
+        next_due_override: t.ndo,
+      }).select().single();
+      allTasks.push({ task: data, plant });
+    }
+  }
+
+  // ── Care log (20 entries over last 3 months) ──────────────────
+  const careTypes = [
+    { tname: 'Normal Watering', ttype: 'water'     },
+    { tname: 'Fertilize',       ttype: 'fertilize' },
+    { tname: 'Check Pests',     ttype: 'pest'      },
+    { tname: 'Rotate',          ttype: 'rotate'    },
+    { tname: 'Prune',           ttype: 'prune'     },
+  ];
+  const careOffsets = [0, 2, 5, 7, 10, 14, 18, 21, 25, 30, 35, 42, 50, 58, 65, 75, 85, 95, 75, 90];
+  for (let i = 0; i < 20; i++) {
+    const entry = allTasks[i % allTasks.length];
+    const ct    = careTypes[i % careTypes.length];
+    const ts    = new Date(); ts.setDate(ts.getDate() - careOffsets[i]); ts.setHours(9 + (i % 8), 0, 0, 0);
+    await supabaseClient.from('care_log').insert({
+      plant_id:            entry.plant.id,
+      task_id:             entry.task?.id ?? null,
+      household_member_id: i % 2 === 0 ? member0 : member1,
+      task_name:           ct.tname,
+      task_type:           ct.ttype,
+      created_at:          ts.toISOString(),
+    });
+  }
+
+  // ── Notes (8 across plants) ───────────────────────────────────
+  const noteDefs = [
+    { pi: 0, member: member0, days_ago: 5,   text: 'New leaf coming in — 4th this year!' },
+    { pi: 0, member: member1, days_ago: 30,  text: 'Moved closer to the window.' },
+    { pi: 1, member: member0, days_ago: 8,   text: 'Spider mites spotted. Treated with neem oil.' },
+    { pi: 1, member: member1, days_ago: 60,  text: 'Pruned back the leggy stems.' },
+    { pi: 2, member: member0, days_ago: 15,  text: 'First flower buds forming!' },
+    { pi: 3, member: member1, days_ago: 20,  text: 'Repotted into cactus mix.' },
+    { pi: 4, member: member0, days_ago: 3,   text: 'Yellowing on lower stalks — may be overwatered.' },
+    { pi: 5, member: member1, days_ago: 10,  text: 'Growing faster than expected.' },
+  ];
+  for (const n of noteDefs) {
+    const ts = new Date(); ts.setDate(ts.getDate() - n.days_ago);
+    await supabaseClient.from('notes').insert({
+      plant_id:            insertedPlants[n.pi].id,
+      household_member_id: n.member,
+      note:                n.text,
+      created_at:          ts.toISOString(),
+    });
+  }
+}
+
+// DEV TOOLS — handleEvent cases added inline in the switch statement
 
 // ============================================================
 // INIT

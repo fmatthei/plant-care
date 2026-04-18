@@ -108,6 +108,7 @@ let plantDetailTab = 'summary';
 let careLogSegment = 'full';
 let membersCache = []; // household_members rows: { id, display_name }
 let currentMemberId = null;
+let isSaving = false;
 let householdId = null;
 let activityFeed = []; // merged care_log + notes, top 5 across all plants
 let currentUserId = null;
@@ -477,13 +478,13 @@ function lastCareLabel(plant) {
 }
 
 function todayStr() {
-  return new Date().toISOString().split('T')[0];
+  return new Date().toLocaleDateString('en-CA');
 }
 
 // Returns b - a in whole days
 function daysBetween(a, b) {
   const msPerDay = 1000 * 60 * 60 * 24;
-  return Math.round((new Date(b) - new Date(a)) / msPerDay);
+  return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / msPerDay);
 }
 
 // Formats an ISO timestamp as "2h ago", "Yesterday", "Mar 28", etc.
@@ -503,7 +504,7 @@ function formatActivityTime(isoStr) {
 }
 
 function addDays(dateStr, n) {
-  const d = new Date(dateStr);
+  const d = new Date(dateStr + 'T12:00:00');
   d.setDate(d.getDate() + n);
   return d.toISOString().split('T')[0];
 }
@@ -544,7 +545,7 @@ function daysUntilDue(task) {
 function isDue(task) {
   if (task.paused) return false;
   if ((task.recurrenceType ?? 'interval') === 'weekdays' && task.lastDone === todayStr()) return false;
-  return daysUntilDue(task) <= 0;
+  return daysUntilDue(task) < 0;
 }
 
 function dueLabelAndClass(task) {
@@ -666,6 +667,9 @@ function getTaskConfig(task) {
 // ============================================================
 
 async function markTaskDone(plantId, taskId) {
+  if (isSaving) return;
+  isSaving = true;
+  try {
   const plant = getPlant(plantId);
   const task = plant?.tasks.find(t => t.id === taskId);
   if (!task) return;
@@ -720,6 +724,9 @@ async function markTaskDone(plantId, taskId) {
   }).catch(() => {});
 
   loadActivityFeed().then(() => { if (state.view === 'home') renderHome(); });
+  } finally {
+    isSaving = false;
+  }
 }
 
 async function undoMarkTaskDone(plantId, taskId) {
@@ -818,64 +825,88 @@ async function resumeTask(plantId, taskId) {
 }
 
 async function deleteTask(plantId, taskId) {
-  const plant = getPlant(plantId);
-  if (!plant) return;
-  plant.tasks = plant.tasks.filter(t => t.id !== taskId);
+  if (isSaving) return;
+  isSaving = true;
+  try {
+    const plant = getPlant(plantId);
+    if (!plant) return;
+    plant.tasks = plant.tasks.filter(t => t.id !== taskId);
 
-  await supabaseClient
-    .from('tasks')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', taskId)
-    .then(({ error }) => { if (error) console.error('deleteTask error:', error); });
+    await supabaseClient
+      .from('tasks')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', taskId)
+      .then(({ error }) => { if (error) console.error('deleteTask error:', error); });
+  } finally {
+    isSaving = false;
+  }
 }
 
 async function deletePlant(plantId) {
-  const now = new Date().toISOString();
+  if (isSaving) return;
+  isSaving = true;
+  try {
+    const now = new Date().toISOString();
 
-  await Promise.all([
-    supabaseClient
-      .from('plants')
-      .update({ deleted_at: now })
-      .eq('id', plantId)
-      .then(({ error }) => { if (error) console.error('deletePlant plants error:', error); }),
-    supabaseClient
-      .from('tasks')
-      .update({ deleted_at: now })
-      .eq('plant_id', plantId)
-      .is('deleted_at', null)
-      .then(({ error }) => { if (error) console.error('deletePlant tasks error:', error); }),
-  ]);
+    await Promise.all([
+      supabaseClient
+        .from('plants')
+        .update({ deleted_at: now })
+        .eq('id', plantId)
+        .then(({ error }) => { if (error) console.error('deletePlant plants error:', error); }),
+      supabaseClient
+        .from('tasks')
+        .update({ deleted_at: now })
+        .eq('plant_id', plantId)
+        .is('deleted_at', null)
+        .then(({ error }) => { if (error) console.error('deletePlant tasks error:', error); }),
+    ]);
 
-  plants = plants.filter(p => p.id !== plantId);
+    plants = plants.filter(p => p.id !== plantId);
+  } finally {
+    isSaving = false;
+  }
 }
 
 async function addNote(plantId, noteText, taskId) {
-  const member = membersCache.find(m => m.display_name === activeUser);
-  const { data: inserted, error } = await supabaseClient
-    .from('notes')
-    .insert({ plant_id: plantId, household_member_id: member?.id ?? null, note: noteText, task_id: taskId ?? null })
-    .select()
-    .single();
-  if (error) { console.error('addNote error:', error); return; }
-  notes.unshift({
-    id:        inserted.id,
-    plantId:   inserted.plant_id,
-    memberId:  inserted.household_member_id,
-    author:    activeUser,
-    note:      inserted.note,
-    createdAt: inserted.created_at,
-    taskId:    inserted.task_id ?? null,
-  });
-  await loadActivityFeed();
+  if (isSaving) return;
+  isSaving = true;
+  try {
+    const member = membersCache.find(m => m.display_name === activeUser);
+    const { data: inserted, error } = await supabaseClient
+      .from('notes')
+      .insert({ plant_id: plantId, household_member_id: member?.id ?? null, note: noteText, task_id: taskId ?? null })
+      .select()
+      .single();
+    if (error) { console.error('addNote error:', error); return; }
+    notes.unshift({
+      id:        inserted.id,
+      plantId:   inserted.plant_id,
+      memberId:  inserted.household_member_id,
+      author:    activeUser,
+      note:      inserted.note,
+      createdAt: inserted.created_at,
+      taskId:    inserted.task_id ?? null,
+    });
+    await loadActivityFeed();
+  } finally {
+    isSaving = false;
+  }
 }
 
 async function deleteNote(noteId) {
-  const { error } = await supabaseClient
-    .from('notes')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', noteId);
-  if (error) { console.error('deleteNote error:', error); return; }
-  notes = notes.filter(n => n.id !== noteId);
+  if (isSaving) return;
+  isSaving = true;
+  try {
+    const { error } = await supabaseClient
+      .from('notes')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', noteId);
+    if (error) { console.error('deleteNote error:', error); return; }
+    notes = notes.filter(n => n.id !== noteId);
+  } finally {
+    isSaving = false;
+  }
 }
 
 async function updateNote(noteId, newText) {
@@ -1055,11 +1086,87 @@ function renderHeaderRight() {
     </div>`;
 }
 
+function renderHomeDueToday() {
+  const allItems = [];
+  for (const plant of plants) {
+    for (const task of plant.tasks) {
+      if (task.paused) continue;
+      const days = daysUntilDue(task);
+      if (days === 0) {
+        allItems.push({ plant, task, days, overdue: false });
+      } else if (days < 0) {
+        allItems.push({ plant, task, days, overdue: true });
+      }
+    }
+  }
+  if (allItems.length === 0) return '';
+
+  // Sort: overdue first (most days late = most negative = first), then due today
+  allItems.sort((a, b) => {
+    if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+    return a.days - b.days;
+  });
+
+  const total = allItems.length;
+  const shown = allItems.slice(0, 5);
+
+  let html = `<div class="home-section-header">
+    <div class="home-section-header-accent" style="background:#e24b4a;"></div>
+    <span class="home-section-header-text">Needs attention</span>
+  </div>`;
+
+  html += `<div class="home-activity-feed"><div class="activity-list">`;
+
+  for (const { plant, task, days, overdue } of shown) {
+    const cfg = getTaskConfig(task);
+    const ownerColor = membersCache.find(m => m.display_name === task.owner)?.color ?? '#888';
+    const daysLate = Math.abs(days);
+    const plantSubHtml = overdue
+      ? `<span style="color:#a32d2d;">${escapeHtml(plant.name)} · ${daysLate} day${daysLate !== 1 ? 's' : ''} late</span>`
+      : `<span class="home-due-today-plant">${escapeHtml(plant.name)}</span>`;
+    const rowStyle = overdue ? ' style="background:#fff8f8;"' : '';
+
+    html += `<div class="activity-row home-due-today-row attention-row"${rowStyle}>
+      <span style="width:6px;height:6px;border-radius:50%;background:${ownerColor};flex-shrink:0;display:inline-block;"></span>
+      <span class="activity-icon">${cfg.icon}</span>
+      <span class="home-due-today-info">
+        <span class="home-due-today-task">${escapeHtml(cfg.name)}</span>
+        ${plantSubHtml}
+      </span>
+      <button class="attention-check-circle" data-action="home-mark-done" data-plant="${plant.id}" data-task="${task.id}" aria-label="Mark done">
+        <span class="attention-check-icon">✓</span>
+      </button>
+    </div>`;
+  }
+
+  if (total > 5) {
+    html += `<div class="activity-row home-due-today-view-all" data-action="view-schedule-tab">
+      <span style="font-size:13px;color:#b45309;font-weight:500;flex:1;">View all ${total} in Schedule →</span>
+    </div>`;
+  }
+
+  html += `</div></div>`;
+  return html;
+}
+
 function renderHomeActivityFeed() {
-  if (activityFeed.length === 0) return '';
+  if (activityFeed.length === 0) {
+    if (plants.length === 0) return '';
+    return `
+  <div class="home-section-header">
+    <div class="home-section-header-accent" style="background:var(--primary);"></div>
+    <span class="home-section-header-text">Recent activity</span>
+  </div>
+  <div class="home-activity-feed"><div class="activity-list">
+    <div style="text-align:center;padding:16px;font-size:13px;color:#aaa;">Care actions will appear here.</div>
+  </div></div>`;
+  }
 
   let html = `
-  <div class="home-section-label">Recent activity</div>
+  <div class="home-section-header">
+    <div class="home-section-header-accent" style="background:var(--primary);"></div>
+    <span class="home-section-header-text">Recent activity</span>
+  </div>
   <div class="home-activity-feed"><div class="activity-list">`;
 
   for (const item of activityFeed) {
@@ -1205,16 +1312,6 @@ function renderHome() {
   if (activeTab === 'plants') {
     if (shouldShowOnboardingBanner()) html += renderOnboardingBanner();
 
-    // isDue() already returns false for paused tasks, so the count is correct
-    const totalDue = plants.reduce((sum, p) => sum + p.tasks.filter(isDue).length, 0);
-
-    if (totalDue > 0 && getOnboardingStep() !== 3) {
-      html += `
-    <div class="due-banner">
-      &#9888;&#65039; ${totalDue} task${totalDue !== 1 ? 's' : ''} due today
-    </div>`;
-    }
-
     if (getOnboardingStep() === 3) html += renderOnboardingInlineTaskCard();
 
     if (shouldShowPushBanner()) {
@@ -1225,15 +1322,16 @@ function renderHome() {
     </div>`;
     }
 
+    html += renderHomeDueToday();
     html += renderHomeActivityFeed();
 
     if (plants.length === 0) {
       html += `
     <div class="plants-empty-state">
       <span class="empty-emoji">🌱</span>
-      <h2>Welcome to Plant Care</h2>
-      <p>Add your first plant to get started</p>
-      <button class="btn-add-task-detail" data-action="add-plant">Add my first plant 🌱</button>
+      <h2>Your plants live here</h2>
+      <p>Add your first plant to start tracking its care.</p>
+      <button class="btn-add-task-detail" data-action="add-plant">+ Add your first plant</button>
     </div>`;
     }
 
@@ -1467,6 +1565,15 @@ function renderSchedule() {
     return h;
   }
 
+  const totalTasks = plants.reduce((sum, p) => sum + p.tasks.length, 0);
+  if (totalTasks === 0) {
+    return `<div style="text-align:center;padding:48px 24px 32px;">
+  <div style="font-size:32px;margin-bottom:12px;">✅</div>
+  <div style="font-size:15px;font-weight:600;color:#3a6b3a;margin-bottom:8px;">No care records yet.</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;">Completed and upcoming tasks will appear here.</div>
+</div>`;
+  }
+
   let html = renderUserFilterPills('schedule', activeFilter);
 
   if (overdueItems.length > 0) {
@@ -1580,12 +1687,13 @@ function renderPlantDetail(plantId) {
 
 function renderUserFilterPills(filterId, selectedUsers) {
   const noneSelected = selectedUsers.length === 0;
-  const allPillCls = noneSelected ? 'user-pill user-pill-all active' : 'user-pill user-pill-all';
+  const allSelected = noneSelected || selectedUsers.length === membersCache.length;
+  const allPillCls = allSelected ? 'user-pill user-pill-all active' : 'user-pill user-pill-all';
   let html = `<div class="user-filter-row" data-filter="${filterId}">`;
   html += `<div class="${allPillCls}" data-action="user-filter-all" data-filter="${filterId}">All</div>`;
   html += `<div class="user-filter-sep"></div>`;
   for (const m of membersCache) {
-    const active = selectedUsers.includes(m.display_name);
+    const active = noneSelected || selectedUsers.includes(m.display_name);
     const color = m.color ?? '#666';
     const borderColor = hexToRgba(color, 0.5);
     const pillStyle = active
@@ -1618,6 +1726,14 @@ function sectionHeader(label, accentColor, count) {
 }
 
 function renderSummaryTab(plant) {
+  if (plant.tasks.length === 0 && plant.careLog.length === 0) {
+    return `<div style="text-align:center;padding:48px 24px 32px;">
+  <div style="font-size:52px;margin-bottom:16px;">${escapeHtml(plant.emoji)}</div>
+  <div style="font-size:17px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">Your ${escapeHtml(plant.name)} is home</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;max-width:260px;margin:0 auto;">Add a task to start tracking its care. Your progress will show up here.</div>
+</div>`;
+  }
+
   let html = '';
 
   // ── Plant info card ───────────────────────────────────────
@@ -1691,7 +1807,7 @@ function renderSummaryTab(plant) {
   const activityItems = [
     ...plant.careLog.map(e  => ({ type: 'care', sortKey: e.date,                           data: e })),
     ...plantNotes.map(n     => ({ type: 'note', sortKey: (n.createdAt ?? '').split('T')[0], data: n })),
-  ].sort((a, b) => b.sortKey.localeCompare(a.sortKey)).slice(0, 5);
+  ].sort((a, b) => (b.sortKey || '').localeCompare(a.sortKey || '')).slice(0, 5);
 
   html += sectionHeader('Recent activity', '#888780');
   if (activityItems.length === 0) {
@@ -1752,9 +1868,9 @@ function renderTasksTab(plant) {
 
   if (plant.tasks.length === 0) {
     return `<div class="tasks-empty-state">
-  <div class="tasks-empty-icon">🌱</div>
+  <div class="tasks-empty-icon">📋</div>
   <div class="tasks-empty-title">No tasks yet</div>
-  <div class="tasks-empty-sub">Add a task to start tracking care for this plant</div>
+  <div class="tasks-empty-sub">Add a care task to start tracking what your ${escapeHtml(plant.name)} needs.</div>
 </div>`;
   }
   const activeFilter = tasksFilter ?? [activeUser];
@@ -1780,7 +1896,11 @@ function renderNotesTab(plant) {
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
 
   if (plantNotes.length === 0) {
-    return `<div class="detail-empty">No notes yet</div>`;
+    return `<div style="text-align:center;padding:48px 24px 32px;">
+  <div style="font-size:32px;margin-bottom:12px;">📝</div>
+  <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">No notes yet</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;max-width:260px;margin:0 auto;">Jot down observations about your ${escapeHtml(plant.name)} — growth, health, anything worth remembering.</div>
+</div>`;
   }
   let html = `<div class="health-note-list">`;
   for (const note of plantNotes) {
@@ -1791,42 +1911,15 @@ function renderNotesTab(plant) {
 }
 
 function renderCareLogTab(plant) {
-  const isNonDefault = careLogSegment !== 'full' || careLogMode !== 'tasks';
-  let html = `<div class="carelog-filter-row">
-  <button class="carelog-filter-btn${isNonDefault ? ' active' : ''}" data-action="carelog-toggle-filters">
-    ☰ Filters${isNonDefault ? ' ●' : ''}
-  </button>
+  if (plant.tasks.length === 0) {
+    return `<div style="text-align:center;padding:40px 24px 24px;">
+  <div style="font-size:32px;margin-bottom:12px;">📖</div>
+  <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">No care history yet</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;">Your completed tasks will appear here.</div>
 </div>`;
-
-  if (careLogFiltersOpen) {
-    html += `<div class="carelog-filter-panel">
-    <div class="carelog-filter-group">
-      <div class="carelog-filter-group-header">
-        <div class="carelog-filter-group-icon carelog-filter-icon-time">📅</div>
-        <div class="carelog-filter-group-title">Time range</div>
-        <div class="carelog-filter-group-desc">What period to show</div>
-      </div>
-      <div class="carelog-filter-seg">
-        <button class="carelog-seg-btn${careLogSegment === 'past' ? ' active' : ''}" data-action="carelog-segment" data-segment="past">Past</button>
-        <button class="carelog-seg-btn${careLogSegment === 'full' ? ' active' : ''}" data-action="carelog-segment" data-segment="full">Full log</button>
-        <button class="carelog-seg-btn${careLogSegment === 'upcoming' ? ' active' : ''}" data-action="carelog-segment" data-segment="upcoming">Upcoming</button>
-      </div>
-    </div>
-    <div class="carelog-filter-group carelog-filter-group-bordered">
-      <div class="carelog-filter-group-header">
-        <div class="carelog-filter-group-icon carelog-filter-icon-type">📋</div>
-        <div class="carelog-filter-group-title">Activity type</div>
-        <div class="carelog-filter-group-desc">What actions to include</div>
-      </div>
-      <div class="carelog-filter-seg">
-        <button class="carelog-seg-btn${careLogMode === 'tasks' ? ' active' : ''}" data-action="carelog-mode" data-mode="tasks">Tasks only</button>
-        <button class="carelog-seg-btn${careLogMode === 'all' ? ' active' : ''}" data-action="carelog-mode" data-mode="all">All activity</button>
-      </div>
-    </div>
-  </div>`;
   }
 
-  html += renderUserFilterPills('carelog', careLogFilter);
+  let html = renderUserFilterPills('carelog', careLogFilter);
 
   const showUpcoming = careLogSegment === 'upcoming' || careLogSegment === 'full';
   const showPast     = careLogSegment === 'past'     || careLogSegment === 'full';
@@ -1864,12 +1957,16 @@ function renderCareLogTab(plant) {
   }
 
   if (showPast) {
-    const allEntries = [...plant.careLog].sort((a, b) => b.date.localeCompare(a.date));
+    const allEntries = [...plant.careLog].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
     const careEntries = careLogFilter.length === 0
       ? allEntries
       : allEntries.filter(e => careLogFilter.includes(e.author));
-    if (careEntries.length === 0) {
-      html += `<div class="detail-empty">No care history yet</div>`;
+    if (careEntries.length === 0 && plant.tasks.length === 0) {
+      html += `<div style="text-align:center;padding:40px 24px 24px;">
+  <div style="font-size:32px;margin-bottom:12px;">📖</div>
+  <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">No care history yet</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;">Your completed tasks will appear here.</div>
+</div>`;
     } else {
       html += `<div class="carelog-past-list">`;
       for (const entry of careEntries) {
@@ -2190,6 +2287,7 @@ function renderChangePasswordSheet() {
 }
 
 async function handleChangePassword() {
+  if (isSaving) return;
   const password = document.getElementById('sheet-new-password')?.value ?? '';
   const confirm  = document.getElementById('sheet-confirm-password')?.value ?? '';
   const errorEl  = document.getElementById('change-password-error');
@@ -2202,11 +2300,16 @@ async function handleChangePassword() {
   if (password.length < 8) { showError('Password must be at least 8 characters.'); return; }
   if (password !== confirm) { showError('Passwords do not match.'); return; }
 
-  const { error } = await supabaseClient.auth.updateUser({ password });
-  if (error) { showError(error.message); return; }
+  isSaving = true;
+  try {
+    const { error } = await supabaseClient.auth.updateUser({ password });
+    if (error) { showError(error.message); return; }
 
-  closeSheet();
-  showToast('&#128274; Password updated!');
+    closeSheet();
+    showToast('&#128274; Password updated!');
+  } finally {
+    isSaving = false;
+  }
 }
 
 function renderOwnerPills(selectedOwner) {
@@ -2399,19 +2502,19 @@ function renderAddTaskStep2(plantId, typeKey) {
         </div>
         <div class="form-group" style="margin-top:12px">
           <label class="form-label">First due date</label>
-          <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-interval" value="${todayVal}"></div>
+          <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-interval" value="${new Date().toLocaleDateString('en-CA')}"></div>
         </div>
       </div>
       <div class="recurrence-weekdays-section form-group">
         <div class="weekday-picker">${weekdayBtns}</div>
         <div class="form-group" style="margin-top:12px">
           <label class="form-label">Start from</label>
-          <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-weekdays" value="${todayVal}"></div>
+          <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-weekdays" value="${new Date().toLocaleDateString('en-CA')}"></div>
         </div>
       </div>
       <div class="recurrence-one-off-section form-group">
         <label class="form-label">Due date</label>
-        <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-one-off" value="${todayVal}"></div>
+        <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-one-off" value="${new Date().toLocaleDateString('en-CA')}"></div>
       </div>
     </div>
     <div class="sheet-footer-sticky">
@@ -2506,6 +2609,9 @@ function renderEditPlantSheet(plantId) {
 }
 
 async function handleSavePlant() {
+  if (isSaving) return;
+  isSaving = true;
+  try {
   const { plantId: pid } = state.sheetData;
   const plant = getPlant(pid);
   if (!plant) return;
@@ -2539,6 +2645,9 @@ async function handleSavePlant() {
   closeSheet();
   renderPlantDetail(pid);
   showToast('✅ Plant saved!');
+  } finally {
+    isSaving = false;
+  }
 }
 
 function renderAddPlantSheet() {
@@ -2548,6 +2657,9 @@ function renderAddPlantSheet() {
 }
 
 async function handleSaveNewPlant() {
+  if (isSaving) return;
+  isSaving = true;
+  try {
   const typedName = document.getElementById('sheet-plant-name')?.value?.trim();
   if (!typedName) { alert('Please enter a plant name.'); return; }
 
@@ -2602,9 +2714,15 @@ async function handleSaveNewPlant() {
     navigateTo('plant', newPlant.id);
   }
   showToast('🌱 Plant added!');
+  } finally {
+    isSaving = false;
+  }
 }
 
 async function handleSaveNewTask() {
+  if (isSaving) return;
+  isSaving = true;
+  try {
   const { plantId: pid, typeKey } = state.sheetData;
   const isCustom = typeKey === 'custom';
 
@@ -2705,9 +2823,15 @@ async function handleSaveNewTask() {
   navigateTo('plant', pid);
   setTimeout(() => { _appEl.style.pointerEvents = ''; }, 350);
   showToast('✅ Task added!');
+  } finally {
+    isSaving = false;
+  }
 }
 
 async function handleOnboardingFirstTask(plantId) {
+  if (isSaving) return;
+  isSaving = true;
+  try {
   const plant = getPlant(plantId);
   if (!plant) return;
 
@@ -2758,6 +2882,9 @@ async function handleOnboardingFirstTask(plantId) {
   setOnboardingStep(3);
   navigateTo('home');
   showToast('💧 Task added!', { duration: 4000 });
+  } finally {
+    isSaving = false;
+  }
 }
 
 // ============================================================
@@ -2942,6 +3069,12 @@ async function handleEvent(e) {
       break;
     }
 
+    case 'view-schedule-tab': {
+      activeTab = 'schedule';
+      renderHome();
+      break;
+    }
+
     case 'enable-notifications': {
       console.log('enable-notifications handler reached');
       await subscribeToPush();
@@ -2999,6 +3132,22 @@ async function handleEvent(e) {
       undoMarkTaskDone(plantId, taskId);
       renderPlantDetail(state.plantId);
       break;
+
+    case 'home-mark-done': {
+      const _homeRow = target.closest('.attention-row');
+      if (!_homeRow || _homeRow.classList.contains('marking-done')) break;
+      const _homeTask = getTask(plantId, taskId);
+      const _homeName = getTaskConfig(_homeTask)?.name ?? _homeTask?.name ?? 'Task';
+      target.classList.add('done');
+      _homeRow.style.height = _homeRow.offsetHeight + 'px';
+      _homeRow.style.overflow = 'hidden';
+      requestAnimationFrame(() => { _homeRow.classList.add('marking-done'); });
+      setTimeout(() => {
+        markTaskDone(plantId, taskId);
+        showDoneToast(plantId, taskId, _homeName);
+      }, 280);
+      break;
+    }
 
     case 'schedule-mark-done': {
       const _schedTask = getTask(plantId, taskId);
@@ -3485,6 +3634,15 @@ function attachArrivalDateListener(emptyText = 'Set date') {
 
   input.max = new Date().toLocaleDateString('en-CA');
 
+  document.querySelector('.arrival-date-btn, .arrival-optional-pill')?.addEventListener('click', function(e) {
+    e.preventDefault();
+    if (typeof input.showPicker === 'function') {
+      input.showPicker();
+    } else {
+      input.click();
+    }
+  });
+
   input.addEventListener('change', function() {
     const display = document.getElementById('arrival-date-display');
     const btn = this.closest('.arrival-date-btn') ?? this.closest('.arrival-optional-pill');
@@ -3623,7 +3781,7 @@ async function seedMedium() {
   const taskDefs = [
     { plant: monstera,  name: 'Normal Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 7,  unit: 'days', days: [] }, last_done: addDays(today, -3),  next_due_override: null },
     { plant: monstera,  name: 'Fertilize',        icon: '🌱', type: 'fertilize', recurrence: { type: 'interval', every: 30, unit: 'days', days: [] }, last_done: addDays(today, -20), next_due_override: null },
-    { plant: bougain,   name: 'Normal Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 5,  unit: 'days', days: [] }, last_done: addDays(today, -6),  next_due_override: null },
+    { plant: bougain,   name: 'Normal Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 5,  unit: 'days', days: [] }, last_done: addDays(today, -12), next_due_override: null },
     { plant: bougain,   name: 'Check Pests',     icon: '🐛', type: 'pest',      recurrence: { type: 'interval', every: 14, unit: 'days', days: [] }, last_done: addDays(today, -10), next_due_override: null },
     { plant: mandarin,  name: 'Normal Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 7,  unit: 'days', days: [] }, last_done: today,              next_due_override: null },
     { plant: mandarin,  name: 'Repot',           icon: '🪴', type: 'repot',     recurrence: { type: 'one-off' },                                      last_done: null,               next_due_override: addDays(today, 5) },
@@ -3684,12 +3842,12 @@ async function seedHeavy() {
 
   // ── Plants ──────────────────────────────────────────────────
   const plantDefs = [
-    { emoji: '🌿', name: 'Monstera',      days_ago: 365 },
-    { emoji: '🌸', name: 'Bougainvillea', days_ago: 300 },
-    { emoji: '🍊', name: 'Mandarin Tree', days_ago: 250 },
-    { emoji: '🌵', name: 'Cactus',        days_ago: 180 },
-    { emoji: '🎋', name: 'Bamboo',        days_ago: 90  },
-    { emoji: '🌻', name: 'Sunflower',     days_ago: 30  },
+    { emoji: '🌿', name: 'Fiddle Leaf Fig',    days_ago: 365 },
+    { emoji: '🌺', name: 'Birds of Paradise',  days_ago: 300 },
+    { emoji: '🫒', name: 'Olive Tree',         days_ago: 250 },
+    { emoji: '🌵', name: 'Cactus',             days_ago: 180 },
+    { emoji: '🎋', name: 'Bamboo',             days_ago: 90  },
+    { emoji: '🌻', name: 'Sunflower',          days_ago: 30  },
   ];
 
   const insertedPlants = [];
@@ -3707,20 +3865,20 @@ async function seedHeavy() {
 
   // ── Tasks (3-4 per plant) ─────────────────────────────────────
   const taskMatrix = [
-    // Monstera
+    // Fiddle Leaf Fig
     [
       { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -2), ndo: null },
       { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -28), ndo: null },
       { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -10), ndo: null },
       { name: 'Rotate',          icon: '🔄', type: 'rotate',    rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -5),  ndo: null },
     ],
-    // Bougainvillea
+    // Birds of Paradise
     [
-      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 5,  unit: 'days', days: [] }, ld: addDays(today, -6),  ndo: null },
+      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 5,  unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null },
       { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -25), ndo: null },
       { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null },
     ],
-    // Mandarin Tree
+    // Olive Tree
     [
       { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: today,               ndo: null },
       { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null },

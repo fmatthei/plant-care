@@ -982,7 +982,7 @@ function renderEmojiPickerHtml(currentEmoji) {
 }
 
 // ============================================================
-// ADD PLANT — TWO-STEP FLOW
+// ADD PLANT — THREE-STEP FLOW
 // ============================================================
 
 function renderAddPlantEmojiItems(emojis, selectedEmoji) {
@@ -992,9 +992,19 @@ function renderAddPlantEmojiItems(emojis, selectedEmoji) {
   }).join('');
 }
 
+function renderAddPlantProgressDots(currentStep) {
+  return `<div class="add-plant-progress-dots">
+    ${[1, 2, 3].map(s => {
+      const cls = s < currentStep ? 'done' : s === currentStep ? 'active' : 'pending';
+      return `<span class="add-plant-dot add-plant-dot--${cls}"></span>`;
+    }).join('')}
+  </div>`;
+}
+
 function renderAddPlantStep1Html(activeTab, selectedEmoji) {
   const emojis = activeTab === 'all' ? PLANT_EMOJIS : (EMOJI_CATEGORIES[activeTab] ?? PLANT_EMOJIS);
   return `
+    ${renderAddPlantProgressDots(1)}
     <div class="sheet-title">Add a plant</div>
     <div class="add-plant-subtitle">Pick an icon that looks like yours</div>
     <div class="emoji-cat-tabs">
@@ -1006,12 +1016,6 @@ function renderAddPlantStep1Html(activeTab, selectedEmoji) {
     <div class="add-plant-emoji-grid" id="add-plant-emoji-grid">
       ${renderAddPlantEmojiItems(emojis, selectedEmoji)}
     </div>
-    <div class="emoji-custom-divider"></div>
-    <div class="emoji-custom-row-split">
-      <span class="emoji-custom-label">Can't find yours? Paste any emoji</span>
-      <button class="emoji-paste-btn" data-action="add-plant-custom-emoji-trigger">📋 Paste emoji</button>
-    </div>
-    <input type="text" id="sheet-plant-custom-emoji" class="emoji-custom-input form-input" placeholder="Paste emoji here" autocomplete="off">
     <div class="sheet-actions" style="margin-top:16px;">
       <button class="btn btn-primary" data-action="add-plant-next" style="flex:1;">Next →</button>
     </div>`;
@@ -1019,6 +1023,7 @@ function renderAddPlantStep1Html(activeTab, selectedEmoji) {
 
 function renderAddPlantStep2Html(selectedEmoji) {
   return `
+    ${renderAddPlantProgressDots(2)}
     <button class="add-plant-emoji-confirm" data-action="add-plant-change-emoji">
       <span class="add-plant-confirm-emoji">${escapeHtml(selectedEmoji)}</span>
       <div class="add-plant-confirm-info">
@@ -1032,7 +1037,23 @@ function renderAddPlantStep2Html(selectedEmoji) {
     </div>
     <div class="name-hint">e.g. Monstera, My green one, The big one, Bathroom plant</div>
     <div id="add-plant-duplicate-nudge" class="duplicate-nudge" style="display:none;margin-bottom:12px;"></div>
-    <div class="arrival-date-card">
+    <div class="sheet-actions" style="margin-top:16px;">
+      <button class="btn btn-primary" data-action="add-plant-to-step3" style="flex:1;">Next →</button>
+    </div>
+    <button class="add-plant-back-link" data-action="add-plant-back">← Back</button>`;
+}
+
+function renderAddPlantStep3Html(selectedEmoji) {
+  return `
+    ${renderAddPlantProgressDots(3)}
+    <button class="add-plant-emoji-confirm" data-action="add-plant-change-emoji">
+      <span class="add-plant-confirm-emoji">${escapeHtml(selectedEmoji)}</span>
+      <div class="add-plant-confirm-info">
+        <span class="add-plant-confirm-label">Your icon</span>
+        <span class="add-plant-confirm-change">Tap to change</span>
+      </div>
+    </button>
+    <div class="arrival-date-card" style="margin-top:16px;">
       <div class="arrival-date-top-row">
         <span class="arrival-date-icon">📅</span>
         <span class="arrival-date-title">When did it arrive home?</span>
@@ -1040,7 +1061,7 @@ function renderAddPlantStep2Html(selectedEmoji) {
       <div class="arrival-date-sub">We'll show you how long you've cared for it. (Optional)</div>
       <button class="arrival-date-btn" type="button">
         <span id="arrival-date-display">Set arrival date</span>
-        <input type="date" id="sheet-acquired-date" style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;max-width:100%;" max="">
+        <input type="date" id="sheet-acquired-date" style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;max-width:100%;" max="${todayStr()}">
       </button>
     </div>
     <div class="sheet-actions" style="margin-top:16px;">
@@ -1119,20 +1140,24 @@ function renderHomeDueToday() {
 
   for (const { plant, task, days, overdue } of shown) {
     const cfg = getTaskConfig(task);
-    const ownerColor = membersCache.find(m => m.display_name === task.owner)?.color ?? '#888';
+    const ownerMember = membersCache.find(m => m.display_name === task.owner);
+    const ownerColor = ownerMember?.color ?? '#888';
+    const ownerInitial = (task.owner ?? '?')[0].toUpperCase();
     const daysLate = Math.abs(days);
-    const plantSubHtml = overdue
-      ? `<span style="color:#a32d2d;">${escapeHtml(plant.name)} · ${daysLate} day${daysLate !== 1 ? 's' : ''} late</span>`
-      : `<span class="home-due-today-plant">${escapeHtml(plant.name)}</span>`;
+    const subtitleHtml = overdue
+      ? `<span style="color:#a32d2d;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${daysLate} day${daysLate !== 1 ? 's' : ''} late</span>`
+      : `<span class="home-due-today-plant">${escapeHtml(plant.name)} · due today</span>`;
     const rowStyle = overdue ? ' style="background:#fff8f8;"' : '';
 
     html += `<div class="activity-row home-due-today-row attention-row"${rowStyle}>
-      <span style="width:6px;height:6px;border-radius:50%;background:${ownerColor};flex-shrink:0;display:inline-block;"></span>
+      <span style="width:26px;height:26px;border-radius:8px;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>
+      <span style="width:1px;height:28px;background:#e8ede8;flex-shrink:0;"></span>
       <span class="activity-icon">${cfg.icon}</span>
       <span class="home-due-today-info">
         <span class="home-due-today-task">${escapeHtml(cfg.name)}</span>
-        ${plantSubHtml}
+        ${subtitleHtml}
       </span>
+      <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:4px;">${escapeHtml(ownerInitial)}</span>
       <button class="attention-check-circle" data-action="home-mark-done" data-plant="${plant.id}" data-task="${task.id}" aria-label="Mark done">
         <span class="attention-check-icon">✓</span>
       </button>
@@ -1819,8 +1844,8 @@ function renderSummaryTab(plant) {
         const e    = item.data;
         const matchedTask = plant.tasks.find(t => t.id === e.taskId);
         const icon = matchedTask ? getTaskConfig(matchedTask).icon : '&#10003;';
-        const diff = daysBetween(e.date, todayStr());
-        const when = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
+        const diff = e.date ? daysBetween(e.date, todayStr()) : NaN;
+        const when = isNaN(diff) ? 'Some time ago' : diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
         html += `
       <div class="activity-row">
         <span class="activity-icon">${icon}</span>
@@ -1829,8 +1854,8 @@ function renderSummaryTab(plant) {
       </div>`;
       } else {
         const n    = item.data;
-        const diff = daysBetween(item.sortKey, todayStr());
-        const when = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
+        const diff = item.sortKey ? daysBetween(item.sortKey, todayStr()) : NaN;
+        const when = isNaN(diff) ? 'Some time ago' : diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
         html += `
       <div class="activity-row">
         <span class="activity-icon">&#128221;</span>
@@ -2251,6 +2276,7 @@ function renderMenuPanel() {
       <button class="menu-item" data-action="menu-switch-user">Switch User</button>
       <button class="menu-item" data-action="menu-export-data">&#8681; Export Backup</button>
       <button class="menu-item" data-action="menu-import-data">&#8679; Import Backup</button>
+      <button class="menu-item" data-action="menu-show-onboarding">&#128218; Show getting started guide</button>
       <button class="menu-item menu-item-danger" data-action="menu-sign-out">Sign Out</button>
     </div>
   `;
@@ -2659,9 +2685,19 @@ function renderAddPlantSheet() {
 async function handleSaveNewPlant() {
   if (isSaving) return;
   isSaving = true;
+
+  const sheetContent = document.getElementById('sheet-content');
+  const interactiveEls = sheetContent ? [...sheetContent.querySelectorAll('button, input, textarea')] : [];
+  interactiveEls.forEach(el => { el.disabled = true; });
+
+  const reEnable = () => {
+    interactiveEls.forEach(el => { el.disabled = false; });
+    isSaving = false;
+  };
+
   try {
-  const typedName = document.getElementById('sheet-plant-name')?.value?.trim();
-  if (!typedName) { alert('Please enter a plant name.'); return; }
+  const typedName = state.sheetData.plantName || document.getElementById('sheet-plant-name')?.value?.trim();
+  if (!typedName) { alert('Please enter a plant name.'); reEnable(); return; }
 
   const isDuplicate = plants.some(p => p.name.toLowerCase() === typedName.toLowerCase());
   let name;
@@ -2672,9 +2708,7 @@ async function handleSaveNewPlant() {
     name = typedName;
   }
 
-  const emoji = state.sheetData.selectedEmoji
-    || document.getElementById('sheet-plant-custom-emoji')?.value?.trim()
-    || '🪴';
+  const emoji = state.sheetData.selectedEmoji || '🪴';
   const dateAcquired = document.getElementById('sheet-acquired-date')?.value || null;
   const sortOrder = plants.length + 1;
 
@@ -2692,6 +2726,8 @@ async function handleSaveNewPlant() {
 
   if (error) {
     console.error('handleSaveNewPlant: Supabase insert error:', error);
+    reEnable();
+    return;
   }
 
   const newPlant = {
@@ -2704,6 +2740,7 @@ async function handleSaveNewPlant() {
   };
 
   plants.push(newPlant);
+  state.sheetData.plantName = null;
   if (getOnboardingStep() === 1) {
     setOnboardingPlantId(newPlant.id);
     setOnboardingStep(2);
@@ -2714,6 +2751,9 @@ async function handleSaveNewPlant() {
     navigateTo('plant', newPlant.id);
   }
   showToast('🌱 Plant added!');
+  } catch (err) {
+    console.error('handleSaveNewPlant:', err);
+    reEnable();
   } finally {
     isSaving = false;
   }
@@ -3036,6 +3076,20 @@ async function handleEvent(e) {
       break;
     }
 
+    case 'menu-show-onboarding': {
+      closeMenu();
+      if (currentMemberId) {
+        localStorage.removeItem(`onboarding_step_${currentMemberId}`);
+        localStorage.removeItem(`onboarding_plant_id_${currentMemberId}`);
+        localStorage.removeItem(`onboarding_task_id_${currentMemberId}`);
+        localStorage.removeItem(`onboarding_show_coachmark_${currentMemberId}`);
+        localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
+      }
+      localStorage.removeItem('onboarding_coordination_shown');
+      navigateTo('home');
+      break;
+    }
+
     case 'menu-sign-out':
       closeMenu();
       supabaseClient.auth.signOut().then(() => renderLoginScreen());
@@ -3344,8 +3398,7 @@ async function handleEvent(e) {
     }
 
     case 'add-plant-next': {
-      const customEmoji = document.getElementById('sheet-plant-custom-emoji')?.value?.trim();
-      const emoji = customEmoji || state.sheetData.selectedEmoji || '🪴';
+      const emoji = state.sheetData.selectedEmoji || '🪴';
       state.sheetData.selectedEmoji = emoji;
       state.sheetData.step = 2;
       if (state.sheetMode === 'edit-plant') {
@@ -3354,28 +3407,49 @@ async function handleEvent(e) {
         attachArrivalDateListener('Set date');
       } else {
         openSheet(renderAddPlantStep2Html(emoji));
-        attachArrivalDateListener('Set arrival date');
         attachAddPlantNameListener();
+        const savedName = state.sheetData.plantName;
+        if (savedName) {
+          const nameInput = document.getElementById('sheet-plant-name');
+          if (nameInput) nameInput.value = savedName;
+        }
         setTimeout(() => document.getElementById('sheet-plant-name')?.focus(), 80);
       }
       break;
     }
 
-    case 'add-plant-back':
+    case 'add-plant-to-step3': {
+      const name = document.getElementById('sheet-plant-name')?.value?.trim();
+      if (!name) { alert('Please enter a plant name.'); return; }
+      state.sheetData.plantName = name;
+      state.sheetData.step = 3;
+      openSheet(renderAddPlantStep3Html(state.sheetData.selectedEmoji || '🪴'));
+      attachArrivalDateListener('Set arrival date');
+      break;
+    }
+
+    case 'add-plant-back': {
+      const curStep = state.sheetData.step ?? 1;
+      if (curStep === 3) {
+        state.sheetData.step = 2;
+        openSheet(renderAddPlantStep2Html(state.sheetData.selectedEmoji || '🪴'));
+        attachAddPlantNameListener();
+        const savedName = state.sheetData.plantName;
+        if (savedName) {
+          const nameInput = document.getElementById('sheet-plant-name');
+          if (nameInput) nameInput.value = savedName;
+        }
+      } else {
+        state.sheetData.step = 1;
+        openSheet(renderAddPlantStep1Html(state.sheetData.activeTab || 'all', state.sheetData.selectedEmoji || '🪴'));
+      }
+      break;
+    }
+
     case 'add-plant-change-emoji':
       state.sheetData.step = 1;
       openSheet(renderAddPlantStep1Html(state.sheetData.activeTab || 'all', state.sheetData.selectedEmoji || '🪴'));
       break;
-
-    case 'add-plant-custom-emoji-trigger': {
-      const customInput = document.getElementById('sheet-plant-custom-emoji');
-      if (customInput) {
-        customInput.style.display = 'block';
-        target.style.display = 'none';
-        customInput.focus();
-      }
-      break;
-    }
 
     case 'add-task':
       if (document.querySelector('.coach-overlay, .notif-overlay')) return;

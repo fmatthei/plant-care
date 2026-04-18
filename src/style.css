@@ -939,7 +939,7 @@ body {
 }
 
 #sheet-content {
-  padding: 16px 20px 0;
+  padding: 16px 20px calc(20px + env(safe-area-inset-bottom, 0px));
 }
 
 .sheet-title {
@@ -1112,7 +1112,7 @@ body {
   bottom: 0;
   background: var(--card);
   margin: 8px -20px 0;
-  padding: 12px 20px 28px;
+  padding: 12px 20px calc(28px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border);
   z-index: 1;
 }
@@ -2081,13 +2081,32 @@ body {
   margin-top: 8px;
 }
 
-/* ===== Add Plant Two-Step Flow ===== */
+/* ===== Add Plant Three-Step Flow ===== */
 .add-plant-subtitle {
   font-size: 14px;
   color: var(--text-muted);
   margin-top: -10px;
   margin-bottom: 16px;
 }
+
+.add-plant-progress-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.add-plant-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.add-plant-dot--active  { background: #3a5a3a; }
+.add-plant-dot--done    { background: rgba(58, 90, 58, 0.4); }
+.add-plant-dot--pending { background: #dde3d8; }
 
 .emoji-cat-tabs {
   display: flex;

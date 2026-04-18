@@ -1024,13 +1024,9 @@ function renderAddPlantStep1Html(activeTab, selectedEmoji) {
 function renderAddPlantStep2Html(selectedEmoji) {
   return `
     ${renderAddPlantProgressDots(2)}
-    <button class="add-plant-emoji-confirm" data-action="add-plant-change-emoji">
+    <div class="add-plant-emoji-confirm">
       <span class="add-plant-confirm-emoji">${escapeHtml(selectedEmoji)}</span>
-      <div class="add-plant-confirm-info">
-        <span class="add-plant-confirm-label">Your icon</span>
-        <span class="add-plant-confirm-change">Tap to change</span>
-      </div>
-    </button>
+    </div>
     <div class="form-group" style="margin-top:16px;">
       <label class="form-label">What do you call it?</label>
       <input type="text" class="form-input" id="sheet-plant-name" placeholder="e.g. Monstera" autocomplete="off">
@@ -1043,16 +1039,15 @@ function renderAddPlantStep2Html(selectedEmoji) {
     <button class="add-plant-back-link" data-action="add-plant-back">← Back</button>`;
 }
 
-function renderAddPlantStep3Html(selectedEmoji) {
+function renderAddPlantStep3Html(selectedEmoji, plantName) {
   return `
     ${renderAddPlantProgressDots(3)}
-    <button class="add-plant-emoji-confirm" data-action="add-plant-change-emoji">
+    <div class="add-plant-emoji-confirm">
       <span class="add-plant-confirm-emoji">${escapeHtml(selectedEmoji)}</span>
       <div class="add-plant-confirm-info">
-        <span class="add-plant-confirm-label">Your icon</span>
-        <span class="add-plant-confirm-change">Tap to change</span>
+        <span class="add-plant-confirm-label">${escapeHtml(plantName || '')}</span>
       </div>
-    </button>
+    </div>
     <div class="arrival-date-card" style="margin-top:16px;">
       <div class="arrival-date-top-row">
         <span class="arrival-date-icon">📅</span>
@@ -1073,6 +1068,33 @@ function renderAddPlantStep3Html(selectedEmoji) {
 function attachAddPlantNameListener() {
   const nameInput = document.getElementById('sheet-plant-name');
   if (!nameInput) return;
+
+  // B19: lift sheet above iOS software keyboard
+  if (window.visualViewport) {
+    const sheet = document.getElementById('sheet');
+    let vvListener = null;
+
+    function onVVResize() {
+      const vv = window.visualViewport;
+      const kh = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      if (sheet) sheet.style.transform = kh > 0 ? `translateY(-${kh}px)` : '';
+    }
+
+    nameInput.addEventListener('focus', () => {
+      vvListener = onVVResize;
+      window.visualViewport.addEventListener('resize', vvListener);
+      onVVResize();
+    });
+
+    nameInput.addEventListener('blur', () => {
+      if (vvListener) {
+        window.visualViewport.removeEventListener('resize', vvListener);
+        vvListener = null;
+      }
+      if (sheet) sheet.style.transform = '';
+    });
+  }
+
   nameInput.addEventListener('input', function() {
     const val = this.value.trim();
     const nudge = document.getElementById('add-plant-duplicate-nudge');
@@ -2237,7 +2259,9 @@ function openSheet(contentHtml) {
 }
 
 function closeSheet() {
-  document.getElementById('sheet').classList.remove('active');
+  const sheet = document.getElementById('sheet');
+  sheet.style.transform = '';
+  sheet.classList.remove('active');
   document.getElementById('overlay').classList.remove('active');
   state.sheetMode = null;
   state.sheetData = {};
@@ -3423,7 +3447,7 @@ async function handleEvent(e) {
       if (!name) { alert('Please enter a plant name.'); return; }
       state.sheetData.plantName = name;
       state.sheetData.step = 3;
-      openSheet(renderAddPlantStep3Html(state.sheetData.selectedEmoji || '🪴'));
+      openSheet(renderAddPlantStep3Html(state.sheetData.selectedEmoji || '🪴', state.sheetData.plantName));
       attachArrivalDateListener('Set arrival date');
       break;
     }

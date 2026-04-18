@@ -2192,7 +2192,7 @@ body {
   display: none;
 }
 
-/* Step 2 — emoji confirm row */
+/* Step 2/3 — emoji static display row */
 .add-plant-emoji-confirm {
   display: flex;
   align-items: center;
@@ -2202,8 +2202,7 @@ body {
   border: 1.5px solid var(--primary);
   border-radius: var(--radius-xs);
   padding: 10px 14px;
-  cursor: pointer;
-  font-family: inherit;
+  cursor: default;
 }
 
 .add-plant-confirm-emoji {

@@ -3206,3 +3206,34 @@ div + .section-header-bar {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* ===== Upcoming section (Caring tab) ===== */
+.upcoming-day-label-row {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 10px 16px 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.upcoming-clear-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+}
+
+.upcoming-day-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  min-width: 80px;
+}
+
+.upcoming-clear-text {
+  font-size: 12px;
+  color: var(--text-muted);
+}

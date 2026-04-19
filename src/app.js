@@ -1129,11 +1129,12 @@ function renderHeaderRight() {
     </div>`;
 }
 
-function renderHomeDueToday() {
+function renderHomeDueToday(activeFilter = []) {
   const allItems = [];
   for (const plant of plants) {
     for (const task of plant.tasks) {
       if (task.paused) continue;
+      if (activeFilter.length > 0 && !activeFilter.includes(task.owner)) continue;
       const days = daysUntilDue(task);
       if (days === 0) {
         allItems.push({ plant, task, days, overdue: false });
@@ -1150,9 +1151,6 @@ function renderHomeDueToday() {
     return a.days - b.days;
   });
 
-  const total = allItems.length;
-  const shown = allItems.slice(0, 5);
-
   let html = `<div class="home-section-header">
     <div class="home-section-header-accent" style="background:#e24b4a;"></div>
     <span class="home-section-header-text">Needs attention</span>
@@ -1160,7 +1158,7 @@ function renderHomeDueToday() {
 
   html += `<div class="home-activity-feed"><div class="activity-list">`;
 
-  for (const { plant, task, days, overdue } of shown) {
+  for (const { plant, task, days, overdue } of allItems) {
     const cfg = getTaskConfig(task);
     const ownerMember = membersCache.find(m => m.display_name === task.owner);
     const ownerColor = ownerMember?.color ?? '#888';
@@ -1183,12 +1181,6 @@ function renderHomeDueToday() {
       <button class="attention-check-circle" data-action="home-mark-done" data-plant="${plant.id}" data-task="${task.id}" aria-label="Mark done">
         <span class="attention-check-icon">✓</span>
       </button>
-    </div>`;
-  }
-
-  if (total > 5) {
-    html += `<div class="activity-row home-due-today-view-all" data-action="view-schedule-tab">
-      <span style="font-size:13px;color:#b45309;font-weight:500;flex:1;">View all ${total} in Schedule →</span>
     </div>`;
   }
 
@@ -1353,7 +1345,7 @@ function renderHome() {
     </div>
     <div class="tab-bar">
       <button class="tab-btn${activeTab === 'plants' ? ' active' : ''}" data-action="switch-tab" data-tab="plants">&#127807; My Plants</button>
-      <button class="tab-btn${activeTab === 'schedule' ? ' active' : ''}" data-action="switch-tab" data-tab="schedule">&#128197; Schedule</button>
+      <button class="tab-btn${activeTab === 'schedule' ? ' active' : ''}" data-action="switch-tab" data-tab="schedule">&#9989; Caring</button>
     </div>`;
 
   if (activeTab === 'plants') {
@@ -1369,7 +1361,6 @@ function renderHome() {
     </div>`;
     }
 
-    html += renderHomeDueToday();
     html += renderHomeActivityFeed();
 
     if (plants.length === 0) {
@@ -1547,70 +1538,8 @@ function renderCoachMark() {
 // ============================================================
 
 function renderSchedule() {
-  const today = todayStr();
-  const thisMonday = getMondayOfWeek(today);
-  const nextMonday = addDays(thisMonday, 7);
-
+  const today = new Date().toLocaleDateString('en-CA');
   const activeFilter = scheduleFilter ?? [activeUser];
-
-  // Collect relevant (non-paused) task items
-  const items = [];
-  for (const plant of plants) {
-    for (const task of plant.tasks) {
-      if (task.paused) continue;
-      if (activeFilter.length > 0 && !activeFilter.includes(task.owner)) continue;
-      items.push({ plant, task });
-    }
-  }
-
-  // Overdue: nextDue strictly before today
-  const overdueItems = items.filter(({ task }) => computeNextDue(task) < today);
-
-  const thisWeekDays = Array.from({ length: 7 }, (_, i) => addDays(thisMonday, i));
-  const nextWeekDays = Array.from({ length: 7 }, (_, i) => addDays(nextMonday, i));
-
-  function itemsForDay(dateStr) {
-    return items.filter(({ task }) => computeNextDue(task) === dateStr);
-  }
-
-  function renderTaskRow(plant, task, extraClass) {
-    const cfg = getTaskConfig(task);
-    const showOwner = activeFilter.length !== 1;
-    const ownerTag = showOwner
-      ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'};background:${(USERS[task.owner]?.color ?? '#666666')}26">👤 ${escapeHtml(task.owner)}</span>`
-      : '';
-    const doneToday = task.lastDone === today;
-    const doneBtn = doneToday
-      ? `<button class="sched-done-btn" data-action="schedule-undo-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Undo">↩️</button>`
-      : `<span class="sched-done-btns">
-           <button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>
-           <button class="sched-done-btn" data-action="schedule-mark-done-with-note" data-plant="${plant.id}" data-task="${task.id}" title="Mark done + add note">📝</button>
-         </span>`;
-    return `<div class="sched-task${extraClass ? ' ' + extraClass : ''}">
-        <span class="sched-task-label">${cfg.icon} <strong>${escapeHtml(cfg.name)}</strong> · ${escapeHtml(plant.name)}${ownerTag}</span>
-        ${doneBtn}
-      </div>`;
-  }
-
-  function renderDay(dateStr) {
-    const label = new Date(dateStr + 'T12:00:00')
-      .toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-    const isToday = dateStr === today;
-    const isPast  = dateStr < today;
-    const dayClass = isToday ? ' sched-day-today' : isPast ? ' sched-day-past' : '';
-    const dayItems = itemsForDay(dateStr);
-    let h = `<div class="sched-day${dayClass}">`;
-    h += `<div class="sched-day-header">${label}</div>`;
-    if (dayItems.length === 0) {
-      h += `<div class="sched-empty">🌞 All clear!</div>`;
-    } else {
-      for (const { plant, task } of dayItems) {
-        h += renderTaskRow(plant, task, null);
-      }
-    }
-    h += `</div>`;
-    return h;
-  }
 
   const totalTasks = plants.reduce((sum, p) => sum + p.tasks.length, 0);
   if (totalTasks === 0) {
@@ -1623,50 +1552,54 @@ function renderSchedule() {
 
   let html = renderUserFilterPills('schedule', activeFilter);
 
-  if (overdueItems.length > 0) {
-    html += `<div class="sched-section sched-section-overdue">`;
-    html += sectionHeader('⚠️ Overdue', '#BA7517', overdueItems.length);
-    for (const { plant, task } of overdueItems) {
-      const daysAgo = Math.abs(daysUntilDue(task));
-      const cfg = getTaskConfig(task);
-      const showOwner = activeFilter.length !== 1;
-      const ownerTag = showOwner
-        ? ` <span class="sched-owner-tag" style="color:${USERS[task.owner]?.color ?? 'inherit'};background:${(USERS[task.owner]?.color ?? '#666666')}26">👤 ${escapeHtml(task.owner)}</span>`
-        : '';
-      const doneToday = task.lastDone === today;
-      const overdueDoneBtn = doneToday
-        ? `<button class="sched-done-btn" data-action="schedule-undo-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Undo">↩️</button>`
-        : `<span class="sched-done-btns">
-             <button class="sched-done-btn" data-action="schedule-mark-done" data-plant="${plant.id}" data-task="${task.id}" title="Mark done">✅</button>
-             <button class="sched-done-btn" data-action="schedule-mark-done-with-note" data-plant="${plant.id}" data-task="${task.id}" title="Mark done + add note">📝</button>
-           </span>`;
-      html += `<div class="sched-task sched-task-overdue">
-        <span class="sched-task-label">${cfg.icon} <strong>${escapeHtml(cfg.name)}</strong> · ${escapeHtml(plant.name)}${ownerTag} <span class="sched-overdue-days">(${daysAgo} day${daysAgo !== 1 ? 's' : ''} overdue)</span></span>
-        ${overdueDoneBtn}
-      </div>`;
+  html += renderHomeDueToday(activeFilter);
+
+  // Upcoming: next 7 days (tomorrow through today+7)
+  html += `<div class="home-section-header">
+    <div class="home-section-header-accent" style="background:#2e7d51;"></div>
+    <span class="home-section-header-text">Upcoming</span>
+  </div>`;
+
+  for (let i = 1; i <= 7; i++) {
+    const dateStr = addDays(today, i);
+    const dayLabel = new Date(dateStr + 'T12:00:00')
+      .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+    const dayTasks = [];
+    for (const plant of plants) {
+      for (const task of plant.tasks) {
+        if (task.paused) continue;
+        if (activeFilter.length > 0 && !activeFilter.includes(task.owner)) continue;
+        if (computeNextDue(task) === dateStr) dayTasks.push({ plant, task });
+      }
     }
-    html += `</div>`;
+
+    if (dayTasks.length === 0) {
+      html += `<div class="upcoming-clear-row">
+        <span class="upcoming-day-label">${dayLabel}</span>
+        <span class="upcoming-clear-text">🌿 All clear</span>
+      </div>`;
+    } else {
+      html += `<div class="upcoming-day-label-row">${dayLabel}</div>`;
+      html += `<div class="home-activity-feed"><div class="activity-list">`;
+      for (const { plant, task } of dayTasks) {
+        const cfg = getTaskConfig(task);
+        const ownerMember = membersCache.find(m => m.display_name === task.owner);
+        const ownerColor = ownerMember?.color ?? '#888';
+        const ownerInitial = (task.owner ?? '?')[0].toUpperCase();
+        html += `<div class="activity-row upcoming-task-row">
+          <span class="activity-icon">${cfg.icon}</span>
+          <span class="home-due-today-info">
+            <span style="font-weight:500;">${escapeHtml(cfg.name)}</span>
+            <span class="home-due-today-plant">${escapeHtml(plant.name)}</span>
+          </span>
+          <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInitial)}</span>
+        </div>`;
+      }
+      html += `</div></div>`;
+    }
   }
 
-  const thisWeekCount = thisWeekDays.reduce((sum, d) => sum + itemsForDay(d).length, 0);
-  const nextWeekCount = nextWeekDays.reduce((sum, d) => sum + itemsForDay(d).length, 0);
-
-  html += `<div class="sched-section">`;
-  html += sectionHeader('This Week', '#185FA5', thisWeekCount);
-
-  for (const day of thisWeekDays) {
-    html += renderDay(day);
-  }
-
-  html += `</div>
-    <div class="sched-section">`;
-  html += sectionHeader('Next Week', '#3B6D11', nextWeekCount);
-
-  for (const day of nextWeekDays) {
-    html += renderDay(day);
-  }
-
-  html += `</div>`;
   return html;
 }
 

@@ -113,6 +113,7 @@ let householdId = null;
 let activityFeed = []; // merged care_log + notes, top 5 across all plants
 let currentUserId = null;
 let swRegistration = null;
+let openedFromCaring = false;
 
 // ============================================================
 // ACTIVE USER
@@ -1024,17 +1025,15 @@ function renderAddPlantStep1Html(activeTab, selectedEmoji) {
 function renderAddPlantStep2Html(selectedEmoji) {
   return `
     ${renderAddPlantProgressDots(2)}
-    <div class="add-plant-emoji-confirm">
-      <span class="add-plant-confirm-emoji">${escapeHtml(selectedEmoji)}</span>
-    </div>
-    <div class="form-group" style="margin-top:16px;">
-      <label class="form-label">What do you call it?</label>
-      <input type="text" class="form-input" id="sheet-plant-name" placeholder="e.g. Monstera" autocomplete="off">
-    </div>
-    <div class="name-hint">e.g. Monstera, My green one, The big one, Bathroom plant</div>
+    <div class="add-plant-step-emoji-tile">${escapeHtml(selectedEmoji)}</div>
+    <div class="add-plant-step-heading">Give it a name</div>
+    <div class="add-plant-step-subtext">You can always change this later</div>
+    <div class="ap2-field-label">Name</div>
+    <input type="text" class="form-input" id="sheet-plant-name" placeholder="e.g. Monstera" autocomplete="off">
+    <div class="ap2-input-hint">My green one, The big one…</div>
     <div id="add-plant-duplicate-nudge" class="duplicate-nudge" style="display:none;margin-bottom:12px;"></div>
     <div class="sheet-actions" style="margin-top:16px;">
-      <button class="btn btn-primary" data-action="add-plant-to-step3" style="flex:1;">Next →</button>
+      <button class="btn btn-primary" data-action="add-plant-to-step3" id="ap2-next-btn" style="flex:1;opacity:0.4;" disabled>Next →</button>
     </div>
     <button class="add-plant-back-link" data-action="add-plant-back">← Back</button>`;
 }
@@ -1042,25 +1041,33 @@ function renderAddPlantStep2Html(selectedEmoji) {
 function renderAddPlantStep3Html(selectedEmoji, plantName) {
   return `
     ${renderAddPlantProgressDots(3)}
-    <div class="add-plant-emoji-confirm">
-      <span class="add-plant-confirm-emoji">${escapeHtml(selectedEmoji)}</span>
-      <div class="add-plant-confirm-info">
-        <span class="add-plant-confirm-label">${escapeHtml(plantName || '')}</span>
+    <div class="add-plant-step-emoji-tile">${escapeHtml(selectedEmoji)}</div>
+    <div class="add-plant-step-heading">When did ${escapeHtml(plantName || '')} arrive home?</div>
+    <div class="add-plant-step-subtext">We'll show you how long you've cared for it.</div>
+    <div class="ap3-arrival-card" id="ap3-arrival-card">
+      <div id="ap3-arrival-before">
+        <div class="ap3-arrival-top-row">
+          <span class="ap3-arrival-card-icon">📅</span>
+          <div>
+            <div class="ap3-arrival-card-title">Arrival date</div>
+            <div class="ap3-arrival-card-optional">Optional — you can skip this</div>
+          </div>
+        </div>
+        <button class="ap3-arrival-set-btn" type="button" id="ap3-arrival-set-btn">
+          Set arrival date
+          <input type="date" id="sheet-acquired-date" style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;max-width:100%;">
+        </button>
+      </div>
+      <div class="ap3-arrival-selected-row" id="ap3-arrival-after" style="display:none;">
+        <div>
+          <div class="ap3-arrived-label" id="ap3-arrived-label"></div>
+          <div class="ap3-arrived-relative" id="ap3-arrived-relative"></div>
+        </div>
+        <button class="ap3-change-btn" type="button" id="ap3-change-btn">Change</button>
       </div>
     </div>
-    <div class="arrival-date-card" style="margin-top:16px;">
-      <div class="arrival-date-top-row">
-        <span class="arrival-date-icon">📅</span>
-        <span class="arrival-date-title">When did it arrive home?</span>
-      </div>
-      <div class="arrival-date-sub">We'll show you how long you've cared for it. (Optional)</div>
-      <button class="arrival-date-btn" type="button">
-        <span id="arrival-date-display">Set arrival date</span>
-        <input type="date" id="sheet-acquired-date" style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;max-width:100%;" max="${todayStr()}">
-      </button>
-    </div>
-    <div class="sheet-actions" style="margin-top:16px;">
-      <button class="btn btn-primary" data-action="sheet-save-new-plant" style="flex:1;">Add your plant</button>
+    <div class="sheet-actions" style="margin-top:auto;">
+      <button class="btn btn-primary" data-action="sheet-save-new-plant" style="flex:1;">Add ${escapeHtml(plantName || '')}</button>
     </div>
     <button class="add-plant-back-link" data-action="add-plant-back">← Back</button>`;
 }
@@ -1113,6 +1120,71 @@ function attachAddPlantNameListener() {
   });
 }
 
+function attachAddPlantStep2State() {
+  const nameInput = document.getElementById('sheet-plant-name');
+  const nextBtn   = document.getElementById('ap2-next-btn');
+  if (!nameInput || !nextBtn) return;
+  function update() {
+    const empty = nameInput.value.trim().length === 0;
+    nextBtn.disabled     = empty;
+    nextBtn.style.opacity = empty ? '0.4' : '1';
+  }
+  nameInput.addEventListener('input', update);
+  update();
+}
+
+function relativeArrivalLabel(dateStr) {
+  const today   = new Date(todayStr() + 'T12:00:00');
+  const arrived = new Date(dateStr + 'T12:00:00');
+  const days    = Math.round((today - arrived) / 86400000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7)   return `${days} days ago`;
+  if (days < 14)  return 'About a week ago';
+  if (days < 30)  return `${Math.round(days / 7)} weeks ago`;
+  if (days < 60)  return 'About a month ago';
+  if (days < 365) return `${Math.round(days / 30)} months ago`;
+  if (days < 730) return 'About a year ago';
+  return `About ${Math.round(days / 365)} years ago`;
+}
+
+function attachAddPlantStep3Listener() {
+  const input = document.getElementById('sheet-acquired-date');
+  if (!input) return;
+
+  input.max = todayStr();
+
+  function openPicker() {
+    input.max = todayStr();
+    if (typeof input.showPicker === 'function') {
+      input.showPicker();
+    } else {
+      input.click();
+    }
+  }
+
+  document.getElementById('ap3-arrival-set-btn')?.addEventListener('click', e => { e.preventDefault(); openPicker(); });
+  document.getElementById('ap3-change-btn')?.addEventListener('click',       e => { e.preventDefault(); openPicker(); });
+
+  input.addEventListener('change', function() {
+    if (!this.value) return;
+    const date      = new Date(this.value + 'T12:00:00');
+    const formatted = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    const card   = document.getElementById('ap3-arrival-card');
+    const before = document.getElementById('ap3-arrival-before');
+    const after  = document.getElementById('ap3-arrival-after');
+    if (card)   card.classList.add('has-date');
+    if (before) before.style.display = 'none';
+    if (after)  after.style.display  = 'flex';
+
+    const arrivedLabel    = document.getElementById('ap3-arrived-label');
+    const arrivedRelative = document.getElementById('ap3-arrived-relative');
+    if (arrivedLabel)    arrivedLabel.textContent    = `Arrived ${formatted}`;
+    if (arrivedRelative) arrivedRelative.textContent = relativeArrivalLabel(this.value);
+  });
+}
+
 // ============================================================
 // RENDER: HOME
 // ============================================================
@@ -1143,7 +1215,34 @@ function renderHomeDueToday(activeFilter = []) {
       }
     }
   }
-  if (allItems.length === 0) return '';
+  if (allItems.length === 0) {
+    // Congrats state: show if any plants were cared for today
+    const caredNames = [];
+    const caredSeen = new Set();
+    for (const plant of plants) {
+      if (!caredSeen.has(plant.id) && plant.careLog.some(e => e.date === todayStr())) {
+        caredNames.push(plant.name);
+        caredSeen.add(plant.id);
+      }
+    }
+    if (caredNames.length === 0) return '';
+    const plantNamesHtml = caredNames.map(n => escapeHtml(n)).join(' · ');
+    return `<div class="home-section-header">
+    <div class="home-section-header-accent" style="background:#2e7d32;"></div>
+    <span class="home-section-header-text" style="color:#2e7d32;">Needs Attention Today</span>
+  </div>
+  <div class="home-activity-feed">
+    <div class="needs-attention-list">
+      <div class="attention-done-row">
+        <span class="attention-done-tile">🏆</span>
+        <span class="home-due-today-info">
+          <span style="font-size:13px;font-weight:500;color:#2e7d32;">All done for today!</span>
+          <span style="font-size:11px;color:#5a8c58;">${plantNamesHtml}</span>
+        </span>
+      </div>
+    </div>
+  </div>`;
+  }
 
   // Sort: overdue first (most days late = most negative = first), then due today
   allItems.sort((a, b) => {
@@ -1153,10 +1252,10 @@ function renderHomeDueToday(activeFilter = []) {
 
   let html = `<div class="home-section-header">
     <div class="home-section-header-accent" style="background:#e24b4a;"></div>
-    <span class="home-section-header-text">Needs attention</span>
+    <span class="home-section-header-text">Needs Attention Today</span>
   </div>`;
 
-  html += `<div class="home-activity-feed"><div class="activity-list">`;
+  html += `<div class="home-activity-feed"><div class="needs-attention-list">`;
 
   for (const { plant, task, days, overdue } of allItems) {
     const cfg = getTaskConfig(task);
@@ -1167,9 +1266,8 @@ function renderHomeDueToday(activeFilter = []) {
     const subtitleHtml = overdue
       ? `<span style="color:#a32d2d;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${daysLate} day${daysLate !== 1 ? 's' : ''} late</span>`
       : `<span class="home-due-today-plant">${escapeHtml(plant.name)} · due today</span>`;
-    const rowStyle = overdue ? ' style="background:#fff8f8;"' : '';
 
-    html += `<div class="activity-row home-due-today-row attention-row"${rowStyle}>
+    html += `<div class="activity-row home-due-today-row attention-row" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
       <span style="width:26px;height:26px;border-radius:8px;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>
       <span style="width:1px;height:28px;background:#e8ede8;flex-shrink:0;"></span>
       <span class="activity-icon">${cfg.icon}</span>
@@ -1560,10 +1658,12 @@ function renderSchedule() {
     <span class="home-section-header-text">Upcoming</span>
   </div>`;
 
+  html += `<div class="upcoming-rows">`;
   for (let i = 1; i <= 7; i++) {
     const dateStr = addDays(today, i);
-    const dayLabel = new Date(dateStr + 'T12:00:00')
-      .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const dateObj = new Date(dateStr + 'T12:00:00');
+    const dayAbbr = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+    const dayNum  = dateObj.getDate();
 
     const dayTasks = [];
     for (const plant of plants) {
@@ -1575,30 +1675,45 @@ function renderSchedule() {
     }
 
     if (dayTasks.length === 0) {
-      html += `<div class="upcoming-clear-row">
-        <span class="upcoming-day-label">${dayLabel}</span>
-        <span class="upcoming-clear-text">🌿 All clear</span>
+      html += `<div class="upcoming-row">
+        <div class="upcoming-date-col">
+          <span class="upcoming-date-dow">${dayAbbr}</span>
+          <span class="upcoming-date-num">${dayNum}</span>
+        </div>
+        <div class="upcoming-card upcoming-empty-card">
+          <span class="upcoming-empty-tile">😌</span>
+          <span class="home-due-today-info">
+            <span style="font-size:13px;font-weight:500;color:#4a7844;">All clear</span>
+            <span style="font-size:11px;color:#7aaa74;">No tasks today</span>
+          </span>
+        </div>
       </div>`;
     } else {
-      html += `<div class="upcoming-day-label-row">${dayLabel}</div>`;
-      html += `<div class="home-activity-feed"><div class="activity-list">`;
       for (const { plant, task } of dayTasks) {
         const cfg = getTaskConfig(task);
         const ownerMember = membersCache.find(m => m.display_name === task.owner);
-        const ownerColor = ownerMember?.color ?? '#888';
+        const ownerColor  = ownerMember?.color ?? '#888';
         const ownerInitial = (task.owner ?? '?')[0].toUpperCase();
-        html += `<div class="activity-row upcoming-task-row">
-          <span class="activity-icon">${cfg.icon}</span>
-          <span class="home-due-today-info">
-            <span style="font-weight:500;">${escapeHtml(cfg.name)}</span>
-            <span class="home-due-today-plant">${escapeHtml(plant.name)}</span>
-          </span>
-          <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInitial)}</span>
+        html += `<div class="upcoming-row" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
+          <div class="upcoming-date-col">
+            <span class="upcoming-date-dow">${dayAbbr}</span>
+            <span class="upcoming-date-num">${dayNum}</span>
+          </div>
+          <div class="upcoming-card">
+            <span class="upcoming-card-emoji-tile">${plant.emoji}</span>
+            <span class="upcoming-card-divider"></span>
+            <span class="upcoming-card-icon">${cfg.icon}</span>
+            <span class="home-due-today-info">
+              <span style="font-size:13px;font-weight:500;color:#1a1a1a;">${escapeHtml(cfg.name)}</span>
+              <span class="home-due-today-plant">${escapeHtml(plant.name)}</span>
+            </span>
+            <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInitial)}</span>
+          </div>
         </div>`;
       }
-      html += `</div></div>`;
     }
   }
+  html += `</div>`;
 
   return html;
 }
@@ -3257,6 +3372,11 @@ async function handleEvent(e) {
       }
       break;
 
+    case 'caring-open-edit-task':
+      openedFromCaring = true;
+      renderEditTaskSheet(plantId, taskId);
+      break;
+
     case 'edit-task':
       renderEditTaskSheet(plantId, taskId);
       break;
@@ -3370,6 +3490,7 @@ async function handleEvent(e) {
           const nameInput = document.getElementById('sheet-plant-name');
           if (nameInput) nameInput.value = savedName;
         }
+        attachAddPlantStep2State();
         setTimeout(() => document.getElementById('sheet-plant-name')?.focus(), 80);
       }
       break;
@@ -3377,11 +3498,11 @@ async function handleEvent(e) {
 
     case 'add-plant-to-step3': {
       const name = document.getElementById('sheet-plant-name')?.value?.trim();
-      if (!name) { alert('Please enter a plant name.'); return; }
+      if (!name) return;
       state.sheetData.plantName = name;
       state.sheetData.step = 3;
       openSheet(renderAddPlantStep3Html(state.sheetData.selectedEmoji || '🪴', state.sheetData.plantName));
-      attachArrivalDateListener('Set arrival date');
+      attachAddPlantStep3Listener();
       break;
     }
 
@@ -3396,6 +3517,7 @@ async function handleEvent(e) {
           const nameInput = document.getElementById('sheet-plant-name');
           if (nameInput) nameInput.value = savedName;
         }
+        attachAddPlantStep2State();
       } else {
         state.sheetData.step = 1;
         openSheet(renderAddPlantStep1Html(state.sheetData.activeTab || 'all', state.sheetData.selectedEmoji || '🪴'));
@@ -3446,7 +3568,14 @@ async function handleEvent(e) {
       break;
 
     case 'sheet-cancel':
-      closeSheet();
+      if (openedFromCaring) {
+        openedFromCaring = false;
+        closeSheet();
+        activeTab = 'schedule';
+        renderHome();
+      } else {
+        closeSheet();
+      }
       break;
 
     case 'sheet-set-owner':
@@ -3508,7 +3637,13 @@ async function handleEvent(e) {
 
       updateTask(pid, tid, taskUpdates);
       closeSheet();
-      renderPlantDetail(pid);
+      if (openedFromCaring) {
+        openedFromCaring = false;
+        activeTab = 'schedule';
+        renderHome();
+      } else {
+        renderPlantDetail(pid);
+      }
       showToast('✅ Task saved!');
       break;
     }
@@ -3663,10 +3798,11 @@ function attachArrivalDateListener(emptyText = 'Set date') {
   const input = document.getElementById('sheet-acquired-date');
   if (!input) return;
 
-  input.max = new Date().toLocaleDateString('en-CA');
+  input.max = todayStr();
 
   document.querySelector('.arrival-date-btn, .arrival-optional-pill')?.addEventListener('click', function(e) {
     e.preventDefault();
+    input.max = todayStr();
     if (typeof input.showPicker === 'function') {
       input.showPicker();
     } else {

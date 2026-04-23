@@ -114,6 +114,10 @@ let activityFeed = []; // merged care_log + notes, top 5 across all plants
 let currentUserId = null;
 let swRegistration = null;
 let openedFromCaring = false;
+let openedFromCareLog = false;
+let sheetEntryTab = null;
+let householdName = null;
+let userTouchedArrivalDate = false;
 
 // ============================================================
 // ACTIVE USER
@@ -304,8 +308,8 @@ async function loadFromSupabase() {
   householdId = member.household_id;
   currentMemberId = member.id;
 
-  // 3. Fetch all non-deleted plants and all household_members in parallel
-  const [{ data: plantRows }, { data: memberRows }] = await Promise.all([
+  // 3. Fetch all non-deleted plants, household_members, and household name in parallel
+  const [{ data: plantRows }, { data: memberRows }, { data: householdRow }] = await Promise.all([
     supabaseClient
       .from('plants')
       .select('*')
@@ -315,7 +319,17 @@ async function loadFromSupabase() {
       .from('household_members')
       .select('id, display_name, color')
       .eq('household_id', householdId),
+    supabaseClient
+      .from('households')
+      .select('name')
+      .eq('id', householdId)
+      .single(),
   ]);
+
+  householdName = householdRow?.name ?? null;
+  const headerNameEl = document.getElementById('header-household-name');
+  if (headerNameEl) headerNameEl.textContent = householdName ?? 'My Household';
+
   if (!plantRows) return;
 
   // Cache members for write operations — must be set before any early return
@@ -536,6 +550,26 @@ function computeNextDue(task) {
   return addDays(task.lastDone, task.frequencyDays);
 }
 
+// True if task has a recurrence occurrence on dateStr, projecting forward from its next due date.
+// Used by the Caring tab Upcoming section to render every occurrence within the 7-day window.
+function taskOccursOnDate(task, dateStr) {
+  const recType = task.recurrenceType ?? 'interval';
+  const first = computeNextDue(task);
+  if (first === null) return false;
+  if (recType === 'one-off') return first === dateStr;
+  if (first === dateStr) return true;
+  if (dateStr < first) return false;
+  if (recType === 'weekdays') {
+    const weekdays = task.weekdays ?? [];
+    if (weekdays.length === 0) return false;
+    const dow = new Date(dateStr + 'T12:00:00').getDay();
+    return weekdays.includes(dow);
+  }
+  const interval = task.frequencyDays;
+  if (!interval || interval <= 0) return false;
+  return daysBetween(first, dateStr) % interval === 0;
+}
+
 // Positive = days remaining, 0 = due today, negative = overdue, Infinity = complete (one-off done)
 function daysUntilDue(task) {
   const next = computeNextDue(task);
@@ -606,10 +640,6 @@ function formatNoteDate(isoStr) {
   const d = new Date(isoStr);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-}
-
-function todayFormatted() {
-  return new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 // Returns the ISO date string of the Monday of the week containing dateStr
@@ -781,6 +811,7 @@ async function updateTask(plantId, taskId, updates) {
   if ('paused'          in updates) dbUpdates.paused            = updates.paused;
   if ('note'            in updates) dbUpdates.note              = updates.note;
   if ('name'            in updates) dbUpdates.name              = updates.name;
+  if ('icon'            in updates) dbUpdates.icon              = updates.icon;
 
   if ('owner' in updates) {
     const member = membersCache.find(m => m.display_name === updates.owner);
@@ -954,6 +985,13 @@ function showDoneToast(plantId, taskId, taskName) {
   );
 }
 
+function showUndoDoneToast(plantId, taskId, taskName, plantName) {
+  showToast(
+    `&#10003; ${escapeHtml(taskName)} &middot; ${escapeHtml(plantName)} &middot; <span class="toast-link">Undo</span>`,
+    { interactive: true, duration: 4000, data: { action: 'caring-undo-done', plant: plantId, task: taskId } }
+  );
+}
+
 // ============================================================
 // PLANT EMOJI PICKER
 // ============================================================
@@ -1039,32 +1077,21 @@ function renderAddPlantStep2Html(selectedEmoji) {
 }
 
 function renderAddPlantStep3Html(selectedEmoji, plantName) {
+  const curYear = new Date().getFullYear();
   return `
     ${renderAddPlantProgressDots(3)}
     <div class="add-plant-step-emoji-tile">${escapeHtml(selectedEmoji)}</div>
     <div class="add-plant-step-heading">When did ${escapeHtml(plantName || '')} arrive home?</div>
     <div class="add-plant-step-subtext">We'll show you how long you've cared for it.</div>
     <div class="ap3-arrival-card" id="ap3-arrival-card">
-      <div id="ap3-arrival-before">
-        <div class="ap3-arrival-top-row">
-          <span class="ap3-arrival-card-icon">📅</span>
-          <div>
-            <div class="ap3-arrival-card-title">Arrival date</div>
-            <div class="ap3-arrival-card-optional">Optional — you can skip this</div>
-          </div>
-        </div>
-        <button class="ap3-arrival-set-btn" type="button" id="ap3-arrival-set-btn">
-          Set arrival date
-          <input type="date" id="sheet-acquired-date" style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;max-width:100%;">
-        </button>
-      </div>
-      <div class="ap3-arrival-selected-row" id="ap3-arrival-after" style="display:none;">
+      <div class="ap3-arrival-top-row">
+        <span class="ap3-arrival-card-icon">📅</span>
         <div>
-          <div class="ap3-arrived-label" id="ap3-arrived-label"></div>
-          <div class="ap3-arrived-relative" id="ap3-arrived-relative"></div>
+          <div class="ap3-arrival-card-title">Arrival date</div>
+          <div class="ap3-arrival-card-optional">Optional — you can skip this</div>
         </div>
-        <button class="ap3-change-btn" type="button" id="ap3-change-btn">Change</button>
       </div>
+      ${renderDateSelectHtml('arrival', null, 2000, curYear)}
     </div>
     <div class="sheet-actions" style="margin-top:auto;">
       <button class="btn btn-primary" data-action="sheet-save-new-plant" style="flex:1;">Add ${escapeHtml(plantName || '')}</button>
@@ -1152,10 +1179,13 @@ function attachAddPlantStep3Listener() {
   const input = document.getElementById('sheet-acquired-date');
   if (!input) return;
 
+  // Set max once at init — outside any handler to avoid spurious change events.
   input.max = todayStr();
 
+  let userPickedDate = false;
+
   function openPicker() {
-    input.max = todayStr();
+    userPickedDate = true;
     if (typeof input.showPicker === 'function') {
       input.showPicker();
     } else {
@@ -1164,9 +1194,11 @@ function attachAddPlantStep3Listener() {
   }
 
   document.getElementById('ap3-arrival-set-btn')?.addEventListener('click', e => { e.preventDefault(); openPicker(); });
-  document.getElementById('ap3-change-btn')?.addEventListener('click',       e => { e.preventDefault(); openPicker(); });
+  // Entire confirmed-state row is tappable (Bug 2).
+  document.getElementById('ap3-arrival-after')?.addEventListener('click',   e => { e.preventDefault(); openPicker(); });
 
   input.addEventListener('change', function() {
+    if (!userPickedDate) return;
     if (!this.value) return;
     const date      = new Date(this.value + 'T12:00:00');
     const formatted = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -1189,14 +1221,15 @@ function attachAddPlantStep3Listener() {
 // RENDER: HOME
 // ============================================================
 
+const FEEDBACK_BUBBLE_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
+
 function renderHeaderRight() {
   const activeMember = membersCache.find(m => m.display_name === activeUser);
   const userColor    = activeMember?.color ?? '#2e7d51';
   const initial      = (activeUser ?? '?')[0].toUpperCase();
   return `
     <div class="header-right">
-      <span class="date-label">${todayFormatted()}</span>
-      <button class="header-feedback-btn" data-action="feedback">💬</button>
+      <button class="header-feedback-btn" data-action="feedback" aria-label="Report a bug">${FEEDBACK_BUBBLE_SVG}</button>
       <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
     </div>`;
 }
@@ -1295,7 +1328,10 @@ function renderHomeActivityFeed() {
     <span class="home-section-header-text">Recent activity</span>
   </div>
   <div class="home-activity-feed"><div class="activity-list">
-    <div style="text-align:center;padding:16px;font-size:13px;color:#aaa;">Care actions will appear here.</div>
+    <div class="activity-row">
+      <span class="activity-icon" style="opacity:0.3;">💧</span>
+      <span class="activity-text" style="color:#bbb;">Care actions will appear here</span>
+    </div>
   </div></div>`;
   }
 
@@ -1438,7 +1474,11 @@ function renderHome() {
 
   let html = `
     <div class="app-header">
-      <h1>Plant Care</h1>
+      <div class="header-left">
+        <span class="brand-tile"><img src="/icons/header_icon512.png" alt="" /></span>
+        <span id="header-household-name" class="header-household-name">${escapeHtml(householdName ?? 'My Household')}</span>
+        <span class="header-chevron" aria-hidden="true">▾</span>
+      </div>
       ${renderHeaderRight()}
     </div>
     <div class="tab-bar">
@@ -1467,7 +1507,6 @@ function renderHome() {
       <span class="empty-emoji">🌱</span>
       <h2>Your plants live here</h2>
       <p>Add your first plant to start tracking its care.</p>
-      <button class="btn-add-task-detail" data-action="add-plant">+ Add your first plant</button>
     </div>`;
     }
 
@@ -1598,7 +1637,7 @@ function renderCoachMark() {
       <div style="margin-bottom:12px;">
         <div style="font-size:9px;color:#aaa;font-style:italic;text-align:center;margin-bottom:6px;">Here's what you'll see:</div>
         <div style="background:#f0f0f0;border-radius:10px;padding:8px 10px;display:flex;align-items:center;gap:8px;">
-          <div style="width:32px;height:32px;background:#3a6b3a;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">🌿</div>
+          <div style="width:32px;height:32px;border-radius:8px;overflow:hidden;flex-shrink:0;"><img src="/icons/plant-care-icon-192.png" style="width:100%;height:100%;object-fit:cover;display:block;"></div>
           <div style="flex:1;min-width:0;">
             <div style="display:flex;align-items:baseline;justify-content:space-between;">
               <div style="font-size:11px;font-weight:600;color:#1a1a1a;">Plant Care</div>
@@ -1613,6 +1652,7 @@ function renderCoachMark() {
 
     document.getElementById('coachmark-enable-notif').addEventListener('click', async () => {
       await subscribeToPush();
+      if (Notification.permission === 'granted') showToast('Notifications enabled');
       if (currentMemberId) localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
       dismissCoachMark();
       renderHome();
@@ -1627,7 +1667,49 @@ function renderCoachMark() {
   }
 
   document.getElementById('coachmark-got-it').addEventListener('click', () => {
-    showNotifStep();
+    dismissCoachMark();
+    showCaringTabCoachMark();
+  });
+}
+
+function showCaringTabCoachMark() {
+  // Full-screen dark overlay — tab bar appears above it via z-index: 1001
+  const overlayEl = document.createElement('div');
+  overlayEl.id = 'caring-cm-overlay';
+  overlayEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:1000;background:rgba(0,0,0,0.55);';
+
+  // Spotlight ring — tightly wraps the Caring tab button
+  const caringBtn = [...document.querySelectorAll('.tab-btn')].find(el => el.textContent.includes('Caring'));
+  const spotEl = document.createElement('div');
+  spotEl.id = 'caring-cm-spot';
+  spotEl.style.cssText = 'position:fixed;z-index:1002;width:72px;height:48px;border-radius:10px;border:2px solid #fff;pointer-events:none;';
+  if (caringBtn) {
+    const r = caringBtn.getBoundingClientRect();
+    spotEl.style.top  = r.top + 'px';
+    spotEl.style.left = (r.left + r.width / 2 - 36) + 'px';
+  }
+
+  // Bubble — just below the tab bar, centered horizontally
+  const tabBar   = document.querySelector('.tab-bar');
+  const tabBottom = tabBar ? tabBar.getBoundingClientRect().bottom : 110;
+  const bubbleEl = document.createElement('div');
+  bubbleEl.id = 'caring-cm-bubble';
+  bubbleEl.style.cssText = `position:fixed;z-index:1002;width:220px;left:50%;transform:translateX(-50%);top:${tabBottom + 8}px;background:#fff;border-radius:12px;padding:14px;box-sizing:border-box;`;
+  bubbleEl.innerHTML = `
+    <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:8px solid #fff;"></div>
+    <div style="font-size:15px;font-weight:500;color:#1a2e1a;margin-bottom:6px;">Your daily tasks live here</div>
+    <div style="font-size:13px;color:#666;line-height:1.5;margin-bottom:12px;">See what needs attention today and what's coming up this week.</div>
+    <button id="caring-cm-got-it" style="width:100%;padding:12px;background:#3a6b3a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;">Got it</button>`;
+
+  document.body.appendChild(overlayEl);
+  document.body.appendChild(spotEl);
+  document.body.appendChild(bubbleEl);
+
+  document.getElementById('caring-cm-got-it').addEventListener('click', () => {
+    overlayEl.remove();
+    spotEl.remove();
+    bubbleEl.remove();
+    if (currentMemberId) localStorage.setItem(`onboarding_session6_done_${currentMemberId}`, '1');
   });
 }
 
@@ -1670,7 +1752,7 @@ function renderSchedule() {
       for (const task of plant.tasks) {
         if (task.paused) continue;
         if (activeFilter.length > 0 && !activeFilter.includes(task.owner)) continue;
-        if (computeNextDue(task) === dateStr) dayTasks.push({ plant, task });
+        if (taskOccursOnDate(task, dateStr)) dayTasks.push({ plant, task });
       }
     }
 
@@ -1680,11 +1762,11 @@ function renderSchedule() {
           <span class="upcoming-date-dow">${dayAbbr}</span>
           <span class="upcoming-date-num">${dayNum}</span>
         </div>
-        <div class="upcoming-card upcoming-empty-card">
-          <span class="upcoming-empty-tile">😌</span>
+        <div class="upcoming-card upcoming-empty-card" style="background:#f0eef8;border:0.5px solid #d0c8ee;">
+          <span class="upcoming-empty-tile" style="background:#ddd8f0;border-radius:9px;width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;">🎈</span>
           <span class="home-due-today-info">
-            <span style="font-size:13px;font-weight:500;color:#4a7844;">All clear</span>
-            <span style="font-size:11px;color:#7aaa74;">No tasks today</span>
+            <span style="font-size:13px;font-weight:500;color:#3a2a7a;">All clear</span>
+            <span style="font-size:11px;color:#6a5aaa;">No tasks today</span>
           </span>
         </div>
       </div>`;
@@ -1738,7 +1820,7 @@ function renderPlantDetail(plantId) {
       <span class="detail-header-name">${escapeHtml(plant.name)}</span>
       <button class="header-edit-plant-btn" data-action="open-edit-plant" data-plant="${plant.id}">Edit</button>
     </div>
-    <button class="header-feedback-btn" data-action="feedback">💬</button>
+    <button class="header-feedback-btn" data-action="feedback" aria-label="Report a bug">${FEEDBACK_BUBBLE_SVG}</button>
     <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
   </div>
   <div class="plant-detail-tabs">
@@ -1829,112 +1911,281 @@ function renderSummaryTab(plant) {
 </div>`;
   }
 
+  const today = todayStr();
+
+  const summarySectionHeader = (label) => `<div style="display:flex;align-items:center;gap:8px;padding:16px 16px 8px;">
+    <span style="width:3px;height:14px;background:#3a6b3a;border-radius:2px;flex-shrink:0;"></span>
+    <span style="font-size:11px;font-weight:500;color:#6b7a6b;text-transform:uppercase;letter-spacing:0.05em;">${escapeHtml(label)}</span>
+  </div>`;
+
+  const recurrenceLabel = (task) => {
+    const rt = task.recurrenceType ?? 'interval';
+    if (rt === 'one-off') return 'One-off';
+    if (rt === 'weekdays') {
+      const dInts = (task.weekdays ?? []).slice().sort((a, b) => a - b);
+      const abbrev = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      return dInts.length > 0 ? `Every ${dInts.map(d => abbrev[d]).join(', ')}` : 'Days of week';
+    }
+    const n = task.frequencyDays ?? 1;
+    return `Every ${n} day${n !== 1 ? 's' : ''}`;
+  };
+
+  const relativeDays = (dateStr) => {
+    if (!dateStr) return 'some time ago';
+    const diff = daysBetween(dateStr, today);
+    if (isNaN(diff)) return 'some time ago';
+    if (diff <= 0) return 'today';
+    if (diff === 1) return '1 day ago';
+    return `${diff} days ago`;
+  };
+
+  const compactRelative = (dateStr) => {
+    if (!dateStr) return '';
+    const diff = daysBetween(dateStr, today);
+    if (isNaN(diff)) return '';
+    if (diff <= 0) return 'today';
+    return `${diff}d ago`;
+  };
+
   let html = '';
 
-  // ── Plant info card ───────────────────────────────────────
+  // ── Zone 1: Hero card (single horizontal row) ─────────────
   const dateAcquired = plant.dateAcquired;
-  if (dateAcquired) {
-    const totalDays = daysBetween(dateAcquired, todayStr());
-    const years     = Math.floor(totalDays / 365);
-    const remDays   = totalDays % 365;
-    const duration  = years > 0
-      ? `${years} year${years !== 1 ? 's' : ''}, ${remDays} day${remDays !== 1 ? 's' : ''} of care 🌱`
-      : `${totalDays} day${totalDays !== 1 ? 's' : ''} of care 🌱`;
-    html += `
-  <div class="plant-info-card" data-action="edit-plant" data-plant="${plant.id}">
-    <div class="plant-info-card-body">
-      <div class="plant-info-main">${escapeHtml(duration)}</div>
-      <div class="plant-info-sub">Home since ${formatDate(dateAcquired)}</div>
+  const heroMain = dateAcquired
+    ? (() => {
+        const totalDays = daysBetween(dateAcquired, today);
+        return `${totalDays} day${totalDays !== 1 ? 's' : ''} of care 🌱`;
+      })()
+    : 'Add an arrival date';
+  const heroSub = dateAcquired
+    ? `Home since ${formatDate(dateAcquired)}`
+    : 'Track how long you’ve cared for it';
+
+  const sortedCare = [...plant.careLog].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+  const lastEntry = sortedCare[0];
+  let heroRightHtml = '';
+  if (lastEntry) {
+    const lastMember  = membersCache.find(m => m.display_name === lastEntry.author);
+    const lastColor   = lastMember?.color ?? '#888';
+    const lastInitial = (lastEntry.author ?? '?')[0].toUpperCase();
+    const when        = compactRelative(lastEntry.date);
+    const verb        = (lastEntry.taskType && lastEntry.taskType !== 'custom')
+      ? (CARE_VERB[lastEntry.taskType] ?? 'cared for')
+      : (lastEntry.taskName ?? 'cared for');
+    const actionLabel = `${lastEntry.author ?? 'Someone'} ${verb}`;
+    heroRightHtml = `
+    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+      <span style="width:22px;height:22px;border-radius:50%;background:${escapeHtml(lastColor)};color:white;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(lastInitial)}</span>
+      <span style="font-size:12px;color:#7a8a7a;white-space:nowrap;">${escapeHtml(actionLabel)}${when ? ` · ${escapeHtml(when)}` : ''}</span>
+    </div>`;
+  }
+
+  html += `
+  <div style="margin:12px 16px;padding:12px 14px;background:#fff;border:0.5px solid #e4e8e0;border-radius:14px;display:flex;align-items:center;gap:10px;">
+    <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+      <div style="font-size:15px;font-weight:500;color:#1a1a1a;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(heroMain)}</div>
+      <div style="font-size:12px;color:#7a8a7a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(heroSub)}</div>
     </div>
-    <span class="plant-info-icon">&#9999;&#xFE0E;</span>
+    ${heroRightHtml}
   </div>`;
-  } else {
-    html += `
-  <div class="plant-info-card plant-info-card--empty" data-action="edit-plant" data-plant="${plant.id}">
-    <div class="plant-info-card-body">
-      <div class="plant-info-main">Add an arrival date</div>
-      <div class="plant-info-sub">Track how long you&#8217;ve cared for it</div>
+
+  // ── Zone 2: Needs attention today ─────────────────────────
+  const attentionTasks = plant.tasks.filter(t => {
+    if (t.paused) return false;
+    const d = daysUntilDue(t);
+    return d === 0 || (d < 0 && d !== -Infinity);
+  });
+  const caredToday = plant.careLog.some(e => e.date === today);
+
+  if (attentionTasks.length === 0 && caredToday) {
+    // Congratulatory state — green header + trophy row (Caring-tab pattern)
+    html += `<div class="home-section-header">
+      <div class="home-section-header-accent" style="background:#2e7d32;"></div>
+      <span class="home-section-header-text" style="color:#2e7d32;">Needs attention today</span>
     </div>
-    <span class="plant-info-icon">+</span>
-  </div>`;
-  }
-
-  // ── Overdue ───────────────────────────────────────────────
-  const overdueTasks = plant.tasks.filter(t => !t.paused && daysUntilDue(t) < 0);
-  const dueTodayTasks = plant.tasks.filter(t => !t.paused && daysUntilDue(t) === 0);
-
-  if (overdueTasks.length > 0) {
-    html += sectionHeader('⚠️ Overdue', '#BA7517');
-    for (const task of overdueTasks) {
-      html += renderExpandedTaskRow(plant.id, task);
-    }
-  }
-
-  // ── Due today ─────────────────────────────────────────────
-  if (dueTodayTasks.length > 0) {
-    html += sectionHeader('Due today', '#888780');
-    for (const task of dueTodayTasks) {
-      html += renderExpandedTaskRow(plant.id, task);
-    }
-  }
-
-  if (overdueTasks.length === 0 && dueTodayTasks.length === 0) {
-    html += `<div class="detail-all-clear">All caught up 🌿</div>`;
-  }
-
-  // ── Upcoming ──────────────────────────────────────────────
-  const upcomingTasks = plant.tasks
-    .filter(t => !t.paused && daysUntilDue(t) > 0 && daysUntilDue(t) !== Infinity)
-    .sort((a, b) => daysUntilDue(a) - daysUntilDue(b));
-  html += sectionHeader('Upcoming', '#185FA5');
-  if (upcomingTasks.length === 0) {
-    html += `<div class="detail-empty">No upcoming tasks</div>`;
+    <div class="home-activity-feed">
+      <div class="needs-attention-list">
+        <div class="attention-done-row">
+          <span class="attention-done-tile">🏆</span>
+          <span class="home-due-today-info">
+            <span style="font-size:13px;font-weight:500;color:#2e7d32;">All done for today!</span>
+            <span style="font-size:11px;color:#5a8c58;">${escapeHtml(plant.name)}</span>
+          </span>
+        </div>
+      </div>
+    </div>`;
   } else {
-    html += `<div class="compact-task-list">`;
-    for (const task of upcomingTasks) {
-      html += renderCompactTaskRow(plant.id, task);
-    }
-    html += `</div>`;
-  }
+    html += summarySectionHeader('Needs attention today');
 
-  // ── Recent activity ───────────────────────────────────────
-  const plantNotes = notes.filter(n => n.plantId === plant.id);
-  const activityItems = [
-    ...plant.careLog.map(e  => ({ type: 'care', sortKey: e.date,                           data: e })),
-    ...plantNotes.map(n     => ({ type: 'note', sortKey: (n.createdAt ?? '').split('T')[0], data: n })),
-  ].sort((a, b) => (b.sortKey || '').localeCompare(a.sortKey || '')).slice(0, 5);
-
-  html += sectionHeader('Recent activity', '#888780');
-  if (activityItems.length === 0) {
-    html += `<div class="detail-empty">No activity yet</div>`;
-  } else {
-    html += `<div class="activity-list">`;
-    for (const item of activityItems) {
-      if (item.type === 'care') {
-        const e    = item.data;
-        const matchedTask = plant.tasks.find(t => t.id === e.taskId);
-        const icon = matchedTask ? getTaskConfig(matchedTask).icon : '&#10003;';
-        const diff = e.date ? daysBetween(e.date, todayStr()) : NaN;
-        const when = isNaN(diff) ? 'Some time ago' : diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
-        html += `
-      <div class="activity-row">
-        <span class="activity-icon">${icon}</span>
-        <span class="activity-text">${escapeHtml(e.taskName)}</span>
-        <span class="activity-time">${when}</span>
+    if (attentionTasks.length === 0) {
+      html += `<div style="margin:0 16px;display:flex;align-items:center;gap:10px;background:#f0eef8;border:0.5px solid #d0c8ee;border-radius:12px;padding:10px 12px;">
+        <span style="width:40px;height:40px;background:#ddd8f0;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🎈</span>
+        <span style="display:flex;flex-direction:column;gap:2px;min-width:0;">
+          <span style="font-size:13px;font-weight:500;color:#3a2a7a;">All clear</span>
+          <span style="font-size:11px;color:#6a5aaa;">No tasks today</span>
+        </span>
       </div>`;
-      } else {
-        const n    = item.data;
-        const diff = item.sortKey ? daysBetween(item.sortKey, todayStr()) : NaN;
-        const when = isNaN(diff) ? 'Some time ago' : diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
-        html += `
-      <div class="activity-row">
-        <span class="activity-icon">&#128221;</span>
-        <span class="activity-text"><strong>${escapeHtml(n.author)}</strong> &middot; <span class="activity-note-preview">${escapeHtml(n.note)}</span></span>
-        <span class="activity-time">${when}</span>
-      </div>`;
+    } else {
+      for (const task of attentionTasks) {
+        const cfg         = getTaskConfig(task);
+        const ownerMember = membersCache.find(m => m.display_name === task.owner);
+        const ownerColor  = ownerMember?.color ?? '#888';
+        const ownerInit   = (task.owner ?? '?')[0].toUpperCase();
+        const d           = daysUntilDue(task);
+        const status      = d < 0 ? 'Overdue' : 'Due today';
+        const metaText    = `${status} · ${recurrenceLabel(task)}`;
+        html += `<div class="attention-row" style="margin:0 16px 8px;display:flex;align-items:center;gap:10px;background:#fff8f0;border:0.5px solid #f0d8b0;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
+          <span style="width:36px;height:36px;background:#eef3eb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${cfg.icon}</span>
+          <span style="width:1px;height:28px;background:#e8ddc0;flex-shrink:0;"></span>
+          <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+            <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</span>
+            <span style="font-size:11px;color:#8a5a0f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(metaText)}</span>
+          </span>
+          <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInit)}</span>
+          <button class="attention-check-circle" data-action="summary-mark-done" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}" aria-label="Mark done">
+            <span class="attention-check-icon">✓</span>
+          </button>
+        </div>`;
       }
     }
-    html += `</div>`;
+  }
+
+  // ── Zone 3a: Upcoming (next 3 occurrences) ────────────────
+  html += summarySectionHeader('Upcoming');
+
+  const projectStart = addDays(today, 1);
+  const projectEnd   = addDays(today, 365);
+  const allOccs      = [];
+  for (const task of plant.tasks) {
+    if (task.paused) continue;
+    const rt    = task.recurrenceType ?? 'interval';
+    const first = computeNextDue(task);
+    if (!first) continue;
+
+    if (rt === 'one-off') {
+      if (first >= projectStart) allOccs.push({ date: first, task });
+      continue;
+    }
+
+    if (rt === 'weekdays') {
+      const wd = task.weekdays ?? [];
+      if (wd.length === 0) continue;
+      const picks = [];
+      if (first >= projectStart) picks.push(first);
+      let d = addDays(first, 1);
+      while (picks.length < 3 && d <= projectEnd) {
+        const dow = new Date(d + 'T12:00:00').getDay();
+        if (wd.includes(dow) && d >= projectStart) picks.push(d);
+        d = addDays(d, 1);
+      }
+      for (const date of picks) allOccs.push({ date, task });
+      continue;
+    }
+
+    const interval = task.frequencyDays;
+    if (!interval || interval <= 0) {
+      if (first >= projectStart) allOccs.push({ date: first, task });
+      continue;
+    }
+    let d = first;
+    while (d < projectStart) d = addDays(d, interval);
+    for (let i = 0; i < 3 && d <= projectEnd; i++) {
+      allOccs.push({ date: d, task });
+      d = addDays(d, interval);
+    }
+  }
+  allOccs.sort((a, b) => a.date.localeCompare(b.date));
+  const upcoming3 = allOccs.slice(0, 3);
+
+  if (upcoming3.length === 0) {
+    html += `<div style="margin:0 16px;padding:12px 16px;color:#888;font-size:13px;">No upcoming tasks</div>`;
+  } else {
+    for (const { date, task } of upcoming3) {
+      const cfg         = getTaskConfig(task);
+      const ownerMember = membersCache.find(m => m.display_name === task.owner);
+      const ownerColor  = ownerMember?.color ?? '#888';
+      const ownerInit   = (task.owner ?? '?')[0].toUpperCase();
+      const dObj        = new Date(date + 'T12:00:00');
+      const monAbbr     = dObj.toLocaleDateString('en-US', { month: 'short' });
+      const dayAbbr     = dObj.toLocaleDateString('en-US', { weekday: 'short' });
+      const dayNum      = dObj.getDate();
+      html += `<div style="margin:0 16px 8px;display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
+        <div style="display:flex;flex-direction:column;align-items:center;min-width:36px;flex-shrink:0;">
+          <span style="font-size:10px;color:#7a8a7a;text-transform:uppercase;line-height:1.1;">${escapeHtml(monAbbr)}</span>
+          <span style="font-size:15px;font-weight:500;color:#1a1a1a;line-height:1.1;">${dayNum}</span>
+          <span style="font-size:10px;color:#7a8a7a;line-height:1.1;">${escapeHtml(dayAbbr)}</span>
+        </div>
+        <span style="width:1px;height:28px;background:#e8ede8;flex-shrink:0;"></span>
+        <span style="width:36px;height:36px;background:#f0f0f0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${cfg.icon}</span>
+        <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+          <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</span>
+          <span style="font-size:11px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(recurrenceLabel(task))}</span>
+        </span>
+        <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInit)}</span>
+      </div>`;
+    }
+  }
+
+  // ── Zone 3b: Recent activity (last 3 entries) ─────────────
+  html += summarySectionHeader('Recent activity');
+
+  const plantNotes = notes.filter(n => n.plantId === plant.id);
+  const activityItems = [
+    ...plant.careLog.map(e => ({ type: 'care', sortKey: e.date ?? '',                          data: e })),
+    ...plantNotes.map(n   => ({ type: 'note', sortKey: (n.createdAt ?? '').split('T')[0],      data: n, raw: n.createdAt ?? '' })),
+  ].sort((a, b) => {
+    const cmp = (b.sortKey || '').localeCompare(a.sortKey || '');
+    if (cmp !== 0) return cmp;
+    return ((b.raw ?? '') || '').localeCompare(a.raw ?? '');
+  }).slice(0, 3);
+
+  if (activityItems.length === 0) {
+    html += `<div style="margin:0 16px;padding:12px 16px;color:#888;font-size:13px;">No activity yet</div>`;
+  } else {
+    for (const item of activityItems) {
+      if (item.type === 'care') {
+        const e           = item.data;
+        const matchedTask = plant.tasks.find(t => t.id === e.taskId);
+        const cfgM        = matchedTask ? getTaskConfig(matchedTask) : null;
+        const icon        = cfgM?.icon ?? '✓';
+        const tType       = cfgM?.type ?? e.taskType;
+        const relTime     = relativeDays(e.date) === 'today' ? 'Today'
+                          : relativeDays(e.date) === '1 day ago' ? 'Yesterday'
+                          : relativeDays(e.date);
+        const absDate     = e.date ? formatDate(e.date) : '';
+        const primary     = `${e.author ?? 'Someone'} logged ${e.taskName ?? 'care'}`;
+        html += `<div style="margin:0 16px 8px;display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="carelog-open-edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(e.taskId ?? '')}">
+          ${activityTaskTileHtml(tType, icon)}
+          <span style="width:1px;height:28px;background:#e8ede8;flex-shrink:0;"></span>
+          <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+            <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(primary)}</span>
+            <span style="font-size:11px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(relTime)} · ${escapeHtml(absDate)}</span>
+          </span>
+        </div>`;
+      } else {
+        const n       = item.data;
+        const relTime = relativeDays(item.sortKey) === 'today' ? 'Today'
+                      : relativeDays(item.sortKey) === '1 day ago' ? 'Yesterday'
+                      : relativeDays(item.sortKey);
+        const absDate = item.sortKey ? formatDate(item.sortKey) : '';
+        const primary = `${n.author ?? 'Someone'} added a note`;
+        const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
+        const isOwn = n.memberId && n.memberId === activeMemberId;
+        const rowAction = isOwn
+          ? `data-action="edit-note" data-note="${escapeHtml(n.id)}" data-plant="${escapeHtml(plant.id)}"`
+          : '';
+        const bodyHtml = `<span style="font-size:13px;color:#4a4a4a;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px;">${escapeHtml(n.note ?? '')}</span>`;
+        html += `<div style="margin:0 16px 8px;display:flex;align-items:flex-start;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;${isOwn ? 'cursor:pointer;' : ''}" ${rowAction}>
+          <span style="width:36px;height:36px;background:#e8f0fb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">💬</span>
+          <span style="width:1px;height:28px;background:#e8ede8;flex-shrink:0;margin-top:4px;"></span>
+          <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+            <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(primary)}</span>
+            ${bodyHtml}
+            <span style="font-size:11px;color:#8a8d86;margin-top:2px;">${escapeHtml(relTime)} · ${escapeHtml(absDate)}</span>
+          </span>
+        </div>`;
+      }
+    }
   }
 
   return html;
@@ -1949,7 +2200,7 @@ function renderTasksTab(plant) {
   <div class="onboarding-first-task-emoji">💧</div>
   <div class="onboarding-first-task-header">Your first care task</div>
   <div class="onboarding-first-task-sub">We'll create a simple watering task to get you started.</div>
-  <button class="btn btn-primary onboarding-first-task-btn" data-action="onboarding-add-first-task" data-plant="${plant.id}">Add First Task</button>
+  <button class="btn btn-primary onboarding-first-task-btn" data-action="onboarding-add-first-task" data-plant="${plant.id}">Add First Task (Example)</button>
 </div>`;
   }
 
@@ -1977,9 +2228,27 @@ function renderTasksTab(plant) {
     html += `<div class="detail-empty">No tasks for selected users</div>`;
     return html;
   }
-  html += `<div class="task-list">`;
-  for (const task of filtered) {
-    html += renderTaskCard(plant.id, task);
+  const today = todayStr();
+  const urgencyGroup = (t) => {
+    if (t.paused) return 5;
+    if (t.lastDone === today) return 6;
+    const d = daysUntilDue(t);
+    if (d === Infinity) return 6;
+    if (d < 0)   return 1;
+    if (d === 0) return 2;
+    if (d === 1) return 3;
+    return 4;
+  };
+  const sorted = [...filtered].sort((a, b) => {
+    const ga = urgencyGroup(a);
+    const gb = urgencyGroup(b);
+    if (ga !== gb) return ga - gb;
+    if (ga === 4)  return daysUntilDue(a) - daysUntilDue(b);
+    return 0;
+  });
+  html += `<div class="task-row-list">`;
+  for (const task of sorted) {
+    html += renderTaskRow(plant.id, task);
   }
   html += `</div>`;
   return html;
@@ -1994,89 +2263,205 @@ function renderNotesTab(plant) {
     return `<div style="text-align:center;padding:48px 24px 32px;">
   <div style="font-size:32px;margin-bottom:12px;">📝</div>
   <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">No notes yet</div>
-  <div style="font-size:13px;color:#888;line-height:1.5;max-width:260px;margin:0 auto;">Jot down observations about your ${escapeHtml(plant.name)} — growth, health, anything worth remembering.</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;max-width:260px;margin:0 auto;">Jot down observations about your ${escapeHtml(plant.name)} — growth, health, anything worth remembering. Tap the button below to add one.</div>
 </div>`;
   }
-  let html = `<div class="health-note-list">`;
+
+  const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
+  let html    = `<div style="padding:0 16px 80px;">`;
+  let lastMon = null;
+
   for (const note of plantNotes) {
-    html += renderNoteCard(note);
+    // Month group header
+    const dateStr  = note.createdAt ? note.createdAt.split('T')[0] : null;
+    const monthKey = dateStr ? dateStr.slice(0, 7) : null;
+    if (monthKey && monthKey !== lastMon) {
+      lastMon = monthKey;
+      const [y, m] = monthKey.split('-').map(Number);
+      const lbl = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      html += `<div class="carelog-month-header">${lbl.toUpperCase()}</div>`;
+    }
+
+    // Date column
+    let dayAbbr = '—', dayNum = '—';
+    if (dateStr) {
+      const d = new Date(dateStr + 'T12:00:00');
+      if (!isNaN(d.getTime())) {
+        dayAbbr = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase().slice(0, 3);
+        dayNum  = String(d.getDate());
+      }
+    }
+
+    // Owner circle
+    const member  = membersCache.find(m2 => m2.display_name === note.author);
+    const color   = member?.color ?? '#888';
+    const initial = (note.author ?? '?')[0].toUpperCase();
+
+    const isOwn     = note.memberId && note.memberId === activeMemberId;
+    const rowAction = isOwn
+      ? `data-action="edit-note" data-note="${escapeHtml(note.id)}" data-plant="${escapeHtml(plant.id)}"`
+      : '';
+
+    html += `
+    <div class="upcoming-row notes-tab-row" ${rowAction}>
+      <div class="upcoming-date-col">
+        <span class="upcoming-date-dow">${dayAbbr}</span>
+        <span class="upcoming-date-num">${dayNum}</span>
+      </div>
+      <div class="upcoming-card">
+        <span class="upcoming-card-emoji-tile" style="background:#eef1e8;">${plant.emoji}</span>
+        <span class="upcoming-card-divider"></span>
+        <div class="notes-tab-body">${escapeHtml(note.note)}</div>
+        <div class="notes-tab-owner" style="background:${escapeHtml(color)};">${escapeHtml(initial)}</div>
+      </div>
+    </div>`;
   }
+
   html += `</div>`;
   return html;
 }
 
 function renderCareLogTab(plant) {
-  if (plant.tasks.length === 0) {
-    return `<div style="text-align:center;padding:40px 24px 24px;">
-  <div style="font-size:32px;margin-bottom:12px;">📖</div>
-  <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">No care history yet</div>
-  <div style="font-size:13px;color:#888;line-height:1.5;">Your completed tasks will appear here.</div>
-</div>`;
-  }
-
   let html = renderUserFilterPills('carelog', careLogFilter);
 
-  const showUpcoming = careLogSegment === 'upcoming' || careLogSegment === 'full';
-  const showPast     = careLogSegment === 'past'     || careLogSegment === 'full';
+  // Build unified list: care_log entries + notes, filtered by careLogFilter
+  const plantNotes = notes.filter(n => n.plantId === plant.id);
 
-  if (showUpcoming) {
-    const filteredUpcoming = careLogFilter.length === 0
-      ? plant.tasks.filter(t => !t.paused)
-      : plant.tasks.filter(t => !t.paused && careLogFilter.includes(t.owner));
-    if (careLogSegment === 'full') {
-      html += sectionHeader('Upcoming', '#185FA5', filteredUpcoming.length);
-    }
-    const upcomingTasks = filteredUpcoming
-      .sort((a, b) => {
-        const da = computeNextDue(a) ?? '9999-99-99';
-        const db = computeNextDue(b) ?? '9999-99-99';
-        return da.localeCompare(db);
-      });
-    if (upcomingTasks.length === 0) {
-      html += `<div class="detail-empty">No tasks yet</div>`;
-    } else {
-      html += `<div class="carelog-upcoming-list">`;
-      for (const task of upcomingTasks) {
-        html += renderCareLogUpcomingRow(task);
-      }
-      html += `</div>`;
-    }
-  }
+  const careItems = (careLogFilter.length === 0
+    ? [...plant.careLog]
+    : plant.careLog.filter(e => careLogFilter.includes(e.author))
+  ).map(e => ({
+    kind:   'care',
+    sortKey: e.date ?? '',
+    date:   e.date ?? null,
+    data:   e,
+  }));
 
-  if (careLogSegment === 'full') {
-    html += `<div class="carelog-divider"></div>`;
-    const filteredPastCount = careLogFilter.length === 0
-      ? plant.careLog.length
-      : plant.careLog.filter(e => careLogFilter.includes(e.author)).length;
-    html += sectionHeader('Past', '#888780', filteredPastCount);
-  }
+  const noteItems = (careLogFilter.length === 0
+    ? [...plantNotes]
+    : plantNotes.filter(n => careLogFilter.includes(n.author))
+  ).map(n => {
+    const isoDate = n.createdAt ? n.createdAt.split('T')[0] : null;
+    return {
+      kind:    'note',
+      sortKey: n.createdAt ?? '',
+      date:    isoDate,
+      data:    n,
+    };
+  });
 
-  if (showPast) {
-    const allEntries = [...plant.careLog].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
-    const careEntries = careLogFilter.length === 0
-      ? allEntries
-      : allEntries.filter(e => careLogFilter.includes(e.author));
-    if (careEntries.length === 0 && plant.tasks.length === 0) {
-      html += `<div style="text-align:center;padding:40px 24px 24px;">
+  const unified = [...careItems, ...noteItems]
+    .sort((a, b) => (b.sortKey ?? '').localeCompare(a.sortKey ?? ''));
+
+  if (unified.length === 0) {
+    html += `<div style="text-align:center;padding:40px 24px 24px;">
   <div style="font-size:32px;margin-bottom:12px;">📖</div>
   <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">No care history yet</div>
-  <div style="font-size:13px;color:#888;line-height:1.5;">Your completed tasks will appear here.</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;">Your completed tasks and notes will appear here.</div>
 </div>`;
+    return html;
+  }
+
+  // Group by month (YYYY-MM)
+  let lastMonth = null;
+  html += `<div class="carelog-new-list" style="padding:0 16px 16px;">`;
+  for (const item of unified) {
+    const dateStr = item.date;
+    const monthKey = dateStr ? dateStr.slice(0, 7) : null;
+
+    if (monthKey && monthKey !== lastMonth) {
+      lastMonth = monthKey;
+      const [y, m] = monthKey.split('-').map(Number);
+      const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      html += `<div class="carelog-month-header">${monthLabel.toUpperCase()}</div>`;
+    }
+
+    if (item.kind === 'care') {
+      html += renderCareLogNewRow(item.data, plant);
     } else {
-      html += `<div class="carelog-past-list">`;
-      for (const entry of careEntries) {
-        const linkedNote = notes.find(n =>
-          n.plantId === plant.id &&
-          n.taskId === entry.taskId &&
-          (n.createdAt ?? '').startsWith(entry.date)
-        );
-        html += renderCareLogPastRow(entry, linkedNote, plant);
-      }
-      html += `</div>`;
+      html += renderCareLogNoteRow(item.data);
+    }
+  }
+  html += `</div>`;
+
+  return html;
+}
+
+function activityTaskTileHtml(taskType, icon) {
+  const t = String(taskType ?? '').toLowerCase().replace(/[^a-z]/g, '') || 'custom';
+  return `<span style="width:40px;height:40px;background:var(--${t}-bg, #f4f6f2);border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${icon}</span>`;
+}
+
+function renderCareLogNewRow(entry, plant) {
+  const matchedTask = plant?.tasks?.find(t => t.id === entry.taskId);
+  const cfg         = matchedTask ? getTaskConfig(matchedTask) : null;
+  const taskIcon    = cfg?.icon ?? (entry.taskType ? (CARE_ICON[entry.taskType] ?? '✅') : '✅');
+  const taskType    = cfg?.type ?? entry.taskType;
+  const member      = membersCache.find(m => m.display_name === entry.author);
+  const color       = member?.color ?? '#888';
+  const initial     = (entry.author ?? '?')[0].toUpperCase();
+
+  const dateStr = entry.date;
+  let dayAbbr = '—';
+  let dayNum  = '—';
+  if (dateStr) {
+    const d = new Date(dateStr + 'T12:00:00');
+    if (!isNaN(d.getTime())) {
+      dayAbbr = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+      dayNum  = String(d.getDate());
     }
   }
 
-  return html;
+  return `<div class="carelog-new-row" data-action="carelog-open-edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(entry.taskId ?? '')}">
+  <div class="carelog-new-date-col">
+    <span class="carelog-new-date-dow">${dayAbbr}</span>
+    <span class="carelog-new-date-num">${dayNum}</span>
+  </div>
+  <div class="carelog-new-card">
+    ${activityTaskTileHtml(taskType, taskIcon)}
+    <div class="carelog-new-info">
+      <span class="carelog-new-name">${escapeHtml(entry.taskName ?? '')}</span>
+      <span class="carelog-new-time">—</span>
+    </div>
+    <div class="carelog-new-owner" style="background:${escapeHtml(color)};">${escapeHtml(initial)}</div>
+  </div>
+</div>`;
+}
+
+function renderCareLogNoteRow(note) {
+  const member  = membersCache.find(m => m.display_name === note.author);
+  const color   = member?.color ?? '#888';
+  const initial = (note.author ?? '?')[0].toUpperCase();
+
+  const dateStr = note.createdAt ? note.createdAt.split('T')[0] : null;
+  let dayAbbr = '—';
+  let dayNum  = '—';
+  let timeStr = '—';
+  if (note.createdAt) {
+    const d = new Date(note.createdAt);
+    if (!isNaN(d.getTime())) {
+      dayAbbr = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+      dayNum  = String(d.getDate());
+      timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    }
+  }
+
+  const preview = note.note.length > 30 ? note.note.slice(0, 30) + '…' : note.note;
+
+  return `<div class="carelog-new-row" data-action="carelog-open-edit-note" data-plant="${escapeHtml(note.plantId)}" data-note="${escapeHtml(note.id)}">
+  <div class="carelog-new-date-col">
+    <span class="carelog-new-date-dow">${dayAbbr}</span>
+    <span class="carelog-new-date-num">${dayNum}</span>
+  </div>
+  <div class="carelog-new-card">
+    <span style="width:36px;height:36px;background:#e8f0fb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">💬</span>
+    <div class="carelog-new-info">
+      <span class="carelog-new-name">Note added</span>
+      <span class="carelog-new-time">${escapeHtml(preview)}</span>
+    </div>
+    <div class="carelog-new-owner" style="background:${escapeHtml(color)};">${escapeHtml(initial)}</div>
+  </div>
+</div>`;
 }
 
 function renderCareLogUpcomingRow(task) {
@@ -2240,6 +2625,81 @@ function renderTaskCard(plantId, task, onboardingMode = false) {
   return html;
 }
 
+function renderTaskRow(plantId, task) {
+  const cfg      = getTaskConfig(task);
+  const isPaused = task.paused ?? false;
+  const doneToday = !isPaused && task.lastDone === todayStr();
+
+  // Meta line: recurrence text
+  const recType = task.recurrenceType ?? 'interval';
+  let recText;
+  if (recType === 'one-off') {
+    recText = 'One-off';
+  } else if (recType === 'weekdays') {
+    const dInts  = (task.weekdays ?? []).slice().sort((a, b) => a - b);
+    const abbrev = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    recText = dInts.length > 0 ? `Every ${dInts.map(d => abbrev[d]).join(', ')}` : 'Days of week';
+  } else {
+    const n = task.frequencyDays ?? 1;
+    recText = `Every ${n} day${n !== 1 ? 's' : ''}`;
+  }
+
+  // Meta line: urgency text + color
+  let urgencyText, metaColor;
+  if (isPaused) {
+    urgencyText = 'Paused';
+    metaColor   = '#8a8d86';
+  } else if (doneToday) {
+    urgencyText = '✓ done today';
+    metaColor   = '#3b6d11';
+  } else {
+    const days = daysUntilDue(task);
+    if (recType === 'one-off') {
+      if (days === Infinity) {
+        urgencyText = '✓ done';          metaColor = '#3b6d11';
+      } else {
+        const nd = computeNextDue(task);
+        const ds = nd ? new Date(nd + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
+        if (days > 1)      { urgencyText = `due ${ds}`;       metaColor = '#8a8d86'; }
+        else if (days === 1) { urgencyText = 'due tomorrow';  metaColor = '#8a5a0f'; }
+        else if (days === 0) { urgencyText = 'due today';     metaColor = '#8a5a0f'; }
+        else                 { urgencyText = 'overdue';       metaColor = '#8a5a0f'; }
+      }
+    } else {
+      if (days < 0)       { urgencyText = 'overdue';             metaColor = '#8a5a0f'; }
+      else if (days === 0){ urgencyText = 'due today';           metaColor = '#8a5a0f'; }
+      else if (days === 1){ urgencyText = 'due tomorrow';        metaColor = '#8a5a0f'; }
+      else                { urgencyText = `due in ${days} days`; metaColor = '#8a8d86'; }
+    }
+  }
+
+  // Owner circle
+  const ownerMember = membersCache.find(m => m.display_name === task.owner);
+  const ownerColor  = ownerMember?.color ?? '#888';
+  const ownerInit   = (task.owner ?? '?')[0].toUpperCase();
+
+  // Right-edge button: pause-badge for paused tasks (resumes on tap), check for non-paused.
+  const checkHtml = isPaused
+    ? `<button class="task-row-check task-row-pause" data-action="resume-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" aria-label="Resume" style="background:#f0a500;border:none;border-radius:50%;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;gap:3px;flex-shrink:0;padding:0;cursor:pointer;">
+        <span style="width:3px;height:10px;background:white;border-radius:1px;display:inline-block;"></span>
+        <span style="width:3px;height:10px;background:white;border-radius:1px;display:inline-block;"></span>
+      </button>`
+    : doneToday
+      ? `<button class="task-row-check task-row-check--done" data-action="tasks-undo-done" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" aria-label="Undo">✓</button>`
+      : `<button class="task-row-check" data-action="tasks-mark-done" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" aria-label="Mark done">✓</button>`;
+
+  return `<div class="task-row${isPaused ? ' task-row--paused' : ''}" data-action="edit-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}">
+  <span class="task-row-tile task-row-tile--${escapeHtml(cfg.type)}">${cfg.icon}</span>
+  <span class="task-row-divider"></span>
+  <div class="task-row-content">
+    <div class="task-row-name">${escapeHtml(cfg.name)}</div>
+    <div class="task-row-meta" style="color:${metaColor};">${escapeHtml(recText)} &middot; ${escapeHtml(urgencyText)}</div>
+  </div>
+  <div class="task-row-owner" style="background:${escapeHtml(ownerColor)};">${escapeHtml(ownerInit)}</div>
+  ${checkHtml}
+</div>`;
+}
+
 function renderNoteCard(note) {
   const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
   const isOwn = note.memberId && note.memberId === activeMemberId;
@@ -2319,11 +2779,13 @@ function closeSheet() {
 
 function openMenu() {
   renderMenuPanel();
+  document.body.classList.add('menu-open');
   document.getElementById('menu-panel').classList.add('active');
   document.getElementById('menu-overlay').classList.add('active');
 }
 
 function closeMenu() {
+  document.body.classList.remove('menu-open');
   document.getElementById('menu-panel').classList.remove('active');
   document.getElementById('menu-overlay').classList.remove('active');
 }
@@ -2424,84 +2886,112 @@ function renderOwnerPills(selectedOwner) {
 function renderEditTaskSheet(plantId, taskId) {
   const task = getTask(plantId, taskId);
   if (!task) return;
-  const cfg = getTaskConfig(task);
-  const isPaused = task.paused ?? false;
-  const recType = task.recurrenceType ?? 'interval';
+  const plant       = getPlant(plantId);
+  const cfg         = getTaskConfig(task);
+  const isPaused    = task.paused ?? false;
+  const recType     = task.recurrenceType ?? 'interval';
+  const isRepeating = recType !== 'one-off';
+  const curYear     = new Date().getFullYear();
 
   state.sheetMode = 'edit-task';
   state.sheetData = { plantId, taskId };
+  sheetEntryTab = plantDetailTab;
 
   const weekdayBtns = WEEKDAY_NAMES.map((name, i) => {
     const sel = (task.weekdays ?? []).includes(i) ? 'selected' : '';
     return `<button class="weekday-btn ${sel}" data-action="sheet-toggle-weekday" data-day="${i}">${name}</button>`;
   }).join('');
 
-  const isCustom = !TASK_CONFIG[task.id];
+  const isCustom    = !TASK_CONFIG[task.id];
+  const overrideDate = task.nextDueOverride && task.nextDueOverride >= todayStr() ? task.nextDueOverride : null;
+
+  const rowLabelStyle = 'display:block;font-size:11px;color:#8a8d86;margin:0 0 4px;text-transform:none;font-weight:500;letter-spacing:normal;';
 
   openSheet(`
-    <div class="sheet-title">${cfg.icon} ${cfg.name}</div>
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:0.5px solid #e8ece6;">
+      <button type="button" class="edit-task-icon-tile" ${isCustom ? `data-action="edit-task-toggle-icon-picker" data-emoji="${escapeHtml(cfg.icon)}"` : ''} style="width:36px;height:36px;background:#eef3eb;border-radius:8px;${isCustom ? 'border:1.5px dashed #a0c0a0;cursor:pointer;' : 'border:none;cursor:default;'}display:flex;align-items:center;justify-content:center;font-size:20px;padding:0;flex-shrink:0;">${cfg.icon}</button>
+      <div style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;">
+        <div style="font-size:15px;font-weight:600;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</div>
+        <div style="font-size:12px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant?.name ?? '')}</div>
+        ${isCustom ? `<div style="font-size:10px;color:#3a6b3a;margin-top:2px;">tap icon to change</div>` : ''}
+      </div>
+    </div>
 
     ${isCustom ? `
-    <div class="form-group">
-      <label class="form-label">Task Name</label>
-      <input type="text" class="form-input" id="sheet-task-name" value="${escapeHtml(task.name ?? '')}">
+    <div id="edit-task-icon-picker" class="icon-picker" style="display:none;padding:8px 16px;border-bottom:0.5px solid #f0f0ee;">
+      ${CUSTOM_ICONS.map(ic =>
+        `<div class="icon-option${ic === cfg.icon ? ' selected' : ''}" data-action="edit-task-pick-icon" data-icon="${ic}">${ic}</div>`
+      ).join('')}
+    </div>
+
+    <div style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
+      <label class="form-label" style="${rowLabelStyle}">Task name</label>
+      <input type="text" class="form-input" id="sheet-task-name" value="${escapeHtml(task.name ?? '')}" style="background:#f8f8f6;border:0.5px solid #e0e0dc;border-radius:8px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box;">
     </div>` : ''}
 
-    <div class="form-group">
-      <label class="form-label">Owner</label>
-      <div class="owner-pill-group">${renderOwnerPills(task.owner)}</div>
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
+      <label class="form-label" style="font-size:11px;color:#8a8d86;margin:0;text-transform:none;font-weight:500;letter-spacing:normal;flex-shrink:0;">Owner</label>
+      <div class="owner-pill-group" style="flex:1;display:flex;gap:6px;flex-wrap:wrap;margin:0;">${renderOwnerPills(task.owner)}</div>
     </div>
 
-    <div class="form-group">
-      <label class="form-label">Recurrence</label>
-      <div class="recurrence-type-toggle">
-        <div class="recurrence-option ${recType === 'interval' ? 'selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval">Every X days</div>
-        <div class="recurrence-option ${recType === 'weekdays' ? 'selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays">Days of week</div>
-        <div class="recurrence-option ${recType === 'one-off' ? 'selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="one-off">One-off</div>
-      </div>
+    <div style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
+      <label class="form-label" id="task-due-label" style="${rowLabelStyle}">${isRepeating ? 'First due date' : 'Due date'}</label>
+      ${renderDateSelectHtml('task-override', overrideDate, curYear, curYear + 2)}
     </div>
 
-    <div id="recurrence-container" class="recurrence-${recType}">
-      <div class="recurrence-interval-section form-group">
-        <div class="freq-row">
-          <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="${task.frequencyDays}">
-          <span>days between tasks</span>
+    <div class="task-toggle-row${isRepeating ? ' task-toggle-row--expanded' : ''}" id="repeating-toggle-row" data-action="toggle-repeating-task" style="padding:10px 16px;">
+      <span class="task-toggle-label">Repeating task</span>
+      <button class="task-toggle-btn${isRepeating ? ' on' : ''}" id="repeating-toggle" role="switch" aria-checked="${isRepeating}" type="button">
+        <span class="task-toggle-knob"></span>
+      </button>
+    </div>
+
+    <div id="task-recurrence-block" style="${isRepeating ? '' : 'display:none;'}padding:0 16px 10px;">
+      <div style="background:#f4f6f2;border-radius:10px;padding:8px 10px;">
+        <div class="recurrence-type-toggle" style="margin-bottom:8px;">
+          <div class="recurrence-option${recType === 'interval' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">Every X days</div>
+          <div class="recurrence-option${recType === 'weekdays' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">Days of week</div>
+        </div>
+        <div id="recurrence-container" class="recurrence-${isRepeating ? recType : 'one-off'}">
+          <div class="recurrence-interval-section form-group" style="margin:0;">
+            <div class="freq-row">
+              <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="${task.frequencyDays}" style="width:auto;min-width:52px;font-size:13px;padding:5px 8px;overflow:visible;text-overflow:unset;">
+              <span style="font-size:13px;">days between tasks</span>
+            </div>
+          </div>
+          <div class="recurrence-weekdays-section form-group" style="margin:0;">
+            <div class="weekday-picker">${weekdayBtns}</div>
+          </div>
+          <div id="recurrence-summary" data-started="${task.lastDone ? 'true' : 'false'}" style="display:none;background:#eef3eb;border-radius:8px;padding:5px 8px;margin:8px 0 0;font-size:12px;color:#3a6b3a;"></div>
         </div>
       </div>
-      <div class="recurrence-weekdays-section form-group">
-        <div class="weekday-picker">${weekdayBtns}</div>
+    </div>
+
+    <div id="pause-toggle-row" class="task-toggle-row task-toggle-row--sub" data-action="toggle-task-pause" style="${isRepeating ? '' : 'display:none;'}padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
+      <div>
+        <div class="task-toggle-label">Pause task</div>
+        <div class="task-toggle-subtitle">Skip until resumed</div>
       </div>
+      <button class="task-toggle-btn${isPaused ? ' on' : ''}" id="pause-toggle" role="switch" aria-checked="${isPaused}" type="button">
+        <span class="task-toggle-knob"></span>
+      </button>
     </div>
 
-    <div class="form-group">
-      <label class="form-label">Next due date</label>
-      <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-next-due-override" value="${task.nextDueOverride ?? ''}"></div>
-      <div class="form-hint">Leave empty to calculate automatically</div>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label">Note / Reminder</label>
-      <textarea class="form-textarea" id="sheet-note" placeholder="e.g. Check for pests, rotate pot...">${escapeHtml(task.note ?? '')}</textarea>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label">Last Done</label>
-      <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-last-done" value="${task.lastDone ?? ''}"></div>
+    <div class="task-delete-section" style="padding:10px 16px 6px;">
+      <button class="task-delete-link" data-action="delete-task" data-plant="${plantId}" data-task="${taskId}" style="font-size:13px;">Delete task</button>
     </div>
 
     <div class="sheet-footer-sticky">
-      <div class="sheet-actions">
-        <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
-        <button class="btn btn-primary" data-action="sheet-save-task">Save</button>
-      </div>
-      <div class="sheet-danger-links">
-        <button class="sheet-danger-link pause" data-action="${isPaused ? 'resume-task' : 'pause-task'}" data-plant="${plantId}" data-task="${taskId}">
-          ${isPaused ? '&#9654; Resume Task' : '&#9646;&#9646; Pause Task'}
-        </button>
-        <button class="sheet-danger-link delete" data-action="delete-task" data-plant="${plantId}" data-task="${taskId}">&#128465; Delete Task</button>
+      <div class="sheet-actions" style="padding:8px 16px 14px;">
+        <button class="btn btn-ghost" data-action="sheet-cancel">&#8592; Cancel</button>
+        <button class="btn btn-primary" data-action="sheet-save-task">Save Changes</button>
       </div>
     </div>
   `);
+
+  attachFutureDateSelectListeners('task-override');
+  attachRecurrenceSummaryListeners('task-override');
+  applyCompactDateSelectStyles('task-override');
 }
 
 function renderAddTaskStep1(plantId) {
@@ -2511,6 +3001,7 @@ function renderAddTaskStep1(plantId) {
 
   state.sheetMode = 'add-task-step1';
   state.sheetData = { plantId };
+  sheetEntryTab = plantDetailTab;
 
   const presetOptions = Object.entries(TASK_CONFIG).map(([key, cfg]) => {
     if (existingIds.has(key)) {
@@ -2557,71 +3048,89 @@ function renderAddTaskStep2(plantId, typeKey) {
 
   const ownerPillsHtml = renderOwnerPills(defaultOwner);
 
-  const titleHtml = isCustom
-    ? `<div class="sheet-title">Custom Task</div>`
-    : `<div class="sheet-title">${cfg.icon} ${cfg.name}</div>`;
+  const plant = getPlant(plantId);
+  const headerIcon = isCustom ? CUSTOM_ICONS[0] : cfg.icon;
+  const headerName = isCustom ? 'Custom Task' : cfg.name;
 
   const customFields = isCustom ? `
-    <div class="form-group">
-      <label class="form-label">Task Name</label>
-      <input type="text" class="form-input" id="sheet-custom-name" placeholder="e.g. Mist leaves" autocomplete="off">
+    <div id="edit-task-icon-picker" class="icon-picker" style="display:none;padding:8px 16px;border-bottom:0.5px solid #f0f0ee;">
+      ${CUSTOM_ICONS.map((ic, i) =>
+        `<div class="icon-option${i === 0 ? ' selected' : ''}" data-action="edit-task-pick-icon" data-icon="${ic}">${ic}</div>`
+      ).join('')}
     </div>
-    <div class="form-group">
-      <label class="form-label">Icon</label>
-      <div class="icon-picker" id="sheet-icon-picker">
-        ${CUSTOM_ICONS.map((ic, i) =>
-          `<div class="icon-option${i === 0 ? ' selected' : ''}" data-action="add-task-pick-icon" data-icon="${ic}">${ic}</div>`
-        ).join('')}
-      </div>
+    <div style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
+      <label class="form-label" style="display:block;font-size:11px;color:#8a8d86;margin:0 0 4px;text-transform:none;font-weight:500;letter-spacing:normal;">Task name</label>
+      <input type="text" class="form-input" id="sheet-custom-name" placeholder="e.g. Mist leaves" autocomplete="off" style="background:#f8f8f6;border:0.5px solid #e0e0dc;border-radius:8px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box;">
     </div>` : '';
 
   const todayVal = todayStr();
+  const curYear  = new Date().getFullYear();
+
+  const rowLabelStyle = 'display:block;font-size:11px;color:#8a8d86;margin:0 0 4px;text-transform:none;font-weight:500;letter-spacing:normal;';
 
   openSheet(`
-    ${titleHtml}
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:0.5px solid #e8ece6;">
+      ${isCustom
+        ? `<button type="button" class="edit-task-icon-tile" data-action="edit-task-toggle-icon-picker" data-emoji="${escapeHtml(headerIcon)}" style="width:36px;height:36px;background:#eef3eb;border-radius:8px;border:1.5px dashed #a0c0a0;display:flex;align-items:center;justify-content:center;font-size:20px;padding:0;cursor:pointer;flex-shrink:0;">${headerIcon}</button>`
+        : `<div style="width:36px;height:36px;background:#eef3eb;border-radius:8px;border:none;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${headerIcon}</div>`}
+      <div style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;">
+        <div style="font-size:15px;font-weight:600;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(headerName)}</div>
+        <div style="font-size:12px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant?.name ?? '')}</div>
+        ${isCustom ? `<div style="font-size:10px;color:#3a6b3a;margin-top:2px;">tap icon to change</div>` : ''}
+      </div>
+    </div>
+
     ${customFields}
-    <div class="form-group">
-      <label class="form-label">Owner</label>
-      <div class="owner-pill-group">${ownerPillsHtml}</div>
+
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
+      <label class="form-label" style="font-size:11px;color:#8a8d86;margin:0;text-transform:none;font-weight:500;letter-spacing:normal;flex-shrink:0;">Owner</label>
+      <div class="owner-pill-group" style="flex:1;display:flex;gap:6px;flex-wrap:wrap;margin:0;">${ownerPillsHtml}</div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Recurrence</label>
-      <div class="recurrence-type-toggle">
-        <div class="recurrence-option selected" data-action="sheet-toggle-recurrence" data-rtype="interval">Every X days</div>
-        <div class="recurrence-option" data-action="sheet-toggle-recurrence" data-rtype="weekdays">Days of week</div>
-        <div class="recurrence-option" data-action="sheet-toggle-recurrence" data-rtype="one-off">One-off</div>
+
+    <div style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
+      <label class="form-label" id="task-due-label" style="${rowLabelStyle}">Due date</label>
+      ${renderDateSelectHtml('task-due-oneoff', todayVal, curYear, curYear + 2)}
+    </div>
+
+    <div class="task-toggle-row" id="repeating-toggle-row" data-action="toggle-repeating-task" style="padding:10px 16px;">
+      <span class="task-toggle-label">Repeating task</span>
+      <button class="task-toggle-btn" id="repeating-toggle" role="switch" aria-checked="false" type="button">
+        <span class="task-toggle-knob"></span>
+      </button>
+    </div>
+
+    <div id="task-recurrence-block" style="display:none;padding:0 16px 10px;">
+      <div style="background:#f4f6f2;border-radius:10px;padding:8px 10px;">
+        <div class="recurrence-type-toggle" style="margin-bottom:8px;">
+          <div class="recurrence-option selected" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">Every X days</div>
+          <div class="recurrence-option" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">Days of week</div>
+        </div>
+        <div id="recurrence-container" class="recurrence-one-off">
+          <div class="recurrence-interval-section form-group" style="margin:0;">
+            <div class="freq-row">
+              <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="7" style="width:auto;min-width:52px;font-size:13px;padding:5px 8px;overflow:visible;text-overflow:unset;">
+              <span style="font-size:13px;">days between tasks</span>
+            </div>
+          </div>
+          <div class="recurrence-weekdays-section form-group" style="margin:0;">
+            <div class="weekday-picker">${weekdayBtns}</div>
+          </div>
+          <div id="recurrence-summary" data-started="false" style="display:none;background:#eef3eb;border-radius:8px;padding:5px 8px;margin:8px 0 0;font-size:12px;color:#3a6b3a;"></div>
+        </div>
       </div>
     </div>
-    <div id="recurrence-container" class="recurrence-interval">
-      <div class="recurrence-interval-section form-group">
-        <div class="freq-row">
-          <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="7">
-          <span>days between tasks</span>
-        </div>
-        <div class="form-group" style="margin-top:12px">
-          <label class="form-label">First due date</label>
-          <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-interval" value="${new Date().toLocaleDateString('en-CA')}"></div>
-        </div>
-      </div>
-      <div class="recurrence-weekdays-section form-group">
-        <div class="weekday-picker">${weekdayBtns}</div>
-        <div class="form-group" style="margin-top:12px">
-          <label class="form-label">Start from</label>
-          <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-weekdays" value="${new Date().toLocaleDateString('en-CA')}"></div>
-        </div>
-      </div>
-      <div class="recurrence-one-off-section form-group">
-        <label class="form-label">Due date</label>
-        <div class="date-input-wrapper"><span class="date-icon">📅</span><input type="date" class="form-input" id="sheet-first-due-one-off" value="${new Date().toLocaleDateString('en-CA')}"></div>
-      </div>
-    </div>
+
     <div class="sheet-footer-sticky">
-      <div class="sheet-actions">
+      <div class="sheet-actions" style="padding:8px 16px 14px;">
         <button class="btn btn-ghost" data-action="add-task-back" data-plant="${plantId}">&#8592; Back</button>
         <button class="btn btn-primary" data-action="sheet-save-new-task">Add Task</button>
       </div>
     </div>
   `);
+
+  attachFutureDateSelectListeners('task-due-oneoff');
+  attachRecurrenceSummaryListeners('task-due-oneoff');
+  applyCompactDateSelectStyles('task-due-oneoff');
 }
 
 function renderPostTaskNoteSheet(plantId, taskId) {
@@ -2653,6 +3162,41 @@ function renderAddNoteSheet(plantId) {
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-action="close-sheet">Cancel</button>
       <button class="btn btn-primary" data-action="sheet-save-note">Save</button>
+    </div>
+  `);
+}
+
+function renderEditNoteSheet(plantId, noteId) {
+  const note  = notes.find(n => n.id === noteId);
+  const plant = getPlant(plantId);
+  if (!note || !plant) return;
+
+  state.sheetMode = 'edit-note';
+  state.sheetData = { plantId, noteId };
+  sheetEntryTab   = plantDetailTab;
+
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:0.5px solid #e8ece6;">
+      <span style="width:36px;height:36px;background:#eef3eb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${escapeHtml(plant.emoji ?? '🪴')}</span>
+      <div style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;">
+        <div style="font-size:15px;font-weight:600;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name ?? '')}</div>
+        <div style="font-size:12px;color:#8a8d86;">Edit note</div>
+      </div>
+    </div>
+
+    <div style="padding:12px 16px 4px;">
+      <textarea class="form-textarea" id="sheet-edit-note-text" style="min-height:110px;width:100%;box-sizing:border-box;">${escapeHtml(note.note ?? '')}</textarea>
+    </div>
+
+    <div class="task-delete-section" style="padding:4px 16px 6px;">
+      <button class="task-delete-link" data-action="sheet-delete-note" data-plant="${escapeHtml(plantId)}" data-note="${escapeHtml(noteId)}" style="font-size:13px;">Delete note</button>
+    </div>
+
+    <div class="sheet-footer-sticky">
+      <div class="sheet-actions" style="padding:8px 16px 14px;">
+        <button class="btn btn-ghost" data-action="sheet-cancel">&#8592; Cancel</button>
+        <button class="btn btn-primary" data-action="sheet-save-edit-note" data-plant="${escapeHtml(plantId)}" data-note="${escapeHtml(noteId)}">Save Changes</button>
+      </div>
     </div>
   `);
 }
@@ -2781,7 +3325,7 @@ async function handleSaveNewPlant() {
   }
 
   const emoji = state.sheetData.selectedEmoji || '🪴';
-  const dateAcquired = document.getElementById('sheet-acquired-date')?.value || null;
+  const dateAcquired = userTouchedArrivalDate ? (getSelectDate('arrival') || null) : null;
   const sortOrder = plants.length + 1;
 
   const { data: inserted, error } = await supabaseClient
@@ -2870,10 +3414,7 @@ async function handleSaveNewTask() {
     if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
   }
 
-  const firstDueInputId = recType === 'interval' ? 'sheet-first-due-interval'
-                        : recType === 'weekdays'  ? 'sheet-first-due-weekdays'
-                        :                           'sheet-first-due-one-off';
-  const firstDueVal = document.getElementById(firstDueInputId)?.value || null;
+  const firstDueVal = getSelectDate('task-due-oneoff');
 
   const selectedOwner = document.querySelector('#sheet .owner-pill.selected, #sheet .owner-option.selected');
   const owner = selectedOwner?.dataset.owner ?? Object.keys(USERS)[0];
@@ -2932,7 +3473,9 @@ async function handleSaveNewTask() {
   closeSheet();
   const _appEl = document.getElementById('app');
   _appEl.style.pointerEvents = 'none';
-  navigateTo('plant', pid);
+  if (sheetEntryTab) plantDetailTab = sheetEntryTab;
+  sheetEntryTab = null;
+  renderPlantDetail(pid);
   setTimeout(() => { _appEl.style.pointerEvents = ''; }, 350);
   showToast('✅ Task added!');
   } finally {
@@ -3204,6 +3747,7 @@ async function handleEvent(e) {
     case 'enable-notifications': {
       console.log('enable-notifications handler reached');
       await subscribeToPush();
+      if (Notification.permission === 'granted') showToast('Notifications enabled');
       renderHome();
       break;
     }
@@ -3259,19 +3803,77 @@ async function handleEvent(e) {
       renderPlantDetail(state.plantId);
       break;
 
+    case 'tasks-mark-done': {
+      const _tasksRow = target.closest('.task-row');
+      const _tasksList = _tasksRow?.parentElement;
+      if (!_tasksRow || !_tasksList || _tasksRow.dataset.sliding === '1') break;
+      const _rowRect  = _tasksRow.getBoundingClientRect();
+      const _listRect = _tasksList.getBoundingClientRect();
+      const _dy = Math.max(0, _listRect.bottom - _rowRect.bottom);
+      _tasksRow.dataset.sliding = '1';
+      _tasksRow.style.pointerEvents = 'none';
+      _tasksRow.style.transition = 'transform 300ms ease, opacity 300ms ease';
+      target.classList.add('done');
+      requestAnimationFrame(() => {
+        _tasksRow.style.transform = `translateY(${_dy}px)`;
+        _tasksRow.style.opacity = '0';
+      });
+      setTimeout(() => {
+        markTaskDone(plantId, taskId);
+        renderPlantDetail(state.plantId);
+      }, 300);
+      break;
+    }
+
+    case 'tasks-undo-done':
+      undoMarkTaskDone(plantId, taskId);
+      renderPlantDetail(state.plantId);
+      break;
+
     case 'home-mark-done': {
       const _homeRow = target.closest('.attention-row');
       if (!_homeRow || _homeRow.classList.contains('marking-done')) break;
       const _homeTask = getTask(plantId, taskId);
       const _homeName = getTaskConfig(_homeTask)?.name ?? _homeTask?.name ?? 'Task';
+      const _homePlantName = getPlant(plantId)?.name ?? '';
       target.classList.add('done');
       _homeRow.style.height = _homeRow.offsetHeight + 'px';
       _homeRow.style.overflow = 'hidden';
       requestAnimationFrame(() => { _homeRow.classList.add('marking-done'); });
       setTimeout(() => {
         markTaskDone(plantId, taskId);
-        showDoneToast(plantId, taskId, _homeName);
+        showUndoDoneToast(plantId, taskId, _homeName, _homePlantName);
       }, 280);
+      break;
+    }
+
+    case 'summary-mark-done': {
+      const _sumRow = target.closest('.attention-row');
+      if (!_sumRow || _sumRow.classList.contains('marking-done')) break;
+      const _sumTask = getTask(plantId, taskId);
+      const _sumName = getTaskConfig(_sumTask)?.name ?? _sumTask?.name ?? 'Task';
+      target.classList.add('done');
+      _sumRow.style.height = _sumRow.offsetHeight + 'px';
+      _sumRow.style.overflow = 'hidden';
+      requestAnimationFrame(() => { _sumRow.classList.add('marking-done'); });
+      setTimeout(() => {
+        markTaskDone(plantId, taskId);
+        showDoneToast(plantId, taskId, _sumName);
+        renderPlantDetail(state.plantId);
+      }, 320);
+      break;
+    }
+
+    case 'caring-undo-done': {
+      const _undoPid = target.dataset.plant;
+      const _undoTid = target.dataset.task;
+      const _undoToastEl = document.getElementById('toast');
+      _undoToastEl?.classList.remove('visible', 'toast--interactive');
+      clearTimeout(_undoToastEl?._hideTimeout);
+      if (_undoPid && _undoTid) {
+        undoMarkTaskDone(_undoPid, _undoTid);
+        renderApp();
+      }
       break;
     }
 
@@ -3377,6 +3979,22 @@ async function handleEvent(e) {
       renderEditTaskSheet(plantId, taskId);
       break;
 
+    case 'carelog-open-edit-task':
+      if (!taskId) break;
+      openedFromCareLog = true;
+      renderEditTaskSheet(plantId, taskId);
+      break;
+
+    case 'carelog-open-edit-note': {
+      const noteId2 = target.dataset.note;
+      if (!noteId2) break;
+      const activeMemberId2 = membersCache.find(m => m.display_name === activeUser)?.id;
+      const noteToOpen = notes.find(n => n.id === noteId2);
+      if (!noteToOpen || noteToOpen.memberId !== activeMemberId2) break;
+      renderEditNoteSheet(target.dataset.plant, noteId2);
+      break;
+    }
+
     case 'edit-task':
       renderEditTaskSheet(plantId, taskId);
       break;
@@ -3425,26 +4043,40 @@ async function handleEvent(e) {
       const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
       const noteToEdit = notes.find(n => n.id === noteId);
       if (!noteToEdit || noteToEdit.memberId !== activeMemberId) break;
-      editingNoteId = noteId;
-      renderPlantDetail(state.plantId);
-      document.querySelector(`.note-edit-textarea[data-note="${noteId}"]`)?.focus();
+      renderEditNoteSheet(plantId ?? noteToEdit.plantId, noteId);
       break;
     }
 
-    case 'save-note-edit': {
-      const textarea = document.querySelector(`.note-edit-textarea[data-note="${noteId}"]`);
+    case 'sheet-save-edit-note': {
+      const _nid = target.dataset.note;
+      const textarea = document.getElementById('sheet-edit-note-text');
       const newText = textarea?.value?.trim();
       if (!newText) { alert('Note cannot be empty.'); return; }
-      await updateNote(noteId, newText);
-      editingNoteId = null;
+      await updateNote(_nid, newText);
+      await loadActivityFeed();
+      const _restoreTab = sheetEntryTab;
+      sheetEntryTab = null;
+      closeSheet();
+      if (_restoreTab && state.view === 'plant') plantDetailTab = _restoreTab;
       renderPlantDetail(state.plantId);
       break;
     }
 
-    case 'cancel-note-edit':
-      editingNoteId = null;
+    case 'sheet-delete-note': {
+      const _nid = target.dataset.note;
+      const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
+      const noteToDelete = notes.find(n => n.id === _nid);
+      if (!noteToDelete || noteToDelete.memberId !== activeMemberId) break;
+      if (!confirm('Delete this note?')) break;
+      await deleteNote(_nid);
+      await loadActivityFeed();
+      const _restoreTab = sheetEntryTab;
+      sheetEntryTab = null;
+      closeSheet();
+      if (_restoreTab && state.view === 'plant') plantDetailTab = _restoreTab;
       renderPlantDetail(state.plantId);
       break;
+    }
 
     case 'toggle-notes-show-all':
       if (notesShowAll.has(plantId)) {
@@ -3502,7 +4134,7 @@ async function handleEvent(e) {
       state.sheetData.plantName = name;
       state.sheetData.step = 3;
       openSheet(renderAddPlantStep3Html(state.sheetData.selectedEmoji || '🪴', state.sheetData.plantName));
-      attachAddPlantStep3Listener();
+      attachArrivalSelectListeners();
       break;
     }
 
@@ -3553,6 +4185,23 @@ async function handleEvent(e) {
       target.classList.add('selected');
       break;
 
+    case 'edit-task-toggle-icon-picker': {
+      const picker = document.getElementById('edit-task-icon-picker');
+      if (picker) picker.style.display = picker.style.display === 'none' ? '' : 'none';
+      break;
+    }
+
+    case 'edit-task-pick-icon': {
+      const icon = target.dataset.icon;
+      const tile = document.querySelector('#sheet .edit-task-icon-tile');
+      if (tile && icon) { tile.textContent = icon; tile.dataset.emoji = icon; }
+      document.querySelectorAll('#sheet #edit-task-icon-picker .icon-option').forEach(o => o.classList.remove('selected'));
+      target.classList.add('selected');
+      const picker = document.getElementById('edit-task-icon-picker');
+      if (picker) picker.style.display = 'none';
+      break;
+    }
+
     case 'pick-plant-emoji':
       document.querySelectorAll('#sheet .emoji-option').forEach(o => o.classList.remove('selected'));
       target.classList.add('selected');
@@ -3570,11 +4219,25 @@ async function handleEvent(e) {
     case 'sheet-cancel':
       if (openedFromCaring) {
         openedFromCaring = false;
+        sheetEntryTab = null;
         closeSheet();
         activeTab = 'schedule';
         renderHome();
-      } else {
+      } else if (openedFromCareLog) {
+        openedFromCareLog = false;
+        sheetEntryTab = null;
         closeSheet();
+        plantDetailTab = 'carelog';
+        renderPlantDetail(state.plantId);
+      } else {
+        if (sheetEntryTab && state.view === 'plant') {
+          plantDetailTab = sheetEntryTab;
+          closeSheet();
+          renderPlantDetail(state.plantId);
+        } else {
+          closeSheet();
+        }
+        sheetEntryTab = null;
       }
       break;
 
@@ -3589,11 +4252,68 @@ async function handleEvent(e) {
       if (container) container.className = `recurrence-${rtype}`;
       document.querySelectorAll('#sheet .recurrence-option').forEach(o => o.classList.remove('selected'));
       target.classList.add('selected');
+      updateRecurrenceSummary();
+      break;
+    }
+
+    case 'toggle-repeating-task': {
+      const toggleBtn = document.getElementById('repeating-toggle');
+      if (!toggleBtn) break;
+      const isOn      = toggleBtn.getAttribute('aria-checked') === 'true';
+      const willTurnOn = !isOn;
+
+      // Edit Task: confirm before stripping recurrence from an existing recurring task
+      if (!willTurnOn && state.sheetMode === 'edit-task') {
+        const { plantId: _pid, taskId: _tid } = state.sheetData;
+        const _existTask = getTask(_pid, _tid);
+        if ((_existTask?.recurrenceType ?? 'interval') !== 'one-off') {
+          if (!confirm('This will remove the recurrence schedule. The task will become a one-off. Continue?')) break;
+        }
+      }
+
+      toggleBtn.setAttribute('aria-checked', String(willTurnOn));
+      toggleBtn.classList.toggle('on', willTurnOn);
+
+      const toggleRow = document.getElementById('repeating-toggle-row');
+      const block     = document.getElementById('task-recurrence-block');
+      const container = document.getElementById('recurrence-container');
+      const label     = document.getElementById('task-due-label');
+      const pauseRow  = document.getElementById('pause-toggle-row');
+
+      if (willTurnOn) {
+        toggleRow?.classList.add('task-toggle-row--expanded');
+        if (block)     block.style.display = '';
+        if (container) {
+          container.className = 'recurrence-interval';
+          document.querySelectorAll('#sheet .recurrence-option').forEach(o => {
+            o.classList.toggle('selected', o.dataset.rtype === 'interval');
+          });
+        }
+        if (label)    label.textContent = 'First due date';
+        if (pauseRow) pauseRow.style.display = '';
+      } else {
+        toggleRow?.classList.remove('task-toggle-row--expanded');
+        if (block)     block.style.display = 'none';
+        if (container) container.className = 'recurrence-one-off';
+        if (label)     label.textContent = 'Due date';
+        if (pauseRow)  pauseRow.style.display = 'none';
+      }
+      updateRecurrenceSummary();
+      break;
+    }
+
+    case 'toggle-task-pause': {
+      const btn = document.getElementById('pause-toggle');
+      if (!btn) break;
+      const isOn = btn.getAttribute('aria-checked') === 'true';
+      btn.setAttribute('aria-checked', String(!isOn));
+      btn.classList.toggle('on', !isOn);
       break;
     }
 
     case 'sheet-toggle-weekday':
       target.classList.toggle('selected');
+      updateRecurrenceSummary();
       break;
 
     case 'sheet-save-task': {
@@ -3617,31 +4337,42 @@ async function handleEvent(e) {
       }
 
       const selectedOwner = document.querySelector('#sheet .owner-pill.selected, #sheet .owner-option.selected');
-      const lastDoneVal = document.getElementById('sheet-last-done')?.value;
-      const overrideVal = document.getElementById('sheet-next-due-override')?.value;
+      const lastDoneEl  = document.getElementById('sheet-last-done');
+      const overrideVal = getSelectDate('task-override');
 
       const taskUpdates = {
         recurrenceType: recType,
         frequencyDays,
         weekdays,
-        note: document.getElementById('sheet-note')?.value ?? '',
         owner: selectedOwner?.dataset.owner ?? 'Matu',
-        lastDone: lastDoneVal || null,
         nextDueOverride: overrideVal || null,
       };
+      if (lastDoneEl) taskUpdates.lastDone = lastDoneEl.value || null;
+      const pauseToggleEl = document.getElementById('pause-toggle');
+      if (pauseToggleEl) taskUpdates.paused = pauseToggleEl.getAttribute('aria-checked') === 'true';
 
       if (!TASK_CONFIG[tid]) {
         const nameVal = document.getElementById('sheet-task-name')?.value?.trim();
         if (nameVal) taskUpdates.name = nameVal;
+        const iconVal = document.querySelector('#sheet .edit-task-icon-tile')?.dataset.emoji;
+        if (iconVal) taskUpdates.icon = iconVal;
       }
 
       updateTask(pid, tid, taskUpdates);
       closeSheet();
       if (openedFromCaring) {
         openedFromCaring = false;
+        sheetEntryTab = null;
         activeTab = 'schedule';
         renderHome();
+      } else if (openedFromCareLog) {
+        openedFromCareLog = false;
+        sheetEntryTab = null;
+        plantDetailTab = 'carelog';
+        renderPlantDetail(pid);
       } else {
+        if (sheetEntryTab) plantDetailTab = sheetEntryTab;
+        sheetEntryTab = null;
         renderPlantDetail(pid);
       }
       showToast('✅ Task saved!');
@@ -3788,6 +4519,242 @@ async function subscribeToPush() {
   } catch (err) {
     console.error('[Push] subscription failed:', err);
   }
+}
+
+// ============================================================
+// THREE-SELECT DATE PICKERS
+// ============================================================
+
+const SEL_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function daysInMonth(year, month) {
+  return new Date(year, month, 0).getDate(); // month is 1-indexed
+}
+
+function attachDowLabel(prefix) {
+  const dayEl   = document.getElementById(`${prefix}-day`);
+  const monthEl = document.getElementById(`${prefix}-month`);
+  const yearEl  = document.getElementById(`${prefix}-year`);
+  const labelEl = document.getElementById(`${prefix}-dow-label`);
+  if (!dayEl || !monthEl || !yearEl || !labelEl) return;
+
+  function update() {
+    const d = parseInt(dayEl.value);
+    const m = parseInt(monthEl.value);
+    const y = parseInt(yearEl.value);
+    if (!d || !m || !y) { labelEl.textContent = ''; return; }
+    const date = new Date(y, m - 1, d);
+    if (isNaN(date.getTime()) || date.getDate() !== d) { labelEl.textContent = ''; return; }
+    labelEl.textContent = date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  }
+
+  dayEl.addEventListener('change',   update);
+  monthEl.addEventListener('change', update);
+  yearEl.addEventListener('change',  update);
+  update();
+}
+
+function renderDateSelectHtml(prefix, initialDate, yearMin, yearMax) {
+  const ref = (initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate)) ? initialDate : todayStr();
+  const [ry, rm, rd] = ref.split('-').map(Number);
+  const initYear  = Math.max(yearMin, Math.min(yearMax, ry));
+  const initMonth = rm;
+  const maxD      = daysInMonth(initYear, initMonth);
+  const initDay   = Math.min(rd, maxD);
+
+  const dayOpts = Array.from({length: maxD}, (_, i) => {
+    const v = i + 1;
+    return `<option value="${v}"${v === initDay ? ' selected' : ''}>${v}</option>`;
+  }).join('');
+
+  const monthOpts = SEL_MONTH_NAMES.map((name, i) => {
+    const v = i + 1;
+    return `<option value="${v}"${v === initMonth ? ' selected' : ''}>${name}</option>`;
+  }).join('');
+
+  const yearOpts = [];
+  for (let y = yearMin; y <= yearMax; y++) {
+    yearOpts.push(`<option value="${y}"${y === initYear ? ' selected' : ''}>${y}</option>`);
+  }
+
+  setTimeout(() => attachDowLabel(prefix), 0);
+
+  return `<div style="display:flex;gap:8px;width:100%;">
+    <select id="${prefix}-day" class="form-input" style="flex:1;">${dayOpts}</select>
+    <select id="${prefix}-month" class="form-input" style="flex:2;">${monthOpts}</select>
+    <select id="${prefix}-year" class="form-input" style="flex:1.5;">${yearOpts}</select>
+  </div>
+  <div id="${prefix}-dow-label" class="date-select-dow-label"></div>`;
+}
+
+function getSelectDate(prefix) {
+  const d = parseInt(document.getElementById(`${prefix}-day`)?.value  ?? '');
+  const m = parseInt(document.getElementById(`${prefix}-month`)?.value ?? '');
+  const y = parseInt(document.getElementById(`${prefix}-year`)?.value  ?? '');
+  if (!d || !m || !y) return null;
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+// Arrival picker — past-only constraints, sets userTouchedArrivalDate flag
+function attachArrivalSelectListeners() {
+  userTouchedArrivalDate = false;
+  const today = todayStr();
+  const [ty, tm, td] = today.split('-').map(Number);
+
+  const dayEl   = document.getElementById('arrival-day');
+  const monthEl = document.getElementById('arrival-month');
+  const yearEl  = document.getElementById('arrival-year');
+  if (!dayEl || !monthEl || !yearEl) return;
+
+  function refresh(setFlag) {
+    if (setFlag) userTouchedArrivalDate = true;
+    const y = parseInt(yearEl.value);
+    const m = parseInt(monthEl.value);
+    const d = parseInt(dayEl.value);
+
+    // Constrain month options: if year == today's year, max month = today's month
+    const maxM = (y === ty) ? tm : 12;
+    const curM = Math.min(m, maxM);
+    monthEl.innerHTML = SEL_MONTH_NAMES.map((name, i) => {
+      const v = i + 1;
+      if (v > maxM) return '';
+      return `<option value="${v}"${v === curM ? ' selected' : ''}>${name}</option>`;
+    }).join('');
+
+    // Constrain day options: respect month length; if year+month == today, max day = today
+    const dMax  = daysInMonth(y, curM);
+    const maxD  = (y === ty && curM === tm) ? Math.min(td, dMax) : dMax;
+    const curD  = Math.min(d, maxD);
+    dayEl.innerHTML = Array.from({length: maxD}, (_, i) => {
+      const v = i + 1;
+      if (v > maxD) return '';
+      return `<option value="${v}"${v === curD ? ' selected' : ''}>${v}</option>`;
+    }).join('');
+
+    // Safety: if result is still in future, snap to today
+    const built = `${y}-${String(curM).padStart(2, '0')}-${String(curD).padStart(2, '0')}`;
+    if (built > today) {
+      yearEl.value  = String(ty);
+      refresh(false);
+    }
+  }
+
+  yearEl.addEventListener('change',  () => refresh(true));
+  monthEl.addEventListener('change', () => refresh(true));
+  dayEl.addEventListener('change',   () => refresh(true));
+  refresh(false); // apply initial constraints without touching the flag
+}
+
+// Task-due / task-override pickers — future-only constraints
+function attachFutureDateSelectListeners(prefix) {
+  const today = todayStr();
+  const [ty, tm, td] = today.split('-').map(Number);
+
+  const dayEl   = document.getElementById(`${prefix}-day`);
+  const monthEl = document.getElementById(`${prefix}-month`);
+  const yearEl  = document.getElementById(`${prefix}-year`);
+  if (!dayEl || !monthEl || !yearEl) return;
+
+  function refresh() {
+    const y = parseInt(yearEl.value);
+    const m = parseInt(monthEl.value);
+    const d = parseInt(dayEl.value);
+
+    // Constrain month options: if year == today's year, min month = today's month
+    const minM = (y === ty) ? tm : 1;
+    const curM = Math.max(m, minM);
+    monthEl.innerHTML = SEL_MONTH_NAMES.map((name, i) => {
+      const v = i + 1;
+      if (v < minM) return '';
+      return `<option value="${v}"${v === curM ? ' selected' : ''}>${name}</option>`;
+    }).join('');
+
+    // Constrain day options: if year+month == today, min day = today
+    const dMax  = daysInMonth(y, curM);
+    const minD  = (y === ty && curM === tm) ? td : 1;
+    const curD  = Math.min(Math.max(d, minD), dMax);
+    dayEl.innerHTML = Array.from({length: dMax}, (_, i) => {
+      const v = i + 1;
+      if (v < minD) return '';
+      return `<option value="${v}"${v === curD ? ' selected' : ''}>${v}</option>`;
+    }).join('');
+
+    // Safety: if result is still in past, snap to today
+    const built = `${y}-${String(curM).padStart(2, '0')}-${String(curD).padStart(2, '0')}`;
+    if (built < today) {
+      yearEl.value = String(ty);
+      refresh();
+    }
+  }
+
+  yearEl.addEventListener('change',  refresh);
+  monthEl.addEventListener('change', refresh);
+  dayEl.addEventListener('change',   refresh);
+  refresh(); // apply initial constraints
+}
+
+// Rebuilds the Edit/Add Task recurrence summary line from current DOM state.
+function updateRecurrenceSummary() {
+  const el = document.getElementById('recurrence-summary');
+  if (!el) return;
+
+  const toggleBtn = document.getElementById('repeating-toggle');
+  const isOn = toggleBtn?.getAttribute('aria-checked') === 'true';
+  if (!isOn) { el.style.display = 'none'; return; }
+
+  const prefix = document.getElementById('task-override-day') ? 'task-override'
+               : document.getElementById('task-due-oneoff-day') ? 'task-due-oneoff'
+               : null;
+  const firstDue = prefix ? getSelectDate(prefix) : null;
+  if (!firstDue) { el.style.display = 'none'; return; }
+
+  const container = document.getElementById('recurrence-container');
+  const rtype = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
+
+  let tail = '';
+  if (rtype === 'interval') {
+    const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
+    if (!freq || freq < 1) { el.style.display = 'none'; return; }
+    tail = `recurs every ${freq} day${freq === 1 ? '' : 's'}`;
+  } else {
+    const selected = Array.from(document.querySelectorAll('#sheet .weekday-btn.selected'))
+      .map(b => parseInt(b.dataset.day))
+      .filter(n => !Number.isNaN(n))
+      .sort((a, b) => a - b);
+    if (selected.length === 0) { el.style.display = 'none'; return; }
+    const SHORT_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    tail = `recurs every ${selected.map(d => SHORT_DOW[d]).join(', ')}`;
+  }
+
+  const startLabel = new Date(firstDue + 'T12:00:00')
+    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const verb = el.dataset.started === 'true' ? 'Started' : 'Starts';
+  el.textContent = `${verb} ${startLabel} · ${tail}`;
+  el.style.display = '';
+}
+
+// Compacts the shared date selects for the Add/Edit Task sheet (arrival picker unaffected).
+function applyCompactDateSelectStyles(prefix) {
+  const apply = (el, flexVal) => {
+    if (!el) return;
+    el.style.flex     = flexVal;
+    el.style.fontSize = '13px';
+    el.style.padding  = '6px 8px';
+  };
+  apply(document.getElementById(`${prefix}-day`),   '0.7');
+  apply(document.getElementById(`${prefix}-month`), '1.6');
+  apply(document.getElementById(`${prefix}-year`),  '0.9');
+  const dow = document.getElementById(`${prefix}-dow-label`);
+  if (dow) { dow.style.fontSize = '11px'; dow.style.color = '#7a8a7a'; }
+}
+
+function attachRecurrenceSummaryListeners(datePrefix) {
+  const update = () => updateRecurrenceSummary();
+  document.getElementById('sheet-frequency')?.addEventListener('input', update);
+  ['day', 'month', 'year'].forEach(part => {
+    document.getElementById(`${datePrefix}-${part}`)?.addEventListener('change', update);
+  });
+  update();
 }
 
 // ============================================================
@@ -4157,7 +5124,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('overlay').addEventListener('click', closeSheet);
   document.getElementById('menu-overlay').addEventListener('click', closeMenu);
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && document.getElementById('sheet').classList.contains('active')) closeSheet();
+    const sheetActive = document.getElementById('sheet')?.classList.contains('active');
+    if (!sheetActive) return;
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      const cancelBtn = document.querySelector('#sheet [data-action="sheet-cancel"]');
+      if (cancelBtn) cancelBtn.click();
+      else closeSheet();
+      return;
+    }
+
+    if (e.key === 'Enter' && !e.isComposing) {
+      const el = document.activeElement;
+      if (el?.tagName === 'TEXTAREA' || el?.isContentEditable) return;
+      const primary = document.querySelector('#sheet .btn-primary:not([disabled])');
+      if (primary) {
+        e.preventDefault();
+        primary.click();
+      }
+    }
   });
 
   supabaseClient.auth.onAuthStateChange(async (event, session) => {

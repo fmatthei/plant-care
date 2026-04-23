@@ -12,7 +12,7 @@ html, body {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #f2f5f2;
+  background: #f4f6f2;
   color: #1c2b1c;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -84,9 +84,17 @@ body {
 /* ===== App Container ===== */
 #app {
   min-height: 100vh;
-  max-width: 480px;
+  max-width: 430px;
   margin: 0 auto;
   padding-bottom: 90px;
+}
+
+@media (min-width: 431px) {
+  #app {
+    border-left:  1px solid rgba(0,0,0,0.1);
+    border-right: 1px solid rgba(0,0,0,0.1);
+    box-shadow:   0 0 0 1px rgba(0,0,0,0.06);
+  }
 }
 
 /* ===== App Header ===== */
@@ -121,11 +129,39 @@ body {
   flex: 1;
 }
 
-.date-label {
-  font-size: 13px;
-  opacity: 0.82;
+.brand-tile {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: #0d1f12;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.brand-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.header-household-name {
+  font-size: 14px;
   font-weight: 500;
+  color: #fff;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.header-chevron {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
 }
 
 .back-btn {
@@ -601,6 +637,127 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* ===== Redesigned Task Rows (#107) ===== */
+.task-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 0 80px;
+}
+
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 0.5px solid #dde6d8;
+  border-radius: 10px;
+  min-height: 52px;
+  cursor: pointer;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.task-row--paused {
+  opacity: 0.6;
+}
+
+.task-row-tile {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 18px;
+  line-height: 1;
+  background: #f4f6f2;
+}
+
+.task-row-tile--water     { background: var(--water-bg); }
+.task-row-tile--refill    { background: var(--refill-bg); }
+.task-row-tile--fertilize { background: var(--fertilize-bg); }
+.task-row-tile--check     { background: var(--check-bg); }
+.task-row-tile--repot     { background: var(--repot-bg); }
+.task-row-tile--prune     { background: var(--prune-bg); }
+.task-row-tile--pest      { background: var(--pest-bg); }
+.task-row-tile--rotate    { background: var(--rotate-bg); }
+.task-row-tile--custom    { background: var(--custom-bg); }
+
+.task-row-divider {
+  width: 1px;
+  height: 28px;
+  background: rgba(0,0,0,0.08);
+  flex-shrink: 0;
+}
+
+.task-row-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-row-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-row-meta {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-row-owner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+}
+
+.task-row-check {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid #dde3d8;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #dde3d8;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.task-row-check--done {
+  background: #2d5a3f;
+  border-color: #2d5a3f;
+  color: #fff;
 }
 
 .task-card {
@@ -1153,6 +1310,102 @@ body {
   z-index: 1;
 }
 
+/* ===== Task Sheet Toggle Controls (#107b) ===== */
+.task-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f6f5f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.task-toggle-row--expanded {
+  border-radius: 10px 10px 0 0;
+  margin-bottom: 0;
+}
+
+.task-toggle-row--sub {
+  margin-top: 8px;
+}
+
+.task-toggle-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1a2e1a;
+}
+
+.task-toggle-subtitle {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.task-toggle-btn {
+  width: 44px;
+  height: 26px;
+  border-radius: 13px;
+  background: #d0d0d0;
+  border: none;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.task-toggle-btn.on {
+  background: #3a6b3a;
+}
+
+.task-toggle-knob {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: white;
+  top: 2px;
+  left: 2px;
+  transition: left 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.task-toggle-btn.on .task-toggle-knob {
+  left: 20px;
+}
+
+#task-recurrence-block {
+  background: #f6f5f0;
+  border-radius: 0 0 10px 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+
+.task-delete-section {
+  border-top: 1px solid #eee;
+  padding-top: 8px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.task-delete-link {
+  background: none;
+  border: none;
+  color: #c0392b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
 .sheet-danger-links {
   display: flex;
   justify-content: space-between;
@@ -1377,6 +1630,13 @@ body {
   margin-top: 5px;
 }
 
+.date-select-dow-label {
+  font-size: 12px;
+  color: #8a8d86;
+  margin-top: 6px;
+  min-height: 1em;
+}
+
 /* ===== Data Footer ===== */
 .data-footer {
   display: flex;
@@ -1415,7 +1675,7 @@ body {
   padding: 0 16px;
   position: sticky;
   top: var(--header-height);
-  z-index: 9;
+  z-index: 1001;
 }
 
 .tab-btn {
@@ -1839,24 +2099,15 @@ body {
   background: rgba(255,255,255,0.2);
 }
 
-/* ===== Hamburger Button ===== */
-.btn-hamburger {
-  background: transparent;
-  border: none;
-  color: white;
-  font-size: 20px;
-  line-height: 1;
-  padding: 4px 6px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  border-radius: 6px;
-}
-
-.btn-hamburger:active {
-  background: rgba(255,255,255,0.2);
-}
-
 /* ===== Menu Panel ===== */
+body.menu-open {
+  overflow: hidden;
+}
+
+#menu-overlay {
+  z-index: 2000;
+}
+
 .menu-panel {
   position: fixed;
   top: 0;
@@ -1865,10 +2116,11 @@ body {
   width: 280px;
   max-width: 85vw;
   background: var(--card);
-  z-index: 70;
+  z-index: 2001;
   transform: translateX(100%);
   transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
   overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   box-shadow: -4px 0 24px rgba(0,0,0,0.18);
 }
@@ -2573,12 +2825,19 @@ body {
 .header-feedback-btn {
   background: transparent;
   border: none;
-  font-size: 18px;
+  padding: 6px;
+  color: rgba(255, 255, 255, 0.8);
   cursor: pointer;
-  padding: 2px 6px;
-  opacity: 0.8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
-.header-feedback-btn:hover { opacity: 1; }
+.header-feedback-btn:hover { color: #fff; }
+.header-feedback-btn:active { opacity: 0.7; }
+.header-feedback-btn svg { display: block; }
 
 /* ===== Toast ===== */
 .toast {
@@ -3354,6 +3613,146 @@ div + .section-header-bar {
   height: 1px;
   background: var(--border);
   margin: 20px 0 0;
+}
+
+/* ===== Care Log redesign — date-left layout ===== */
+.carelog-month-header {
+  font-size: 10px;
+  font-weight: 500;
+  color: #888;
+  letter-spacing: 0.05em;
+  margin: 8px 0 6px;
+  padding-left: 46px;
+}
+
+/* Notes tab redesign */
+.notes-tab-row {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.notes-tab-body {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a2e1a;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.notes-tab-card--editing {
+  cursor: default;
+  align-items: flex-start;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.notes-tab-owner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+}
+
+.carelog-new-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 5px;
+  min-height: 48px;
+  align-items: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.carelog-new-date-col {
+  width: 38px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.carelog-new-date-dow {
+  font-size: 9px;
+  color: #aaa;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+
+.carelog-new-date-num {
+  font-size: 14px;
+  font-weight: 500;
+  color: #4a6340;
+  line-height: 1.2;
+}
+
+.carelog-new-card {
+  flex: 1;
+  background: #fff;
+  border-radius: 10px;
+  border: 0.5px solid #dde6d8;
+  padding: 8px 10px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+.carelog-new-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.carelog-new-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.carelog-new-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #1a2e1a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.carelog-new-time {
+  font-size: 10px;
+  color: #aaa;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.carelog-new-owner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 500;
+  color: #fff;
 }
 
 /* DEV TOOLS — remove before public launch */

@@ -1320,6 +1320,47 @@ function renderHomeDueToday() {
   return html;
 }
 
+function renderCaringDoneToday() {
+  const today = todayStr();
+  const doneItems = [];
+  for (const plant of plants) {
+    for (const task of plant.tasks) {
+      if (task.paused) continue;
+      if (!matchesFilter(task.owner)) continue;
+      if (task.lastDone === today) doneItems.push({ plant, task });
+    }
+  }
+  if (doneItems.length === 0) return '';
+
+  let html = `<div class="home-section-header">
+    <div class="home-section-header-accent" style="background:#aab09f;"></div>
+    <span class="home-section-header-text" style="color:#8a9180;">Done today</span>
+  </div>
+  <div class="home-activity-feed"><div class="needs-attention-list">`;
+
+  for (const { plant, task } of doneItems) {
+    const cfg = getTaskConfig(task);
+    const ownerMember  = membersCache.find(m => m.display_name === task.owner);
+    const ownerColor   = ownerMember?.color ?? '#888';
+    const ownerInitial = (task.owner ?? '?')[0].toUpperCase();
+    html += `<div class="activity-row home-due-today-row attention-row" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
+      <span style="width:26px;height:26px;border-radius:8px;background:#eaf3de;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>
+      <span style="width:1px;height:28px;background:#c0dd97;flex-shrink:0;"></span>
+      <span style="width:26px;height:26px;border-radius:8px;background:#eaf3de;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;line-height:1;">${cfg.icon}</span>
+      <span class="home-due-today-info">
+        <span class="home-due-today-task" style="text-decoration:line-through;text-decoration-color:#aab09f;color:#6b7c61;">${escapeHtml(cfg.name)}</span>
+        <span style="color:#8a9180;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${escapeHtml(task.owner ?? '')}</span>
+      </span>
+      <button data-action="add-note" data-plant="${plant.id}" style="width:26px;height:26px;border-radius:50%;border:0.5px solid #dde0d9;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;cursor:pointer;padding:0;" aria-label="Add note"><svg viewBox="0 0 16 16" fill="none" stroke="#8a9180" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg></button>
+      <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:#fff;font-size:11px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInitial)}</span>
+      <button data-action="caring-undo-done" data-plant="${plant.id}" data-task="${task.id}" style="width:26px;height:26px;border-radius:50%;border:none;background:#3b6d11;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;cursor:pointer;padding:0;" aria-label="Undo">✓</button>
+    </div>`;
+  }
+
+  html += `</div></div>`;
+  return html;
+}
+
 function renderHomeActivityFeed() {
   if (activityFeed.length === 0) {
     if (plants.length === 0) return '';
@@ -1788,6 +1829,8 @@ function renderSchedule() {
 
   let html = renderHomeDueToday();
 
+  html += renderCaringDoneToday();
+
   // Upcoming: next 7 days (tomorrow through today+7)
   html += `<div class="home-section-header">
     <div class="home-section-header-accent" style="background:#2e7d51;"></div>
@@ -2214,13 +2257,22 @@ function renderSummaryTab(plant) {
                           : relativeDays(e.date);
         const absDate     = e.date ? formatDate(e.date) : '';
         const primary     = `${e.author ?? 'Someone'} logged ${e.taskName ?? 'care'}`;
+        const isDoneToday = e.date === today;
+        const tileHtml    = isDoneToday
+          ? `<span style="width:40px;height:40px;background:#eaf3de;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${icon}</span>`
+          : activityTaskTileHtml(tType, icon);
+        const actionsHtml = isDoneToday
+          ? `<button data-action="summary-carelog-add-note" data-plant="${escapeHtml(plant.id)}" style="width:30px;height:30px;border-radius:50%;border:0.5px solid #dde0d9;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;cursor:pointer;padding:0;" aria-label="Add note"><svg viewBox="0 0 16 16" fill="none" stroke="#8a9180" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg></button>
+            <button data-action="summary-carelog-undo" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(e.taskId ?? '')}" data-entry="${escapeHtml(e.id ?? '')}" style="width:28px;height:28px;border-radius:50%;border:none;background:#3b6d11;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;cursor:pointer;padding:0;margin-left:6px;" aria-label="Undo">✓</button>`
+          : '';
         html += `<div style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="carelog-open-edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(e.taskId ?? '')}">
-          ${activityTaskTileHtml(tType, icon)}
+          ${tileHtml}
           <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;"></span>
           <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
             <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(primary)}</span>
             <span style="font-size:11px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(relTime)} · ${escapeHtml(absDate)}</span>
           </span>
+          ${actionsHtml}
         </div>`;
       } else {
         const n       = item.data;
@@ -2286,6 +2338,9 @@ function renderTasksTab(plant) {
     return html;
   }
   const today = todayStr();
+  const doneTodayTasks = filtered.filter(t => !t.paused && t.lastDone === today);
+  const doneTodayIds   = new Set(doneTodayTasks.map(t => t.id));
+  const pendingTasks   = filtered.filter(t => !doneTodayIds.has(t.id));
   const urgencyGroup = (t) => {
     if (t.paused) return 5;
     if (t.lastDone === today) return 6;
@@ -2296,19 +2351,50 @@ function renderTasksTab(plant) {
     if (d === 1) return 3;
     return 4;
   };
-  const sorted = [...filtered].sort((a, b) => {
+  const sorted = [...pendingTasks].sort((a, b) => {
     const ga = urgencyGroup(a);
     const gb = urgencyGroup(b);
     if (ga !== gb) return ga - gb;
     if (ga === 4)  return daysUntilDue(a) - daysUntilDue(b);
     return 0;
   });
-  html += `<div class="task-row-list">`;
-  for (const task of sorted) {
-    html += renderTaskRow(plant.id, task);
+  if (sorted.length > 0) {
+    html += `<div class="task-row-list">`;
+    for (const task of sorted) {
+      html += renderTaskRow(plant.id, task);
+    }
+    html += `</div>`;
   }
-  html += `</div>`;
+
+  if (doneTodayTasks.length > 0) {
+    const headerPadding = sorted.length > 0 ? '16px 0 8px' : '0 0 8px';
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:${headerPadding};">
+      <span style="width:3px;height:14px;background:#aab09f;border-radius:2px;flex-shrink:0;"></span>
+      <span style="font-size:11px;font-weight:500;color:#8a9180;text-transform:uppercase;letter-spacing:0.05em;">Done today</span>
+    </div>
+    <div class="task-row-list">`;
+    for (const task of doneTodayTasks) {
+      html += renderDoneTodayTaskRow(plant.id, task);
+    }
+    html += `</div>`;
+  }
+
   return html;
+}
+
+function renderDoneTodayTaskRow(plantId, task) {
+  const cfg      = getTaskConfig(task);
+  const subtitle = `${task.owner ?? ''} · today`;
+  return `<div class="task-row" data-action="edit-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}">
+  <span class="task-row-tile" style="background:#eaf3de;">${cfg.icon}</span>
+  <span class="task-row-divider"></span>
+  <div class="task-row-content">
+    <div class="task-row-name">${escapeHtml(cfg.name)}</div>
+    <div class="task-row-meta" style="color:#8a8d86;">${escapeHtml(subtitle)}</div>
+  </div>
+  <button data-action="add-note" data-plant="${escapeHtml(plantId)}" style="width:30px;height:30px;border-radius:50%;border:0.5px solid #dde0d9;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;cursor:pointer;padding:0;" aria-label="Add note"><svg viewBox="0 0 16 16" fill="none" stroke="#8a9180" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg></button>
+  <button data-action="tasks-undo-done" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" style="width:28px;height:28px;border-radius:50%;border:none;background:#3b6d11;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;cursor:pointer;padding:0;margin-left:6px;" aria-label="Undo">✓</button>
+</div>`;
 }
 
 function renderNotesTab(plant) {
@@ -4064,6 +4150,19 @@ async function handleEvent(e) {
       if (document.querySelector('.coach-overlay, .notif-overlay')) return;
       renderAddNoteSheet(plantId);
       break;
+
+    case 'summary-carelog-add-note':
+      if (document.querySelector('.coach-overlay, .notif-overlay')) return;
+      renderAddNoteSheet(plantId);
+      break;
+
+    case 'summary-carelog-undo': {
+      if (plantId && taskId) {
+        undoMarkTaskDone(plantId, taskId);
+        renderPlantDetail(state.plantId);
+      }
+      break;
+    }
 
     case 'delete-note': {
       const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;

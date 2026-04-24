@@ -242,6 +242,13 @@ body {
   padding: 14px 16px 8px;
 }
 
+/* Inside plant-detail the parent already provides 16px horizontal padding;
+   zero out our own so the bar aligns with the Caring tab's at 16px from #app left. */
+.plant-detail .home-section-header {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .home-section-header-accent {
   width: 3px;
   height: 16px;
@@ -415,7 +422,7 @@ body {
   background: var(--card);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  padding: 16px;
+  padding: 10px 16px;
   cursor: pointer;
   transition: transform 0.12s, box-shadow 0.12s;
   -webkit-tap-highlight-color: transparent;
@@ -475,9 +482,36 @@ body {
 
 .plant-card-right {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 84px;
   flex-shrink: 0;
+}
+
+.plant-card-task-icons {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.plant-card-task-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: #f4f6f2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.plant-card-task-icon--overflow {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
 }
 
 .last-care-line {
@@ -544,6 +578,59 @@ body {
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+/* ===== Urgency Tint Tokens ===== */
+/* Overdue — red */
+.attention-row.attention-row--overdue {
+  background: #fce8e8;
+  border-color: #f5c6c6;
+}
+.pill-overdue {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: #fce8e8;
+  color: #a93226;
+  border: 0.5px solid #e8a0a0;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Due today — amber */
+.attention-row.attention-row--duetoday {
+  background: #fdf3e8;
+  border-color: #f5e0c0;
+}
+.pill-duetoday {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: #fdf3e8;
+  color: #b07a2a;
+  border: 1px solid #f5d9a0;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* Stacked pills on plant card (overdue + due-today shown together) */
+.plant-card-pill-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+/* Pills + all-good badge inside the fixed-width plant-card-right column stretch to 84px. */
+.plant-card-right > .all-good-badge,
+.plant-card-pill-stack > .pill-overdue,
+.plant-card-pill-stack > .pill-duetoday {
+  width: 100%;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 /* ===== Floating Action Button ===== */
@@ -692,7 +779,7 @@ body {
 .task-row-divider {
   width: 1px;
   height: 28px;
-  background: rgba(0,0,0,0.08);
+  background: rgba(0,0,0,0.12);
   flex-shrink: 0;
 }
 
@@ -2982,7 +3069,7 @@ body.menu-open {
 
 /* ===== Plant Detail Content ===== */
 .plant-detail {
-  padding: 14px 16px 140px;
+  padding: 0 16px 140px;
 }
 
 /* ===== Plant Info Card ===== */
@@ -3150,10 +3237,13 @@ div + .section-header-bar {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding: 10px 0 10px;
+  padding: 10px 0 10px 16px;
   margin-bottom: 4px;
   scrollbar-width: none;
   align-items: center;
+}
+.plant-detail .user-filter-row {
+  padding-left: 0;
 }
 .user-filter-row::-webkit-scrollbar { display: none; }
 .user-filter-sep {
@@ -3621,8 +3711,8 @@ div + .section-header-bar {
   font-weight: 500;
   color: #888;
   letter-spacing: 0.05em;
-  margin: 8px 0 6px;
-  padding-left: 46px;
+  margin: 8px 0 6px -16px;
+  padding-left: 0;
 }
 
 /* Notes tab redesign */
@@ -3630,6 +3720,8 @@ div + .section-header-bar {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  margin-left: -16px;
+  margin-right: -16px;
 }
 
 .notes-tab-body {
@@ -3668,7 +3760,7 @@ div + .section-header-bar {
 .carelog-new-row {
   display: flex;
   gap: 8px;
-  margin-bottom: 5px;
+  margin: 0 -16px 5px;
   min-height: 48px;
   align-items: center;
   cursor: pointer;
@@ -3890,7 +3982,7 @@ div + .section-header-bar {
 .upcoming-card-divider {
   width: 1px;
   height: 24px;
-  background: #dde6d8;
+  background: rgba(0,0,0,0.12);
   flex-shrink: 0;
 }
 

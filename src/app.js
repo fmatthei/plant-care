@@ -5,8 +5,8 @@
 // ============================================================
 
 const TASK_CONFIG = {
-  'normal-water': { name: 'Normal Watering',           icon: '💧', type: 'water' },
-  'refill-pot':   { name: 'Refill Self-Watering Pot',  icon: '🪣', type: 'refill' },
+  'normal-water': { name: 'Watering',           icon: '💧', type: 'water' },
+  'refill-pot':   { name: 'Refill Self-Watering Pot',  icon: '🫙', type: 'refill' },
   'fertilize':    { name: 'Fertilize',                 icon: '🌱', type: 'fertilize' },
   'check':        { name: 'Check',                     icon: '🔍', type: 'check' },
   'repot':        { name: 'Repot',                     icon: '🪴', type: 'repot' },
@@ -99,9 +99,7 @@ let notesShowAll = new Set(); // plantIds where "Show all" is expanded
 let editingNoteId = null;
 let activeUser = null;
 let activeTab = 'plants';
-let scheduleFilter = null; // null = uninitialized; array of display_names to show
-let tasksFilter = null;    // null = uninitialized
-let careLogFilter = []; // [] = all users (no individual selection)
+let activeFilter = []; // array of household member display_names — empty means show all (no filter)
 let careLogFiltersOpen = false;
 let careLogMode = 'tasks'; // 'tasks' | 'all'
 let plantDetailTab = 'summary';
@@ -335,8 +333,6 @@ async function loadFromSupabase() {
   // Cache members for write operations — must be set before any early return
   // so handleSaveNewPlant() always has a valid membersCache even with no plants.
   membersCache = memberRows ?? [];
-  if (activeUser && scheduleFilter === null) scheduleFilter = [activeUser];
-  if (activeUser && tasksFilter === null) tasksFilter = [activeUser];
 
   if (plantRows.length === 0) {
     plants = [];
@@ -414,12 +410,13 @@ async function loadFromSupabase() {
 
     const careLogRows = careLogResults[i].data ?? [];
     const careLog = careLogRows.map(r => ({
-      id:       r.id,
-      date:     r.date,
-      author:   ownerMap[r.household_member_id] ?? 'Unknown',
-      taskId:   r.task_id,
-      taskName: r.task_name,
-      taskType: r.task_type,
+      id:        r.id,
+      date:      r.date,
+      createdAt: r.created_at,
+      author:    ownerMap[r.household_member_id] ?? 'Unknown',
+      taskId:    r.task_id,
+      taskName:  r.task_name,
+      taskType:  r.task_type,
     }));
 
     return {
@@ -487,7 +484,9 @@ async function loadActivityFeed() {
 function lastCareLabel(plant) {
   const entry = plant.careLog?.[0];
   if (!entry) return '';
-  const diff = daysBetween(entry.date, todayStr());
+  const dateStr = entry.date ?? (entry.createdAt ? entry.createdAt.split('T')[0] : null);
+  if (!dateStr) return '';
+  const diff = daysBetween(dateStr, todayStr());
   const when = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
   return `<div class="last-care-line">Last care: ${escapeHtml(entry.taskName)} · ${when}</div>`;
 }
@@ -1234,12 +1233,12 @@ function renderHeaderRight() {
     </div>`;
 }
 
-function renderHomeDueToday(activeFilter = []) {
+function renderHomeDueToday() {
   const allItems = [];
   for (const plant of plants) {
     for (const task of plant.tasks) {
       if (task.paused) continue;
-      if (activeFilter.length > 0 && !activeFilter.includes(task.owner)) continue;
+      if (!matchesFilter(task.owner)) continue;
       const days = daysUntilDue(task);
       if (days === 0) {
         allItems.push({ plant, task, days, overdue: false });
@@ -1296,13 +1295,15 @@ function renderHomeDueToday(activeFilter = []) {
     const ownerColor = ownerMember?.color ?? '#888';
     const ownerInitial = (task.owner ?? '?')[0].toUpperCase();
     const daysLate = Math.abs(days);
+    const urgencyRowCls = overdue ? 'attention-row--overdue' : 'attention-row--duetoday';
+    const tileBg        = overdue ? '#fce8e8' : '#fdf3e8';
     const subtitleHtml = overdue
-      ? `<span style="color:#a32d2d;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${daysLate} day${daysLate !== 1 ? 's' : ''} late</span>`
-      : `<span class="home-due-today-plant">${escapeHtml(plant.name)} · due today</span>`;
+      ? `<span style="color:#c0392b;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${daysLate} day${daysLate !== 1 ? 's' : ''} late</span>`
+      : `<span style="color:#b07a2a;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · due today</span>`;
 
-    html += `<div class="activity-row home-due-today-row attention-row" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
-      <span style="width:26px;height:26px;border-radius:8px;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>
-      <span style="width:1px;height:28px;background:#e8ede8;flex-shrink:0;"></span>
+    html += `<div class="activity-row home-due-today-row attention-row ${urgencyRowCls}" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
+      <span style="width:26px;height:26px;border-radius:8px;background:${tileBg};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>
+      <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;"></span>
       <span class="activity-icon">${cfg.icon}</span>
       <span class="home-due-today-info">
         <span class="home-due-today-task">${escapeHtml(cfg.name)}</span>
@@ -1359,7 +1360,7 @@ function renderHomeActivityFeed() {
     } else {
       html += `
       <div class="activity-row">
-        <span class="activity-icon">📝</span>
+        <span class="activity-icon">💬</span>
         <span class="activity-text">${escapeHtml(item.member)} · <span class="activity-note-preview">${escapeHtml(item.note)}</span> — ${escapeHtml(item.plantName)}</span>
         <span class="activity-time">${time}</span>
       </div>`;
@@ -1512,8 +1513,49 @@ function renderHome() {
 
     html += '<div class="plants-list">';
 
-    for (const plant of plants) {
-      const dueTasks = plant.tasks.filter(isDue);
+    // Smart sort: overdue plants first (most overdue at top), then due-today
+    // (most due-today tasks first), then all-good in original order. If no plant
+    // is overdue or due-today, skip the sort and keep the existing order.
+    const classifiedPlants = plants.map((plant, idx) => {
+      let minDays = Infinity;      // most-negative daysUntilDue across tasks
+      let dueTodayCount = 0;
+      for (const task of plant.tasks) {
+        if (task.paused) continue;
+        const d = daysUntilDue(task);
+        if (d === Infinity) continue;
+        if (d < minDays) minDays = d;
+        if (d === 0) dueTodayCount++;
+      }
+      let group;
+      if (minDays < 0) group = 1;
+      else if (dueTodayCount > 0) group = 2;
+      else group = 3;
+      return { plant, idx, group, minDays, dueTodayCount };
+    });
+    const needsSort = classifiedPlants.some(c => c.group === 1 || c.group === 2);
+    const plantsOrdered = needsSort
+      ? classifiedPlants
+          .slice()
+          .sort((a, b) => {
+            if (a.group !== b.group) return a.group - b.group;
+            if (a.group === 1) return a.minDays - b.minDays; // most overdue (most negative) first
+            if (a.group === 2) return b.dueTodayCount - a.dueTodayCount; // most due-today first
+            return a.idx - b.idx; // group 3: preserve original order
+          })
+          .map(c => c.plant)
+      : plants;
+
+    for (const plant of plantsOrdered) {
+      // Collect urgent tasks split by state so pills + task badges can tint consistently.
+      const overdueTasks  = [];
+      const dueTodayTasks = [];
+      for (const task of plant.tasks) {
+        if (task.paused) continue;
+        const d = daysUntilDue(task);
+        if (d === Infinity) continue;
+        if (d < 0)        overdueTasks.push(task);
+        else if (d === 0) dueTodayTasks.push(task);
+      }
 
       const suppressOnboarding = getOnboardingStep() === 3 && plant.id === getOnboardingPlantId();
 
@@ -1522,19 +1564,34 @@ function renderHome() {
         dueBadgeHtml = '';
       } else if (plant.tasks.length === 0) {
         dueBadgeHtml = '';
-      } else if (dueTasks.length > 0) {
-        dueBadgeHtml = `<span class="due-count-badge">${dueTasks.length} due</span>`;
+      } else if (overdueTasks.length > 0 || dueTodayTasks.length > 0) {
+        const parts = [];
+        if (overdueTasks.length > 0)  parts.push(`<span class="pill-overdue">${overdueTasks.length} overdue</span>`);
+        if (dueTodayTasks.length > 0) parts.push(`<span class="pill-duetoday">${dueTodayTasks.length} due today</span>`);
+        dueBadgeHtml = `<div class="plant-card-pill-stack">${parts.join('')}</div>`;
       } else {
         dueBadgeHtml = `<span class="all-good-badge">&#10003; All good</span>`;
       }
 
-      let taskPillsHtml = '';
-      for (const task of dueTasks) {
-        const cfg = getTaskConfig(task);
-        taskPillsHtml += `<span class="task-due-badge ${cfg.type}">${cfg.icon} ${cfg.name}</span>`;
+      const dueTasks = [...overdueTasks, ...dueTodayTasks];
+      const suppressPills = suppressOnboarding;
+
+      // Task icon tiles: cap at 4, then a "+N" overflow tile if there are more.
+      let taskIconsHtml = '';
+      if (!suppressPills && dueTasks.length > 0) {
+        const MAX_ICONS = 4;
+        const shown = dueTasks.slice(0, MAX_ICONS);
+        const extra = dueTasks.length - MAX_ICONS;
+        const iconTiles = shown.map(t => {
+          const cfg = getTaskConfig(t);
+          return `<span class="plant-card-task-icon">${cfg.icon}</span>`;
+        }).join('');
+        const overflowTile = extra > 0
+          ? `<span class="plant-card-task-icon plant-card-task-icon--overflow" aria-label="${extra} more">+${extra}</span>`
+          : '';
+        taskIconsHtml = `<div class="plant-card-task-icons">${iconTiles}${overflowTile}</div>`;
       }
 
-      const suppressPills = suppressOnboarding;
       html += `
     <div class="plant-card" data-action="open-plant" data-plant="${plant.id}">
       <div class="plant-card-row">
@@ -1542,13 +1599,12 @@ function renderHome() {
         <div class="plant-card-meta">
           <div class="plant-card-name">${escapeHtml(plant.name)}</div>
           ${lastCareLabel(plant)}
+          ${taskIconsHtml}
         </div>
         <div class="plant-card-right">
           ${dueBadgeHtml}
-          <span class="plant-card-arrow">&#8250;</span>
         </div>
       </div>
-      ${!suppressPills && dueTasks.length > 0 ? `<div class="due-tasks-row">${taskPillsHtml}</div>` : ''}
     </div>`;
     }
 
@@ -1560,6 +1616,7 @@ function renderHome() {
 
     html += `<div id="dev-build-ts" style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${typeof __BUILD_TIME__ !== 'undefined' ? new Date(__BUILD_TIME__).toLocaleString('es-CL', { timeZone: 'America/Santiago' }) : 'dev'}</div>`;
   } else {
+    html += renderUserFilterPills();
     html += renderSchedule();
   }
 
@@ -1719,7 +1776,6 @@ function showCaringTabCoachMark() {
 
 function renderSchedule() {
   const today = new Date().toLocaleDateString('en-CA');
-  const activeFilter = scheduleFilter ?? [activeUser];
 
   const totalTasks = plants.reduce((sum, p) => sum + p.tasks.length, 0);
   if (totalTasks === 0) {
@@ -1730,9 +1786,7 @@ function renderSchedule() {
 </div>`;
   }
 
-  let html = renderUserFilterPills('schedule', activeFilter);
-
-  html += renderHomeDueToday(activeFilter);
+  let html = renderHomeDueToday();
 
   // Upcoming: next 7 days (tomorrow through today+7)
   html += `<div class="home-section-header">
@@ -1751,7 +1805,7 @@ function renderSchedule() {
     for (const plant of plants) {
       for (const task of plant.tasks) {
         if (task.paused) continue;
-        if (activeFilter.length > 0 && !activeFilter.includes(task.owner)) continue;
+        if (!matchesFilter(task.owner)) continue;
         if (taskOccursOnDate(task, dateStr)) dayTasks.push({ plant, task });
       }
     }
@@ -1829,6 +1883,7 @@ function renderPlantDetail(plantId) {
     <button class="detail-tab-btn${plantDetailTab === 'notes'    ? ' active' : ''}" data-action="plant-detail-tab" data-tab="notes">Notes</button>
     <button class="detail-tab-btn${plantDetailTab === 'carelog'  ? ' active' : ''}" data-action="plant-detail-tab" data-tab="carelog">Care Log</button>
   </div>
+  ${renderUserFilterPills()}
   <div class="plant-detail">`;
 
   if (plantDetailTab === 'summary') {
@@ -1862,15 +1917,16 @@ function renderPlantDetail(plantId) {
   window.scrollTo(0, 0);
 }
 
-function renderUserFilterPills(filterId, selectedUsers) {
-  const noneSelected = selectedUsers.length === 0;
-  const allSelected = noneSelected || selectedUsers.length === membersCache.length;
-  const allPillCls = allSelected ? 'user-pill user-pill-all active' : 'user-pill user-pill-all';
-  let html = `<div class="user-filter-row" data-filter="${filterId}">`;
-  html += `<div class="${allPillCls}" data-action="user-filter-all" data-filter="${filterId}">All</div>`;
-  html += `<div class="user-filter-sep"></div>`;
+// Predicate: does a given author/owner display_name satisfy the current global filter?
+// Empty activeFilter = no filter applied (show all).
+function matchesFilter(author) {
+  return activeFilter.length === 0 || activeFilter.includes(author);
+}
+
+function renderUserFilterPills() {
+  let html = `<div class="user-filter-row">`;
   for (const m of membersCache) {
-    const active = noneSelected || selectedUsers.includes(m.display_name);
+    const active = activeFilter.includes(m.display_name);
     const color = m.color ?? '#666';
     const borderColor = hexToRgba(color, 0.5);
     const pillStyle = active
@@ -1881,7 +1937,7 @@ function renderUserFilterPills(filterId, selectedUsers) {
       : `background:${color};`;
     const checkStyle = active ? `color:#fff;` : `color:#aaa;`;
     const checkChar = active ? '✓' : '✕';
-    html += `<div class="user-pill" data-action="user-filter-toggle" data-filter="${filterId}" data-user="${escapeHtml(m.display_name)}" style="${pillStyle}">
+    html += `<div class="user-pill" data-action="user-filter-toggle" data-user="${escapeHtml(m.display_name)}" style="${pillStyle}">
       <div class="user-pill-dot" style="${dotStyle}"></div>
       ${escapeHtml(m.display_name)}
       <span class="user-pill-check" style="${checkStyle}">${checkChar}</span>
@@ -1913,7 +1969,7 @@ function renderSummaryTab(plant) {
 
   const today = todayStr();
 
-  const summarySectionHeader = (label) => `<div style="display:flex;align-items:center;gap:8px;padding:16px 16px 8px;">
+  const summarySectionHeader = (label) => `<div style="display:flex;align-items:center;gap:8px;padding:16px 0 8px;">
     <span style="width:3px;height:14px;background:#3a6b3a;border-radius:2px;flex-shrink:0;"></span>
     <span style="font-size:11px;font-weight:500;color:#6b7a6b;text-transform:uppercase;letter-spacing:0.05em;">${escapeHtml(label)}</span>
   </div>`;
@@ -1961,7 +2017,9 @@ function renderSummaryTab(plant) {
     ? `Home since ${formatDate(dateAcquired)}`
     : 'Track how long you’ve cared for it';
 
-  const sortedCare = [...plant.careLog].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+  const sortedCare = plant.careLog
+    .filter(e => matchesFilter(e.author))
+    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
   const lastEntry = sortedCare[0];
   let heroRightHtml = '';
   if (lastEntry) {
@@ -1981,7 +2039,7 @@ function renderSummaryTab(plant) {
   }
 
   html += `
-  <div style="margin:12px 16px;padding:12px 14px;background:#fff;border:0.5px solid #e4e8e0;border-radius:14px;display:flex;align-items:center;gap:10px;">
+  <div style="margin:8px 0;padding:12px 14px;background:#fff;border:0.5px solid #e4e8e0;border-radius:14px;display:flex;align-items:center;gap:10px;">
     <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
       <div style="font-size:15px;font-weight:500;color:#1a1a1a;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(heroMain)}</div>
       <div style="font-size:12px;color:#7a8a7a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(heroSub)}</div>
@@ -1992,6 +2050,7 @@ function renderSummaryTab(plant) {
   // ── Zone 2: Needs attention today ─────────────────────────
   const attentionTasks = plant.tasks.filter(t => {
     if (t.paused) return false;
+    if (!matchesFilter(t.owner)) return false;
     const d = daysUntilDue(t);
     return d === 0 || (d < 0 && d !== -Infinity);
   });
@@ -2018,7 +2077,7 @@ function renderSummaryTab(plant) {
     html += summarySectionHeader('Needs attention today');
 
     if (attentionTasks.length === 0) {
-      html += `<div style="margin:0 16px;display:flex;align-items:center;gap:10px;background:#f0eef8;border:0.5px solid #d0c8ee;border-radius:12px;padding:10px 12px;">
+      html += `<div style="margin:0;display:flex;align-items:center;gap:10px;background:#f0eef8;border:0.5px solid #d0c8ee;border-radius:12px;padding:10px 12px;">
         <span style="width:40px;height:40px;background:#ddd8f0;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🎈</span>
         <span style="display:flex;flex-direction:column;gap:2px;min-width:0;">
           <span style="font-size:13px;font-weight:500;color:#3a2a7a;">All clear</span>
@@ -2034,9 +2093,9 @@ function renderSummaryTab(plant) {
         const d           = daysUntilDue(task);
         const status      = d < 0 ? 'Overdue' : 'Due today';
         const metaText    = `${status} · ${recurrenceLabel(task)}`;
-        html += `<div class="attention-row" style="margin:0 16px 8px;display:flex;align-items:center;gap:10px;background:#fff8f0;border:0.5px solid #f0d8b0;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
+        html += `<div class="attention-row" style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff8f0;border:0.5px solid #f0d8b0;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
           <span style="width:36px;height:36px;background:#eef3eb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${cfg.icon}</span>
-          <span style="width:1px;height:28px;background:#e8ddc0;flex-shrink:0;"></span>
+          <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;"></span>
           <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
             <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</span>
             <span style="font-size:11px;color:#8a5a0f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(metaText)}</span>
@@ -2058,6 +2117,7 @@ function renderSummaryTab(plant) {
   const allOccs      = [];
   for (const task of plant.tasks) {
     if (task.paused) continue;
+    if (!matchesFilter(task.owner)) continue;
     const rt    = task.recurrenceType ?? 'interval';
     const first = computeNextDue(task);
     if (!first) continue;
@@ -2098,7 +2158,7 @@ function renderSummaryTab(plant) {
   const upcoming3 = allOccs.slice(0, 3);
 
   if (upcoming3.length === 0) {
-    html += `<div style="margin:0 16px;padding:12px 16px;color:#888;font-size:13px;">No upcoming tasks</div>`;
+    html += `<div style="margin:0;padding:12px 16px;color:#888;font-size:13px;">No upcoming tasks</div>`;
   } else {
     for (const { date, task } of upcoming3) {
       const cfg         = getTaskConfig(task);
@@ -2109,13 +2169,13 @@ function renderSummaryTab(plant) {
       const monAbbr     = dObj.toLocaleDateString('en-US', { month: 'short' });
       const dayAbbr     = dObj.toLocaleDateString('en-US', { weekday: 'short' });
       const dayNum      = dObj.getDate();
-      html += `<div style="margin:0 16px 8px;display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
+      html += `<div style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
         <div style="display:flex;flex-direction:column;align-items:center;min-width:36px;flex-shrink:0;">
           <span style="font-size:10px;color:#7a8a7a;text-transform:uppercase;line-height:1.1;">${escapeHtml(monAbbr)}</span>
           <span style="font-size:15px;font-weight:500;color:#1a1a1a;line-height:1.1;">${dayNum}</span>
           <span style="font-size:10px;color:#7a8a7a;line-height:1.1;">${escapeHtml(dayAbbr)}</span>
         </div>
-        <span style="width:1px;height:28px;background:#e8ede8;flex-shrink:0;"></span>
+        <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;"></span>
         <span style="width:36px;height:36px;background:#f0f0f0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${cfg.icon}</span>
         <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
           <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</span>
@@ -2131,8 +2191,8 @@ function renderSummaryTab(plant) {
 
   const plantNotes = notes.filter(n => n.plantId === plant.id);
   const activityItems = [
-    ...plant.careLog.map(e => ({ type: 'care', sortKey: e.date ?? '',                          data: e })),
-    ...plantNotes.map(n   => ({ type: 'note', sortKey: (n.createdAt ?? '').split('T')[0],      data: n, raw: n.createdAt ?? '' })),
+    ...plant.careLog.filter(e => matchesFilter(e.author)).map(e => ({ type: 'care', sortKey: e.date ?? '',                     data: e })),
+    ...plantNotes.filter(n => matchesFilter(n.author)).map(n   => ({ type: 'note', sortKey: (n.createdAt ?? '').split('T')[0],  data: n, raw: n.createdAt ?? '' })),
   ].sort((a, b) => {
     const cmp = (b.sortKey || '').localeCompare(a.sortKey || '');
     if (cmp !== 0) return cmp;
@@ -2140,7 +2200,7 @@ function renderSummaryTab(plant) {
   }).slice(0, 3);
 
   if (activityItems.length === 0) {
-    html += `<div style="margin:0 16px;padding:12px 16px;color:#888;font-size:13px;">No activity yet</div>`;
+    html += `<div style="margin:0;padding:12px 16px;color:#888;font-size:13px;">No activity yet</div>`;
   } else {
     for (const item of activityItems) {
       if (item.type === 'care') {
@@ -2154,9 +2214,9 @@ function renderSummaryTab(plant) {
                           : relativeDays(e.date);
         const absDate     = e.date ? formatDate(e.date) : '';
         const primary     = `${e.author ?? 'Someone'} logged ${e.taskName ?? 'care'}`;
-        html += `<div style="margin:0 16px 8px;display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="carelog-open-edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(e.taskId ?? '')}">
+        html += `<div style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="carelog-open-edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(e.taskId ?? '')}">
           ${activityTaskTileHtml(tType, icon)}
-          <span style="width:1px;height:28px;background:#e8ede8;flex-shrink:0;"></span>
+          <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;"></span>
           <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
             <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(primary)}</span>
             <span style="font-size:11px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(relTime)} · ${escapeHtml(absDate)}</span>
@@ -2175,9 +2235,9 @@ function renderSummaryTab(plant) {
           ? `data-action="edit-note" data-note="${escapeHtml(n.id)}" data-plant="${escapeHtml(plant.id)}"`
           : '';
         const bodyHtml = `<span style="font-size:13px;color:#4a4a4a;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px;">${escapeHtml(n.note ?? '')}</span>`;
-        html += `<div style="margin:0 16px 8px;display:flex;align-items:flex-start;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;${isOwn ? 'cursor:pointer;' : ''}" ${rowAction}>
+        html += `<div style="margin:0 0 8px;display:flex;align-items:flex-start;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;${isOwn ? 'cursor:pointer;' : ''}" ${rowAction}>
           <span style="width:36px;height:36px;background:#e8f0fb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">💬</span>
-          <span style="width:1px;height:28px;background:#e8ede8;flex-shrink:0;margin-top:4px;"></span>
+          <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;margin-top:4px;"></span>
           <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
             <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(primary)}</span>
             ${bodyHtml}
@@ -2219,11 +2279,8 @@ function renderTasksTab(plant) {
   <div class="tasks-empty-sub">Add a care task to start tracking what your ${escapeHtml(plant.name)} needs.</div>
 </div>`;
   }
-  const activeFilter = tasksFilter ?? [activeUser];
-  let html = renderUserFilterPills('tasks', activeFilter);
-  const filtered = activeFilter.length === 0
-    ? plant.tasks
-    : plant.tasks.filter(t => activeFilter.includes(t.owner));
+  let html = '';
+  const filtered = plant.tasks.filter(t => matchesFilter(t.owner));
   if (filtered.length === 0) {
     html += `<div class="detail-empty">No tasks for selected users</div>`;
     return html;
@@ -2267,11 +2324,19 @@ function renderNotesTab(plant) {
 </div>`;
   }
 
+  let html = '';
+  const filteredNotes = plantNotes.filter(n => matchesFilter(n.author));
+
+  if (filteredNotes.length === 0) {
+    html += `<div class="detail-empty">No notes for selected users</div>`;
+    return html;
+  }
+
   const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
-  let html    = `<div style="padding:0 16px 80px;">`;
+  html += `<div style="padding:0 16px 80px;">`;
   let lastMon = null;
 
-  for (const note of plantNotes) {
+  for (const note of filteredNotes) {
     // Month group header
     const dateStr  = note.createdAt ? note.createdAt.split('T')[0] : null;
     const monthKey = dateStr ? dateStr.slice(0, 7) : null;
@@ -2322,25 +2387,23 @@ function renderNotesTab(plant) {
 }
 
 function renderCareLogTab(plant) {
-  let html = renderUserFilterPills('carelog', careLogFilter);
+  let html = '';
 
-  // Build unified list: care_log entries + notes, filtered by careLogFilter
+  // Build unified list: care_log entries + notes, filtered by the global activeFilter
   const plantNotes = notes.filter(n => n.plantId === plant.id);
 
-  const careItems = (careLogFilter.length === 0
-    ? [...plant.careLog]
-    : plant.careLog.filter(e => careLogFilter.includes(e.author))
-  ).map(e => ({
-    kind:   'care',
-    sortKey: e.date ?? '',
-    date:   e.date ?? null,
-    data:   e,
-  }));
+  const careItems = plant.careLog
+    .filter(e => matchesFilter(e.author))
+    .map(e => ({
+      kind:   'care',
+      sortKey: e.date ?? '',
+      date:   e.date ?? null,
+      data:   e,
+    }));
 
-  const noteItems = (careLogFilter.length === 0
-    ? [...plantNotes]
-    : plantNotes.filter(n => careLogFilter.includes(n.author))
-  ).map(n => {
+  const noteItems = plantNotes
+    .filter(n => matchesFilter(n.author))
+    .map(n => {
     const isoDate = n.createdAt ? n.createdAt.split('T')[0] : null;
     return {
       kind:    'note',
@@ -2401,7 +2464,7 @@ function renderCareLogNewRow(entry, plant) {
   const color       = member?.color ?? '#888';
   const initial     = (entry.author ?? '?')[0].toUpperCase();
 
-  const dateStr = entry.date;
+  const dateStr = entry.date ?? (entry.createdAt ? entry.createdAt.split('T')[0] : null);
   let dayAbbr = '—';
   let dayNum  = '—';
   if (dateStr) {
@@ -3572,8 +3635,6 @@ function showOnboardingCompletionOverlay() {
 
 function navigateTo(view, plantId = null) {
   closeSheet();
-  if (scheduleFilter === null) scheduleFilter = [activeUser];
-  if (tasksFilter === null) tasksFilter = [activeUser];
   state.view = view;
   state.plantId = plantId;
   if (view === 'home') renderHome();
@@ -3716,8 +3777,6 @@ async function handleEvent(e) {
 
     case 'onboarding-open-plant':
       closeSheet();
-      if (scheduleFilter === null) scheduleFilter = [activeUser];
-      if (tasksFilter === null) tasksFilter = [activeUser];
       state.view = 'plant';
       state.plantId = plantId;
       plantDetailTab = 'tasks';
@@ -3896,33 +3955,11 @@ async function handleEvent(e) {
       renderHome();
       break;
 
-    case 'user-filter-all': {
-      const filterId = target.dataset.filter;
-      if (filterId === 'schedule') scheduleFilter = [];
-      if (filterId === 'tasks') tasksFilter = [];
-      if (filterId === 'carelog') careLogFilter = [];
-      renderApp();
-      break;
-    }
-
     case 'user-filter-toggle': {
-      const filterId = target.dataset.filter;
       const user = target.dataset.user;
-      if (filterId === 'schedule') {
-        scheduleFilter = scheduleFilter.includes(user)
-          ? scheduleFilter.filter(u => u !== user)
-          : [...scheduleFilter, user];
-      }
-      if (filterId === 'tasks') {
-        tasksFilter = tasksFilter.includes(user)
-          ? tasksFilter.filter(u => u !== user)
-          : [...tasksFilter, user];
-      }
-      if (filterId === 'carelog') {
-        careLogFilter = careLogFilter.includes(user)
-          ? careLogFilter.filter(u => u !== user)
-          : [...careLogFilter, user];
-      }
+      activeFilter = activeFilter.includes(user)
+        ? activeFilter.filter(u => u !== user)
+        : [...activeFilter, user];
       renderApp();
       break;
     }
@@ -4454,13 +4491,17 @@ async function handleEvent(e) {
       break;
 
     // DEV TOOLS — remove before public launch
-    case 'dev-seed-empty':   showDevToolsConfirm('empty',  'Empty state');    break;
-    case 'dev-seed-medium':  showDevToolsConfirm('medium', 'Medium usage');   break;
-    case 'dev-seed-heavy':   showDevToolsConfirm('heavy',  'Heavy usage');    break;
+    case 'dev-seed-empty':     showDevToolsConfirm('empty',     'Empty state');  break;
+    case 'dev-seed-medium':    showDevToolsConfirm('medium',    'Medium usage'); break;
+    case 'dev-seed-heavy':     showDevToolsConfirm('heavy',     'Heavy usage');  break;
+    case 'dev-seed-medium-v2': showDevToolsConfirm('medium-v2', 'Medium v2');    break;
+    case 'dev-seed-heavy-v2':  showDevToolsConfirm('heavy-v2',  'Heavy v2');     break;
     case 'dev-tools-cancel': document.getElementById('dev-tools-body').innerHTML = `
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
       <button class="dev-tools-btn" data-action="dev-seed-medium">🌿 Medium usage</button>
-      <button class="dev-tools-btn" data-action="dev-seed-heavy">🌳 Heavy usage</button>`; break;
+      <button class="dev-tools-btn" data-action="dev-seed-heavy">🌳 Heavy usage</button>
+      <button class="dev-tools-btn" data-action="dev-seed-medium-v2">🌿 Medium v2</button>
+      <button class="dev-tools-btn" data-action="dev-seed-heavy-v2">🌳 Heavy v2</button>`; break;
     case 'dev-tools-confirm': await runDevSeed(target.dataset.scenario); break;
   }
   } catch (err) {
@@ -4838,6 +4879,8 @@ function openDevToolsPanel() {
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
       <button class="dev-tools-btn" data-action="dev-seed-medium">🌿 Medium usage</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy">🌳 Heavy usage</button>
+      <button class="dev-tools-btn" data-action="dev-seed-medium-v2">🌿 Medium v2</button>
+      <button class="dev-tools-btn" data-action="dev-seed-heavy-v2">🌳 Heavy v2</button>
     </div>
     <button class="add-plant-back-link" data-action="close-sheet" style="margin-top:12px;">Cancel</button>
   `);
@@ -4856,11 +4899,19 @@ function showDevToolsConfirm(scenario, label) {
 }
 
 async function runDevSeed(scenario) {
-  const labels = { empty: 'Empty state', medium: 'Medium usage', heavy: 'Heavy usage' };
+  const labels = {
+    empty:       'Empty state',
+    medium:      'Medium usage',
+    heavy:       'Heavy usage',
+    'medium-v2': 'Medium v2',
+    'heavy-v2':  'Heavy v2',
+  };
   try {
-    if (scenario === 'empty')  await seedEmpty();
-    if (scenario === 'medium') await seedMedium();
-    if (scenario === 'heavy')  await seedHeavy();
+    if (scenario === 'empty')      await seedEmpty();
+    if (scenario === 'medium')     await seedMedium();
+    if (scenario === 'heavy')      await seedHeavy();
+    if (scenario === 'medium-v2')  await seedMediumV2();
+    if (scenario === 'heavy-v2')   await seedHeavyV2();
     closeSheet();
     await loadFromSupabase();
     navigateTo('home');
@@ -4913,11 +4964,11 @@ async function seedMedium() {
 
   // ── Tasks ────────────────────────────────────────────────────
   const taskDefs = [
-    { plant: monstera,  name: 'Normal Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 7,  unit: 'days', days: [] }, last_done: addDays(today, -3),  next_due_override: null },
+    { plant: monstera,  name: 'Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 7,  unit: 'days', days: [] }, last_done: addDays(today, -3),  next_due_override: null },
     { plant: monstera,  name: 'Fertilize',        icon: '🌱', type: 'fertilize', recurrence: { type: 'interval', every: 30, unit: 'days', days: [] }, last_done: addDays(today, -20), next_due_override: null },
-    { plant: bougain,   name: 'Normal Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 5,  unit: 'days', days: [] }, last_done: addDays(today, -12), next_due_override: null },
+    { plant: bougain,   name: 'Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 5,  unit: 'days', days: [] }, last_done: addDays(today, -12), next_due_override: null },
     { plant: bougain,   name: 'Check Pests',     icon: '🐛', type: 'pest',      recurrence: { type: 'interval', every: 14, unit: 'days', days: [] }, last_done: addDays(today, -10), next_due_override: null },
-    { plant: mandarin,  name: 'Normal Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 7,  unit: 'days', days: [] }, last_done: today,              next_due_override: null },
+    { plant: mandarin,  name: 'Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 7,  unit: 'days', days: [] }, last_done: today,              next_due_override: null },
     { plant: mandarin,  name: 'Repot',           icon: '🪴', type: 'repot',     recurrence: { type: 'one-off' },                                      last_done: null,               next_due_override: addDays(today, 5) },
   ];
 
@@ -4942,11 +4993,11 @@ async function seedMedium() {
 
   // ── Care log (5 entries over last 2 weeks) ───────────────────
   const careEntries = [
-    { plant: monstera, task: insertedTasks[0], member: member0, days_ago: 3,  tname: 'Normal Watering', ttype: 'water'     },
+    { plant: monstera, task: insertedTasks[0], member: member0, days_ago: 3,  tname: 'Watering', ttype: 'water'     },
     { plant: monstera, task: insertedTasks[1], member: member1, days_ago: 20, tname: 'Fertilize',       ttype: 'fertilize' },
-    { plant: bougain,  task: insertedTasks[2], member: member0, days_ago: 6,  tname: 'Normal Watering', ttype: 'water'     },
+    { plant: bougain,  task: insertedTasks[2], member: member0, days_ago: 6,  tname: 'Watering', ttype: 'water'     },
     { plant: bougain,  task: insertedTasks[3], member: member1, days_ago: 10, tname: 'Check Pests',     ttype: 'pest'      },
-    { plant: mandarin, task: insertedTasks[4], member: member0, days_ago: 0,  tname: 'Normal Watering', ttype: 'water'     },
+    { plant: mandarin, task: insertedTasks[4], member: member0, days_ago: 0,  tname: 'Watering', ttype: 'water'     },
   ];
   for (const e of careEntries) {
     const ts = new Date(); ts.setDate(ts.getDate() - e.days_ago); ts.setHours(10, 0, 0, 0);
@@ -4956,6 +5007,7 @@ async function seedMedium() {
       household_member_id: e.member,
       task_name:           e.tname,
       task_type:           e.ttype,
+      date:                ts.toISOString().split('T')[0],
       created_at:          ts.toISOString(),
     });
   }
@@ -5001,37 +5053,37 @@ async function seedHeavy() {
   const taskMatrix = [
     // Fiddle Leaf Fig
     [
-      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -2), ndo: null },
+      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -2), ndo: null },
       { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -28), ndo: null },
       { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -10), ndo: null },
       { name: 'Rotate',          icon: '🔄', type: 'rotate',    rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -5),  ndo: null },
     ],
     // Birds of Paradise
     [
-      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 5,  unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null },
+      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 5,  unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null },
       { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -25), ndo: null },
       { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null },
     ],
     // Olive Tree
     [
-      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: today,               ndo: null },
+      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: today,               ndo: null },
       { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null },
       { name: 'Repot',           icon: '🪴', type: 'repot',     rec: { type: 'one-off' },                                     ld: null,                ndo: addDays(today, 3) },
     ],
     // Cactus
     [
-      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null },
+      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null },
       { name: 'Check',           icon: '🔍', type: 'check',     rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -29), ndo: null },
     ],
     // Bamboo
     [
-      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 3,  unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null },
+      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 3,  unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null },
       { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null },
       { name: 'Rotate',          icon: '🔄', type: 'rotate',    rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -2),  ndo: null },
     ],
     // Sunflower
     [
-      { name: 'Normal Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 2,  unit: 'days', days: [] }, ld: addDays(today, -2),  ndo: null },
+      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 2,  unit: 'days', days: [] }, ld: addDays(today, -2),  ndo: null },
       { name: 'Check',           icon: '🔍', type: 'check',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -5),  ndo: null },
       { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -7),  ndo: null },
     ],
@@ -5061,7 +5113,7 @@ async function seedHeavy() {
 
   // ── Care log (20 entries over last 3 months) ──────────────────
   const careTypes = [
-    { tname: 'Normal Watering', ttype: 'water'     },
+    { tname: 'Watering', ttype: 'water'     },
     { tname: 'Fertilize',       ttype: 'fertilize' },
     { tname: 'Check Pests',     ttype: 'pest'      },
     { tname: 'Rotate',          ttype: 'rotate'    },
@@ -5078,6 +5130,7 @@ async function seedHeavy() {
       household_member_id: i % 2 === 0 ? member0 : member1,
       task_name:           ct.tname,
       task_type:           ct.ttype,
+      date:                ts.toISOString().split('T')[0],
       created_at:          ts.toISOString(),
     });
   }
@@ -5102,6 +5155,265 @@ async function seedHeavy() {
       created_at:          ts.toISOString(),
     });
   }
+}
+
+// ── v2 helpers ────────────────────────────────────────────────
+async function seedFirstPlantAllTypes(today, m0, m1, sortOrder) {
+  const { data: plant } = await supabaseClient.from('plants').insert({
+    household_id:  householdId,
+    name:          'Fiddle Leaf Fig',
+    emoji:         '🌿',
+    date_acquired: addDays(today, -200),
+    sort_order:    sortOrder,
+  }).select().single();
+
+  // Every task type — water, fertilize, repot, prune, pest, rotate, plus one custom.
+  // Icons match TASK_CONFIG so Care Log renders them correctly via getTaskConfig().
+  const taskDefs = [
+    { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null                  },
+    { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -15), ndo: addDays(today, 15)    },
+    { name: 'Repot',           icon: '🪴', type: 'repot',     rec: { type: 'one-off' },                                     ld: null,                ndo: addDays(today, 10)    },
+    { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 60, unit: 'days', days: [] }, ld: addDays(today, -22), ndo: null                  },
+    { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -7),  ndo: null                  },
+    { name: 'Rotate',          icon: '🔄', type: 'rotate',    rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -5),  ndo: addDays(today, 16)    },
+    { name: 'Mist Leaves',     icon: '💦', type: 'custom',    rec: { type: 'interval', every: 3,  unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null                  },
+  ];
+
+  const tasks = [];
+  for (let i = 0; i < taskDefs.length; i++) {
+    const t = taskDefs[i];
+    const { data } = await supabaseClient.from('tasks').insert({
+      plant_id:          plant.id,
+      name:              t.name,
+      icon:              t.icon,
+      type:              t.type,
+      recurrence:        t.rec,
+      owner_id:          i % 2 === 0 ? m0 : m1,
+      paused:            false,
+      note:              '',
+      sort_order:        i + 1,
+      last_done:         t.ld,
+      next_due_override: t.ndo,
+    }).select().single();
+    tasks.push(data);
+  }
+
+  // One care_log per task type, spread across the last 90 days.
+  const careOffsets = [2, 12, 25, 38, 52, 68, 85];
+  for (let i = 0; i < taskDefs.length; i++) {
+    const t = taskDefs[i];
+    const ts = new Date(); ts.setDate(ts.getDate() - careOffsets[i]); ts.setHours(10, 0, 0, 0);
+    await supabaseClient.from('care_log').insert({
+      plant_id:            plant.id,
+      task_id:             tasks[i].id,
+      household_member_id: i % 2 === 0 ? m0 : m1,
+      task_name:           t.name,
+      task_type:           t.type,
+      date:                ts.toISOString().split('T')[0],
+      created_at:          ts.toISOString(),
+    });
+  }
+
+  // 2 notes — one from each member
+  const n1ts = new Date(); n1ts.setDate(n1ts.getDate() - 8);
+  const n2ts = new Date(); n2ts.setDate(n2ts.getDate() - 25);
+  await supabaseClient.from('notes').insert({ plant_id: plant.id, household_member_id: m0, note: 'New leaf unfurled this week.',          created_at: n1ts.toISOString() });
+  await supabaseClient.from('notes').insert({ plant_id: plant.id, household_member_id: m1, note: 'Moved to a brighter spot on the shelf.', created_at: n2ts.toISOString() });
+
+  return plant;
+}
+
+async function seedSecondaryPlantV2(today, m0, m1, plantInfo, taskDefs, careOffsets, noteDefs, sortOrder) {
+  const { data: plant } = await supabaseClient.from('plants').insert({
+    household_id:  householdId,
+    name:          plantInfo.name,
+    emoji:         plantInfo.emoji,
+    date_acquired: addDays(today, -plantInfo.daysAgo),
+    sort_order:    sortOrder,
+  }).select().single();
+
+  const tasks = [];
+  for (let i = 0; i < taskDefs.length; i++) {
+    const t = taskDefs[i];
+    const { data } = await supabaseClient.from('tasks').insert({
+      plant_id:          plant.id,
+      name:              t.name,
+      icon:              t.icon,
+      type:              t.type,
+      recurrence:        t.rec,
+      owner_id:          i % 2 === 0 ? m0 : m1,
+      paused:            false,
+      note:              '',
+      sort_order:        i + 1,
+      last_done:         t.ld,
+      next_due_override: t.ndo ?? null,
+    }).select().single();
+    tasks.push(data);
+  }
+
+  for (let i = 0; i < careOffsets.length; i++) {
+    const taskIdx = i % taskDefs.length;
+    const t = taskDefs[taskIdx];
+    const ts = new Date(); ts.setDate(ts.getDate() - careOffsets[i]); ts.setHours(9 + (i % 8), 0, 0, 0);
+    await supabaseClient.from('care_log').insert({
+      plant_id:            plant.id,
+      task_id:             tasks[taskIdx].id,
+      household_member_id: i % 2 === 0 ? m0 : m1,
+      task_name:           t.name,
+      task_type:           t.type,
+      date:                ts.toISOString().split('T')[0],
+      created_at:          ts.toISOString(),
+    });
+  }
+
+  for (let i = 0; i < noteDefs.length; i++) {
+    const n = noteDefs[i];
+    const ts = new Date(); ts.setDate(ts.getDate() - n.daysAgo);
+    await supabaseClient.from('notes').insert({
+      plant_id:            plant.id,
+      household_member_id: i % 2 === 0 ? m0 : m1,
+      note:                n.text,
+      created_at:          ts.toISOString(),
+    });
+  }
+}
+
+async function seedMediumV2() {
+  // Complete wipe of the household's data so repeated seed runs never accumulate
+  // duplicate or orphaned rows. Children before parent to respect plant_id FK.
+  if (householdId) {
+    const { data: allPlants } = await supabaseClient
+      .from('plants').select('id').eq('household_id', householdId);
+    const plantIds = (allPlants ?? []).map(r => r.id);
+    if (plantIds.length) {
+      await supabaseClient.from('care_log').delete().in('plant_id', plantIds);
+      await supabaseClient.from('notes').delete().in('plant_id', plantIds);
+      await supabaseClient.from('tasks').delete().in('plant_id', plantIds);
+      await supabaseClient.from('plants').delete().in('id', plantIds);
+    }
+  }
+
+  const today = todayStr();
+  const m0 = membersCache[0]?.id ?? null;
+  const m1 = (membersCache[1] ?? membersCache[0])?.id ?? null;
+
+  await seedFirstPlantAllTypes(today, m0, m1, 1);
+
+  await seedSecondaryPlantV2(today, m0, m1,
+    { name: 'Bougainvillea', emoji: '🌸', daysAgo: 120 },
+    [
+      { name: 'Check Pests',     icon: '🐛', type: 'pest',  rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -10), ndo: today                 },
+      { name: 'Watering',        icon: '💧', type: 'water', rec: { type: 'interval', every: 5,  unit: 'days', days: [] }, ld: addDays(today, -2),  ndo: null                  },
+      { name: 'Repot',           icon: '🪴', type: 'repot', rec: { type: 'one-off' },                                     ld: null,                ndo: addDays(today, -7)    },
+    ],
+    [0, 1],
+    [{ daysAgo: 10, text: 'Flowers opening up — neon pink this year.' }],
+    2
+  );
+
+  await seedSecondaryPlantV2(today, m0, m1,
+    { name: 'Mandarin Tree', emoji: '🍊', daysAgo: 300 },
+    [
+      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -28), ndo: null },
+      { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 90, unit: 'days', days: [] }, ld: addDays(today, -30), ndo: null },
+      { name: 'Watering',        icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: today,               ndo: null },
+    ],
+    [4, 3, 30],
+    [{ daysAgo: 20, text: 'First fruit forming!' }],
+    3
+  );
+}
+
+async function seedHeavyV2() {
+  // Complete wipe of the household's data so repeated seed runs never accumulate
+  // duplicate or orphaned rows. Children before parent to respect plant_id FK.
+  if (householdId) {
+    const { data: allPlants } = await supabaseClient
+      .from('plants').select('id').eq('household_id', householdId);
+    const plantIds = (allPlants ?? []).map(r => r.id);
+    if (plantIds.length) {
+      await supabaseClient.from('care_log').delete().in('plant_id', plantIds);
+      await supabaseClient.from('notes').delete().in('plant_id', plantIds);
+      await supabaseClient.from('tasks').delete().in('plant_id', plantIds);
+      await supabaseClient.from('plants').delete().in('id', plantIds);
+    }
+  }
+
+  const today = todayStr();
+  const m0 = membersCache[0]?.id ?? null;
+  const m1 = (membersCache[1] ?? membersCache[0])?.id ?? null;
+
+  await seedFirstPlantAllTypes(today, m0, m1, 1);
+
+  await seedSecondaryPlantV2(today, m0, m1,
+    { name: 'Birds of Paradise', emoji: '🌺', daysAgo: 300 },
+    [
+      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 5,  unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null                  },
+      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -28), ndo: null                  },
+      { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: today                 },
+      { name: 'Repot',           icon: '🪴', type: 'repot',     rec: { type: 'one-off' },                                     ld: null,                ndo: addDays(today, -7)    },
+    ],
+    [6, 14, 28, 42, 60, 80],
+    [
+      { daysAgo: 10, text: 'Repotted into larger container.' },
+      { daysAgo: 45, text: 'Yellowing leaves — adjusted light.' },
+    ],
+    2
+  );
+
+  await seedSecondaryPlantV2(today, m0, m1,
+    { name: 'Olive Tree', emoji: '🫒', daysAgo: 250 },
+    [
+      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null },
+      { name: 'Watering',        icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: today,               ndo: null },
+      { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 90, unit: 'days', days: [] }, ld: addDays(today, -55), ndo: null },
+      { name: 'Repot',           icon: '🪴', type: 'repot',     rec: { type: 'one-off' },                                     ld: null,                ndo: addDays(today, 3) },
+    ],
+    [0, 12, 25, 42, 65, 85, 7],
+    [{ daysAgo: 15, text: 'First flower buds forming!' }],
+    3
+  );
+
+  await seedSecondaryPlantV2(today, m0, m1,
+    { name: 'Cactus', emoji: '🌵', daysAgo: 180 },
+    [
+      { name: 'Watering',        icon: '💧', type: 'water',  rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -28), ndo: null },
+      { name: 'Check Pests',     icon: '🐛', type: 'pest',   rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -5),  ndo: null },
+      { name: 'Check',           icon: '🔍', type: 'check',  rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -29), ndo: null },
+      { name: 'Rotate',          icon: '🔄', type: 'rotate', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null },
+    ],
+    [22, 1, 29, 43, 60],
+    [{ daysAgo: 20, text: 'Repotted into cactus mix.' }],
+    4
+  );
+
+  await seedSecondaryPlantV2(today, m0, m1,
+    { name: 'Bamboo', emoji: '🎋', daysAgo: 90 },
+    [
+      { name: 'Watering',        icon: '💧', type: 'water',     rec: { type: 'interval', every: 3,  unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null },
+      { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 60, unit: 'days', days: [] }, ld: addDays(today, -30), ndo: null },
+      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null },
+      { name: 'Rotate',          icon: '🔄', type: 'rotate',    rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -2),  ndo: null },
+    ],
+    [15, 3, 20, 30, 45, 75, 9, 60],
+    [
+      { daysAgo: 3,  text: 'Yellowing on lower stalks — may be overwatered.' },
+      { daysAgo: 40, text: 'Trimmed off damaged leaves.' },
+    ],
+    5
+  );
+
+  await seedSecondaryPlantV2(today, m0, m1,
+    { name: 'Sunflower', emoji: '🌻', daysAgo: 30 },
+    [
+      { name: 'Check',           icon: '🔍', type: 'check',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -5), ndo: null },
+      { name: 'Watering',        icon: '💧', type: 'water',     rec: { type: 'interval', every: 2,  unit: 'days', days: [] }, ld: addDays(today, -2), ndo: null },
+      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -7), ndo: null },
+    ],
+    [4, 6, 10, 14, 20],
+    [{ daysAgo: 10, text: 'Growing faster than expected.' }],
+    6
+  );
 }
 
 // DEV TOOLS — handleEvent cases added inline in the switch statement

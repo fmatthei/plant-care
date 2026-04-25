@@ -711,6 +711,7 @@ async function markTaskDone(plantId, taskId) {
   plant.careLog.unshift({
     id: uid(),
     date: todayStr(),
+    createdAt: new Date().toISOString(),
     author: task.owner,
     taskId: task.id,
     taskName: taskCfg.name,
@@ -1343,7 +1344,7 @@ function renderCaringDoneToday() {
     const ownerMember  = membersCache.find(m => m.display_name === task.owner);
     const ownerColor   = ownerMember?.color ?? '#888';
     const ownerInitial = (task.owner ?? '?')[0].toUpperCase();
-    html += `<div class="activity-row home-due-today-row attention-row" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
+    html += `<div class="activity-row home-due-today-row attention-row" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}" style="background:#fff;border-color:#e8ece6;">
       <span style="width:26px;height:26px;border-radius:8px;background:#eaf3de;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>
       <span style="width:1px;height:28px;background:#c0dd97;flex-shrink:0;"></span>
       <span style="width:26px;height:26px;border-radius:8px;background:#eaf3de;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;line-height:1;">${cfg.icon}</span>
@@ -1384,7 +1385,7 @@ function renderHomeActivityFeed() {
   </div>
   <div class="home-activity-feed"><div class="activity-list">`;
 
-  for (const item of activityFeed) {
+  for (const item of activityFeed.slice(0, 3)) {
     const time = formatActivityTime(item.sortKey);
     if (item.type === 'care') {
       const verb = CARE_VERB[item.taskType];
@@ -2060,34 +2061,10 @@ function renderSummaryTab(plant) {
     ? `Home since ${formatDate(dateAcquired)}`
     : 'Track how long you’ve cared for it';
 
-  const sortedCare = plant.careLog
-    .filter(e => matchesFilter(e.author))
-    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
-  const lastEntry = sortedCare[0];
-  let heroRightHtml = '';
-  if (lastEntry) {
-    const lastMember  = membersCache.find(m => m.display_name === lastEntry.author);
-    const lastColor   = lastMember?.color ?? '#888';
-    const lastInitial = (lastEntry.author ?? '?')[0].toUpperCase();
-    const when        = compactRelative(lastEntry.date);
-    const verb        = (lastEntry.taskType && lastEntry.taskType !== 'custom')
-      ? (CARE_VERB[lastEntry.taskType] ?? 'cared for')
-      : (lastEntry.taskName ?? 'cared for');
-    const actionLabel = `${lastEntry.author ?? 'Someone'} ${verb}`;
-    heroRightHtml = `
-    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-      <span style="width:22px;height:22px;border-radius:50%;background:${escapeHtml(lastColor)};color:white;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(lastInitial)}</span>
-      <span style="font-size:12px;color:#7a8a7a;white-space:nowrap;">${escapeHtml(actionLabel)}${when ? ` · ${escapeHtml(when)}` : ''}</span>
-    </div>`;
-  }
-
   html += `
-  <div style="margin:8px 0;padding:12px 14px;background:#fff;border:0.5px solid #e4e8e0;border-radius:14px;display:flex;align-items:center;gap:10px;">
-    <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
-      <div style="font-size:15px;font-weight:500;color:#1a1a1a;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(heroMain)}</div>
-      <div style="font-size:12px;color:#7a8a7a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(heroSub)}</div>
-    </div>
-    ${heroRightHtml}
+  <div style="margin:8px 0;padding:12px 14px;background:#fff;border:0.5px solid #e4e8e0;border-radius:14px;display:flex;flex-direction:column;gap:2px;">
+    <div style="font-size:15px;font-weight:500;color:#1a1a1a;line-height:1.2;">${escapeHtml(heroMain)}</div>
+    <div style="font-size:12px;color:#7a8a7a;">${escapeHtml(heroSub)}</div>
   </div>`;
 
   // ── Zone 2: Needs attention today ─────────────────────────
@@ -2234,7 +2211,7 @@ function renderSummaryTab(plant) {
 
   const plantNotes = notes.filter(n => n.plantId === plant.id);
   const activityItems = [
-    ...plant.careLog.filter(e => matchesFilter(e.author)).map(e => ({ type: 'care', sortKey: e.date ?? '',                     data: e })),
+    ...plant.careLog.filter(e => matchesFilter(e.author)).map(e => ({ type: 'care', sortKey: e.date ?? '',                     data: e, raw: e.createdAt ?? '' })),
     ...plantNotes.filter(n => matchesFilter(n.author)).map(n   => ({ type: 'note', sortKey: (n.createdAt ?? '').split('T')[0],  data: n, raw: n.createdAt ?? '' })),
   ].sort((a, b) => {
     const cmp = (b.sortKey || '').localeCompare(a.sortKey || '');
@@ -2359,7 +2336,11 @@ function renderTasksTab(plant) {
     return 0;
   });
   if (sorted.length > 0) {
-    html += `<div class="task-row-list">`;
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:0 0 8px;">
+      <span style="width:3px;height:14px;background:#aab09f;border-radius:2px;flex-shrink:0;"></span>
+      <span style="font-size:11px;font-weight:500;color:#8a9180;text-transform:uppercase;letter-spacing:0.05em;">Task list</span>
+    </div>
+    <div class="task-row-list">`;
     for (const task of sorted) {
       html += renderTaskRow(plant.id, task);
     }
@@ -4151,6 +4132,10 @@ async function handleEvent(e) {
       renderAddNoteSheet(plantId);
       break;
 
+    case 'close-sheet':
+      closeSheet();
+      break;
+
     case 'summary-carelog-add-note':
       if (document.querySelector('.coach-overlay, .notif-overlay')) return;
       renderAddNoteSheet(plantId);
@@ -4521,7 +4506,15 @@ async function handleEvent(e) {
       if (!text) { alert('Please enter a note.'); return; }
       await addNote(pid, text);
       closeSheet();
-      renderPlantDetail(pid);
+      if (state.view === 'home') {
+        renderHome();
+        showToast('Note added');
+      } else if (state.view === 'plant' && plantDetailTab === 'tasks') {
+        renderPlantDetail(pid);
+        showToast('Note added');
+      } else {
+        renderPlantDetail(pid);
+      }
       break;
     }
 

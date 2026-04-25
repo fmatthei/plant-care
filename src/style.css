@@ -239,7 +239,11 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 16px 8px;
+  padding: 22px 16px 8px;
+}
+
+.user-filter-row + .home-section-header {
+  padding-top: 8px;
 }
 
 /* Inside plant-detail the parent already provides 16px horizontal padding;

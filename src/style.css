@@ -373,6 +373,21 @@ body {
   min-width: 0;
 }
 
+.summary-view-all-link {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: #3b6d11;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.summary-view-all-link:active {
+  opacity: 0.6;
+}
+
 .home-due-today-task {
   font-size: 13px;
   font-weight: 600;
@@ -2930,6 +2945,162 @@ body.menu-open {
 .header-feedback-btn:active { opacity: 0.7; }
 .header-feedback-btn svg { display: block; }
 
+/* ===== Header Flag Button (home header) ===== */
+.header-flag-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.header-flag-btn:active { opacity: 0.7; }
+
+/* ===== Home header (gradient + household pill) ===== */
+.app-header.app-header--home {
+  background: var(--primary);
+  height: auto;
+  padding: 16px 18px 14px;
+  gap: 10px;
+}
+
+.app-header--home .header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.household-pill {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.app-header--home .header-household-name {
+  min-width: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.app-header--home .header-chevron {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.household-pill.open .header-chevron {
+  transform: rotate(180deg);
+}
+
+.app-header--home .user-initial-circle {
+  width: 36px;
+  height: 36px;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* ===== Household switcher dropdown ===== */
+.household-switcher {
+  display: none;
+  margin: 8px 16px 0;
+  background: #fff;
+  border: 1px solid #e4e9e0;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+}
+.household-switcher.open {
+  display: block;
+}
+.household-switcher-label {
+  padding: 12px 16px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #b0bca8;
+}
+.household-switcher-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: #254f36;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.household-switcher-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.household-switcher-check {
+  color: #254f36;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.household-switcher-divider {
+  height: 1px;
+  background: #e8ece6;
+  margin: 4px 0;
+}
+.household-switcher-manage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px 14px;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: #8a9a84;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* ===== Toast ===== */
 .toast {
   position: fixed;
@@ -3927,6 +4098,14 @@ div + .section-header-bar {
   font-size: 10px;
   color: #888;
   line-height: 1.3;
+}
+
+.upcoming-date-mon {
+  font-size: 10px;
+  color: #888;
+  line-height: 1.3;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .upcoming-date-num {

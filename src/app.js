@@ -1229,7 +1229,7 @@ function renderHeaderRight() {
   const initial      = (activeUser ?? '?')[0].toUpperCase();
   return `
     <div class="header-right">
-      <button class="header-feedback-btn" data-action="feedback" aria-label="Report a bug">${FEEDBACK_BUBBLE_SVG}</button>
+      <button class="header-flag-btn" data-action="feedback" aria-label="Report a bug">🚩</button>
       <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
     </div>`;
 }
@@ -1332,6 +1332,13 @@ function renderCaringDoneToday() {
     }
   }
   if (doneItems.length === 0) return '';
+
+  doneItems.reverse();
+  doneItems.sort((a, b) => {
+    const aTime = a.plant.careLog.find(e => e.taskId === a.task.id && e.date === today)?.createdAt ?? '';
+    const bTime = b.plant.careLog.find(e => e.taskId === b.task.id && e.date === today)?.createdAt ?? '';
+    return bTime.localeCompare(aTime);
+  });
 
   let html = `<div class="home-section-header">
     <div class="home-section-header-accent" style="background:#aab09f;"></div>
@@ -1516,13 +1523,21 @@ function renderHome() {
   if (document.querySelector('.onboarding-complete-overlay')) return;
 
   let html = `
-    <div class="app-header">
-      <div class="header-left">
-        <span class="brand-tile"><img src="/icons/header_icon512.png" alt="" /></span>
+    <div class="app-header app-header--home">
+      <button class="household-pill" data-action="toggle-household-switcher" aria-expanded="false">
         <span id="header-household-name" class="header-household-name">${escapeHtml(householdName ?? 'My Household')}</span>
         <span class="header-chevron" aria-hidden="true">▾</span>
-      </div>
+      </button>
       ${renderHeaderRight()}
+    </div>
+    <div class="household-switcher" id="household-switcher" role="menu">
+      <div class="household-switcher-label">Your households</div>
+      <button class="household-switcher-item">
+        <span class="household-switcher-item-name">${escapeHtml(householdName ?? 'My Household')}</span>
+        <span class="household-switcher-check">✓</span>
+      </button>
+      <div class="household-switcher-divider"></div>
+      <button class="household-switcher-manage">⚙️ Manage households</button>
     </div>
     <div class="tab-bar">
       <button class="tab-btn${activeTab === 'plants' ? ' active' : ''}" data-action="switch-tab" data-tab="plants">&#127807; My Plants</button>
@@ -1839,10 +1854,12 @@ function renderSchedule() {
   </div>`;
 
   html += `<div class="upcoming-rows">`;
+  let lastUpcomingDate = null;
   for (let i = 1; i <= 7; i++) {
     const dateStr = addDays(today, i);
     const dateObj = new Date(dateStr + 'T12:00:00');
     const dayAbbr = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+    const monAbbr = dateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
     const dayNum  = dateObj.getDate();
 
     const dayTasks = [];
@@ -1854,12 +1871,21 @@ function renderSchedule() {
       }
     }
 
+    const dateColHtml = () => {
+      if (dateStr !== lastUpcomingDate) {
+        lastUpcomingDate = dateStr;
+        return `<div class="upcoming-date-col">
+          <span class="upcoming-date-mon">${monAbbr}</span>
+          <span class="upcoming-date-num">${dayNum}</span>
+          <span class="upcoming-date-dow">${dayAbbr}</span>
+        </div>`;
+      }
+      return `<div class="upcoming-date-col" aria-hidden="true"></div>`;
+    };
+
     if (dayTasks.length === 0) {
       html += `<div class="upcoming-row">
-        <div class="upcoming-date-col">
-          <span class="upcoming-date-dow">${dayAbbr}</span>
-          <span class="upcoming-date-num">${dayNum}</span>
-        </div>
+        ${dateColHtml()}
         <div class="upcoming-card upcoming-empty-card" style="background:#f0eef8;border:0.5px solid #d0c8ee;">
           <span class="upcoming-empty-tile" style="background:#ddd8f0;border-radius:9px;width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;">🎈</span>
           <span class="home-due-today-info">
@@ -1875,10 +1901,7 @@ function renderSchedule() {
         const ownerColor  = ownerMember?.color ?? '#888';
         const ownerInitial = (task.owner ?? '?')[0].toUpperCase();
         html += `<div class="upcoming-row" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
-          <div class="upcoming-date-col">
-            <span class="upcoming-date-dow">${dayAbbr}</span>
-            <span class="upcoming-date-num">${dayNum}</span>
-          </div>
+          ${dateColHtml()}
           <div class="upcoming-card">
             <span class="upcoming-card-emoji-tile">${plant.emoji}</span>
             <span class="upcoming-card-divider"></span>
@@ -2233,7 +2256,11 @@ function renderSummaryTab(plant) {
                           : relativeDays(e.date) === '1 day ago' ? 'Yesterday'
                           : relativeDays(e.date);
         const absDate     = e.date ? formatDate(e.date) : '';
-        const primary     = `${e.author ?? 'Someone'} logged ${e.taskName ?? 'care'}`;
+        const verb        = CARE_VERB[tType];
+        const author      = e.author ?? 'Someone';
+        const primary     = verb
+          ? `${author} ${verb} ${plant.name}`
+          : `${author} · ${e.taskName ?? 'care'} — ${plant.name}`;
         const isDoneToday = e.date === today;
         const tileHtml    = isDoneToday
           ? `<span style="width:40px;height:40px;background:#eaf3de;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${icon}</span>`
@@ -2277,6 +2304,10 @@ function renderSummaryTab(plant) {
     }
   }
 
+  html += `<div style="display:flex;justify-content:center;padding:6px 0 4px;">
+    <button class="summary-view-all-link" data-action="plant-detail-tab" data-tab="carelog">View all</button>
+  </div>`;
+
   return html;
 }
 
@@ -2316,6 +2347,12 @@ function renderTasksTab(plant) {
   }
   const today = todayStr();
   const doneTodayTasks = filtered.filter(t => !t.paused && t.lastDone === today);
+  doneTodayTasks.reverse();
+  doneTodayTasks.sort((a, b) => {
+    const aTime = plant.careLog.find(e => e.taskId === a.id && e.date === today)?.createdAt ?? '';
+    const bTime = plant.careLog.find(e => e.taskId === b.id && e.date === today)?.createdAt ?? '';
+    return bTime.localeCompare(aTime);
+  });
   const doneTodayIds   = new Set(doneTodayTasks.map(t => t.id));
   const pendingTasks   = filtered.filter(t => !doneTodayIds.has(t.id));
   const urgencyGroup = (t) => {
@@ -3743,6 +3780,16 @@ async function handleEvent(e) {
     case 'feedback':
       handleFeedbackTap();
       break;
+
+    case 'toggle-household-switcher': {
+      e.stopPropagation();
+      const switcher = document.getElementById('household-switcher');
+      const pill     = target.closest('.household-pill');
+      const open     = switcher?.classList.toggle('open');
+      pill?.classList.toggle('open', open);
+      pill?.setAttribute('aria-expanded', open ? 'true' : 'false');
+      break;
+    }
 
     case 'open-menu':
       openMenu();
@@ -5548,6 +5595,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         primary.click();
       }
     }
+  });
+
+  document.addEventListener('click', (ev) => {
+    const switcher = document.getElementById('household-switcher');
+    if (!switcher || !switcher.classList.contains('open')) return;
+    if (switcher.contains(ev.target)) return;
+    if (ev.target.closest?.('.household-pill')) return;
+    switcher.classList.remove('open');
+    const pill = document.querySelector('.household-pill');
+    pill?.classList.remove('open');
+    pill?.setAttribute('aria-expanded', 'false');
   });
 
   supabaseClient.auth.onAuthStateChange(async (event, session) => {

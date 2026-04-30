@@ -116,6 +116,7 @@ let openedFromCareLog = false;
 let sheetEntryTab = null;
 let householdName = null;
 let userTouchedArrivalDate = false;
+let manageHouseholdsEditingName = false;
 
 // ============================================================
 // ACTIVE USER
@@ -386,6 +387,7 @@ async function loadFromSupabase() {
     note:      r.note,
     createdAt: r.created_at,
     taskId:    r.task_id ?? null,
+    photoUrl:  r.photo_url ?? null,
   }));
 
   plants = plantRows.map((plantRow, i) => {
@@ -900,18 +902,20 @@ async function deletePlant(plantId) {
   }
 }
 
-async function addNote(plantId, noteText, taskId) {
-  if (isSaving) return;
+async function addNote(plantId, noteText, taskId, photoUrl = null) {
+  if (isSaving) return null;
   isSaving = true;
   try {
     const member = membersCache.find(m => m.display_name === activeUser);
+    const insertData = { plant_id: plantId, household_member_id: member?.id ?? null, note: noteText, task_id: taskId ?? null };
+    if (photoUrl) insertData.photo_url = photoUrl;
     const { data: inserted, error } = await supabaseClient
       .from('notes')
-      .insert({ plant_id: plantId, household_member_id: member?.id ?? null, note: noteText, task_id: taskId ?? null })
+      .insert(insertData)
       .select()
       .single();
-    if (error) { console.error('addNote error:', error); return; }
-    notes.unshift({
+    if (error) { console.error('addNote error:', error); return null; }
+    const newNote = {
       id:        inserted.id,
       plantId:   inserted.plant_id,
       memberId:  inserted.household_member_id,
@@ -919,8 +923,11 @@ async function addNote(plantId, noteText, taskId) {
       note:      inserted.note,
       createdAt: inserted.created_at,
       taskId:    inserted.task_id ?? null,
-    });
+      photoUrl:  inserted.photo_url ?? null,
+    };
+    notes.unshift(newNote);
     await loadActivityFeed();
+    return newNote;
   } finally {
     isSaving = false;
   }
@@ -949,6 +956,185 @@ async function updateNote(noteId, newText) {
   if (error) { console.error('updateNote error:', error); return; }
   const n = notes.find(n => n.id === noteId);
   if (n) n.note = newText;
+}
+
+const PLANT_PHOTOS_BUCKET = 'plant-photos';
+const PHOTO_CAP_PER_PLANT = 5;
+
+async function compressImage(file, maxDim = 1200, quality = 0.8) {
+  const objUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error('Image load failed'));
+      i.src = objUrl;
+    });
+    let { width, height } = img;
+    if (width >= height && width > maxDim) {
+      height = Math.round((height * maxDim) / width);
+      width  = maxDim;
+    } else if (height > maxDim) {
+      width  = Math.round((width * maxDim) / height);
+      height = maxDim;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+    return await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+  } finally {
+    URL.revokeObjectURL(objUrl);
+  }
+}
+
+async function uploadPlantPhoto(blob, plantId) {
+  const path = `${plantId}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
+  const { error } = await supabaseClient.storage
+    .from(PLANT_PHOTOS_BUCKET)
+    .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+  if (error) throw error;
+  const { data } = supabaseClient.storage.from(PLANT_PHOTOS_BUCKET).getPublicUrl(path);
+  return { publicUrl: data.publicUrl, path };
+}
+
+function storagePathFromPublicUrl(url) {
+  if (!url) return null;
+  const m = url.match(new RegExp(`/${PLANT_PHOTOS_BUCKET}/(.+)$`));
+  return m ? m[1] : null;
+}
+
+async function countPlantPhotos(plantId) {
+  const { count, error } = await supabaseClient
+    .from('plant_photos')
+    .select('*', { count: 'exact', head: true })
+    .eq('plant_id', plantId);
+  if (error) { console.error('countPlantPhotos error:', error); return 0; }
+  return count ?? 0;
+}
+
+async function fetchLastPlantPhoto(plantId) {
+  const { data, error } = await supabaseClient
+    .from('plant_photos')
+    .select('id, plant_id, note_id, storage_url, created_at')
+    .eq('plant_id', plantId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (error) { console.error('fetchLastPlantPhoto error:', error); return null; }
+  return data?.[0] ?? null;
+}
+
+async function fetchAllPlantPhotos(plantId) {
+  const { data, error } = await supabaseClient
+    .from('plant_photos')
+    .select('id, plant_id, note_id, storage_url, created_at')
+    .eq('plant_id', plantId)
+    .order('created_at', { ascending: false });
+  if (error) { console.error('fetchAllPlantPhotos error:', error); return []; }
+  return data ?? [];
+}
+
+async function deletePlantPhoto(photoRow) {
+  const path = storagePathFromPublicUrl(photoRow.storage_url);
+  if (path) {
+    const { error: storageErr } = await supabaseClient.storage.from(PLANT_PHOTOS_BUCKET).remove([path]);
+    if (storageErr) console.error('deletePlantPhoto storage error:', storageErr);
+  }
+  const { error: rowErr } = await supabaseClient.from('plant_photos').delete().eq('id', photoRow.id);
+  if (rowErr) console.error('deletePlantPhoto row error:', rowErr);
+  if (photoRow.note_id) {
+    await supabaseClient.from('notes').update({ photo_url: null }).eq('id', photoRow.note_id);
+    const note = notes.find(n => n.id === photoRow.note_id);
+    if (note) note.photoUrl = null;
+  }
+}
+
+async function deleteOldestPlantPhoto(plantId) {
+  const { data, error } = await supabaseClient
+    .from('plant_photos')
+    .select('id, plant_id, note_id, storage_url, created_at')
+    .eq('plant_id', plantId)
+    .order('created_at', { ascending: true })
+    .limit(1);
+  if (error || !data?.[0]) return;
+  await deletePlantPhoto(data[0]);
+}
+
+async function runSaveNoteFlow(plantId) {
+  console.log('[saveNote] ENTER', { plantId, sheetData: state.sheetData, isSaving });
+  const textEl = document.getElementById('sheet-note-text');
+  const text = (textEl?.value ?? state.sheetData?.pendingText ?? '').trim();
+  if (!text) { alert('Please enter a note.'); return; }
+  state.sheetData.pendingText = text;
+
+  const pendingPhoto = state.sheetData?.pendingPhoto;
+  console.log('[saveNote] pendingPhoto snapshot', {
+    hasPhoto: !!pendingPhoto,
+    blobSize: pendingPhoto?.blob?.size,
+    blobType: pendingPhoto?.blob?.type,
+    previewUrl: pendingPhoto?.previewUrl,
+  });
+
+  // Photo cap check before upload
+  if (pendingPhoto) {
+    const count = await countPlantPhotos(plantId);
+    console.log('[saveNote] photo count for plant', { plantId, count });
+    if (count >= PHOTO_CAP_PER_PLANT) {
+      console.log('[saveNote] cap reached, switching to cap sheet');
+      renderPhotoCapSheet(plantId);
+      return;
+    }
+  }
+
+  const saveBtn = document.querySelector('#sheet [data-action="sheet-save-note"]');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+  try {
+    let photoUrl = null;
+    if (pendingPhoto) {
+      console.log('[saveNote] uploading photo to storage…');
+      const upRes = await uploadPlantPhoto(pendingPhoto.blob, plantId);
+      photoUrl = upRes.publicUrl;
+      console.log('[saveNote] upload OK', { path: upRes.path, publicUrl: photoUrl });
+    } else {
+      console.log('[saveNote] no photo — skipping upload');
+    }
+
+    console.log('[saveNote] inserting note row', { plantId, photoUrl });
+    const newNote = await addNote(plantId, text, null, photoUrl);
+    console.log('[saveNote] addNote returned', { newNote });
+    if (!newNote) throw new Error('Note insert failed');
+
+    if (photoUrl && newNote.id) {
+      console.log('[saveNote] inserting plant_photos row', { plantId, noteId: newNote.id, photoUrl });
+      const ppRes = await supabaseClient
+        .from('plant_photos')
+        .insert({ plant_id: plantId, note_id: newNote.id, storage_url: photoUrl });
+      console.log('[saveNote] plant_photos insert response', ppRes);
+    } else {
+      console.log('[saveNote] skipping plant_photos insert', { photoUrl, newNoteId: newNote.id });
+    }
+
+    if (pendingPhoto?.previewUrl) URL.revokeObjectURL(pendingPhoto.previewUrl);
+    state.sheetData.pendingPhoto = null;
+    state.sheetData.pendingText = '';
+
+    closeSheet();
+    if (state.view === 'home') {
+      renderHome();
+      showToast('Note added');
+    } else if (state.view === 'plant' && plantDetailTab === 'tasks') {
+      renderPlantDetail(plantId);
+      showToast('Note added');
+    } else {
+      renderPlantDetail(plantId);
+    }
+    console.log('[saveNote] DONE');
+  } catch (err) {
+    console.error('[saveNote] FAILED', err);
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    showToast('Could not save — tap Save to retry');
+  }
 }
 
 function updatePlantInfo(plantId, updates) {
@@ -1529,15 +1715,20 @@ function renderHome() {
         <span class="header-chevron" aria-hidden="true">▾</span>
       </button>
       ${renderHeaderRight()}
-    </div>
-    <div class="household-switcher" id="household-switcher" role="menu">
-      <div class="household-switcher-label">Your households</div>
-      <button class="household-switcher-item">
-        <span class="household-switcher-item-name">${escapeHtml(householdName ?? 'My Household')}</span>
-        <span class="household-switcher-check">✓</span>
-      </button>
-      <div class="household-switcher-divider"></div>
-      <button class="household-switcher-manage">⚙️ Manage households</button>
+      <div class="household-switcher" id="household-switcher" role="menu">
+        <div class="household-switcher-inner">
+          <div class="household-switcher-label">Your households</div>
+          <button class="household-switcher-item">
+            <span class="household-switcher-item-name">${escapeHtml(householdName ?? 'My Household')}</span>
+            <span class="household-switcher-check">✓</span>
+          </button>
+          <div class="household-switcher-divider"></div>
+          <button class="household-switcher-manage" data-action="open-manage-households">
+            <span class="household-switcher-manage-icon" aria-hidden="true">⚙️</span>
+            <span class="household-switcher-manage-label">Manage households</span>
+          </button>
+        </div>
+      </div>
     </div>
     <div class="tab-bar">
       <button class="tab-btn${activeTab === 'plants' ? ' active' : ''}" data-action="switch-tab" data-tab="plants">&#127807; My Plants</button>
@@ -1984,6 +2175,98 @@ function renderPlantDetail(plantId) {
   window.scrollTo(0, 0);
 }
 
+function renderManageHouseholds() {
+  const name = householdName ?? 'My Household';
+  const memberCount = membersCache.length;
+  const memberSubtitle = `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`;
+
+  const cardClass = manageHouseholdsEditingName ? 'manage-household-card editing' : 'manage-household-card';
+  const nameRow = manageHouseholdsEditingName
+    ? `<input id="manage-household-name-input" class="manage-household-name-input" type="text" value="${escapeHtml(name)}" maxlength="60" autocomplete="off" />
+       <div class="manage-household-edit-actions">
+         <button class="manage-household-btn-cancel" data-action="manage-households-cancel-name">Cancel</button>
+         <button class="manage-household-btn-save" data-action="manage-households-save-name">Save</button>
+       </div>`
+    : `<div class="manage-household-row">
+         <span class="manage-household-icon" aria-hidden="true">🏠</span>
+         <div class="manage-household-text">
+           <div class="manage-household-name">${escapeHtml(name)}</div>
+           <div class="manage-household-sub">${memberSubtitle}</div>
+         </div>
+         <button class="manage-household-edit-btn" data-action="manage-households-start-edit">Edit Name</button>
+       </div>`;
+
+  const memberRows = membersCache.map(m => {
+    const initial = (m.display_name ?? '?')[0].toUpperCase();
+    const color = m.color ?? '#2e7d51';
+    const isYou = m.id === currentMemberId;
+    return `
+      <div class="manage-member-row">
+        <span class="manage-member-avatar" style="background:${escapeHtml(color)};">${escapeHtml(initial)}</span>
+        <div class="manage-member-text">
+          <div class="manage-member-name">${escapeHtml(m.display_name ?? 'Unknown')}</div>
+          <div class="manage-member-role">Member</div>
+        </div>
+        ${isYou ? '<span class="manage-member-you">YOU</span>' : ''}
+      </div>`;
+  }).join('');
+
+  const html = `
+  <div class="app-header app-header--manage">
+    <button class="manage-back-btn" data-action="manage-households-back" aria-label="Back">&#8249;</button>
+    <div class="manage-header-title">Manage Households</div>
+    <div class="manage-header-spacer" aria-hidden="true"></div>
+  </div>
+  <div class="manage-households-body">
+    <div class="manage-section-label">Your household</div>
+    <div class="${cardClass}">${nameRow}</div>
+
+    <div class="manage-section-label">Members</div>
+    <div class="manage-members-card">${memberRows}</div>
+  </div>`;
+
+  document.getElementById('app').innerHTML = html;
+  window.scrollTo(0, 0);
+
+  if (manageHouseholdsEditingName) {
+    const input = document.getElementById('manage-household-name-input');
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }
+}
+
+async function handleManageHouseholdsSaveName() {
+  const input = document.getElementById('manage-household-name-input');
+  if (!input) return;
+  const newName = input.value.trim();
+  if (!newName || newName === householdName) {
+    manageHouseholdsEditingName = false;
+    renderManageHouseholds();
+    return;
+  }
+
+  const { error } = await supabaseClient
+    .from('households')
+    .update({ name: newName })
+    .eq('id', householdId);
+
+  if (error) {
+    showToast('Could not save — please try again');
+    return;
+  }
+
+  householdName = newName;
+  manageHouseholdsEditingName = false;
+  renderManageHouseholds();
+
+  const headerNameEl = document.getElementById('header-household-name');
+  if (headerNameEl) headerNameEl.textContent = newName;
+
+  showToast('&#10003; Household name updated');
+}
+
 // Predicate: does a given author/owner display_name satisfy the current global filter?
 // Empty activeFilter = no filter applied (show all).
 function matchesFilter(author) {
@@ -2072,23 +2355,38 @@ function renderSummaryTab(plant) {
 
   let html = '';
 
-  // ── Zone 1: Hero card (single horizontal row) ─────────────
+  // ── Zone 1: Hero card (two states) ────────────────────────
   const dateAcquired = plant.dateAcquired;
-  const heroMain = dateAcquired
-    ? (() => {
-        const totalDays = daysBetween(dateAcquired, today);
-        return `${totalDays} day${totalDays !== 1 ? 's' : ''} of care 🌱`;
-      })()
-    : 'Add an arrival date';
-  const heroSub = dateAcquired
-    ? `Home since ${formatDate(dateAcquired)}`
-    : 'Track how long you’ve cared for it';
-
-  html += `
-  <div style="margin:8px 0;padding:12px 14px;background:#fff;border:0.5px solid #e4e8e0;border-radius:14px;display:flex;flex-direction:column;gap:2px;">
-    <div style="font-size:15px;font-weight:500;color:#1a1a1a;line-height:1.2;">${escapeHtml(heroMain)}</div>
-    <div style="font-size:12px;color:#7a8a7a;">${escapeHtml(heroSub)}</div>
+  if (dateAcquired) {
+    const totalDays   = daysBetween(dateAcquired, today);
+    const yearN       = Math.floor(totalDays / 365) + 1;
+    const yearLabel   = yearN === 1 ? '1 year' : `${yearN} years`;
+    const progressPct = ((totalDays % 365) / 365) * 100;
+    html += `
+  <div class="hero-card">
+    <div class="hero-card-top">
+      <div class="hero-card-days">${totalDays}</div>
+      <div class="hero-card-text">
+        <div class="hero-card-label">days of care</div>
+        <div class="hero-card-since">Home since ${escapeHtml(formatDate(dateAcquired))}</div>
+      </div>
+    </div>
+    <div class="hero-card-bar-row">
+      <div class="hero-card-bar"><div class="hero-card-bar-fill" style="width:${progressPct}%;"></div></div>
+      <div class="hero-card-milestone">⭐ ${yearLabel}</div>
+    </div>
   </div>`;
+  } else {
+    html += `
+  <button class="hero-card-prompt" data-action="open-edit-plant" data-plant="${plant.id}">
+    <span class="hero-card-prompt-icon" aria-hidden="true">🏠</span>
+    <div class="hero-card-prompt-text">
+      <div class="hero-card-prompt-title">When did ${escapeHtml(plant.name)} arrive home?</div>
+      <div class="hero-card-prompt-sub">Set an arrival date to start tracking days of care.</div>
+    </div>
+    <span class="hero-card-prompt-chevron" aria-hidden="true">›</span>
+  </button>`;
+  }
 
   // ── Zone 2: Needs attention today ─────────────────────────
   const attentionTasks = plant.tasks.filter(t => {
@@ -2471,6 +2769,10 @@ function renderNotesTab(plant) {
       ? `data-action="edit-note" data-note="${escapeHtml(note.id)}" data-plant="${escapeHtml(plant.id)}"`
       : '';
 
+    const photoThumbHtml = note.photoUrl
+      ? `<img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" />`
+      : '';
+
     html += `
     <div class="upcoming-row notes-tab-row" ${rowAction}>
       <div class="upcoming-date-col">
@@ -2481,6 +2783,7 @@ function renderNotesTab(plant) {
         <span class="upcoming-card-emoji-tile" style="background:#eef1e8;">${plant.emoji}</span>
         <span class="upcoming-card-divider"></span>
         <div class="notes-tab-body">${escapeHtml(note.note)}</div>
+        ${photoThumbHtml}
         <div class="notes-tab-owner" style="background:${escapeHtml(color)};">${escapeHtml(initial)}</div>
       </div>
     </div>`;
@@ -2615,6 +2918,10 @@ function renderCareLogNoteRow(note) {
 
   const preview = note.note.length > 30 ? note.note.slice(0, 30) + '…' : note.note;
 
+  const photoThumbHtml = note.photoUrl
+    ? `<img class="carelog-note-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" />`
+    : '';
+
   return `<div class="carelog-new-row" data-action="carelog-open-edit-note" data-plant="${escapeHtml(note.plantId)}" data-note="${escapeHtml(note.id)}">
   <div class="carelog-new-date-col">
     <span class="carelog-new-date-dow">${dayAbbr}</span>
@@ -2626,6 +2933,7 @@ function renderCareLogNoteRow(note) {
       <span class="carelog-new-name">Note added</span>
       <span class="carelog-new-time">${escapeHtml(preview)}</span>
     </div>
+    ${photoThumbHtml}
     <div class="carelog-new-owner" style="background:${escapeHtml(color)};">${escapeHtml(initial)}</div>
   </div>
 </div>`;
@@ -3319,18 +3627,164 @@ function renderPostTaskNoteSheet(plantId, taskId) {
 
 function renderAddNoteSheet(plantId) {
   state.sheetMode = 'add-note';
-  state.sheetData = { plantId };
+  state.sheetData = { plantId, pendingText: state.sheetData?.pendingText ?? '', pendingPhoto: state.sheetData?.pendingPhoto ?? null };
 
   openSheet(`
     <div class="sheet-title">Add Note</div>
     <div class="form-group">
-      <textarea class="form-textarea" id="sheet-note-text" placeholder="Describe what you observed..." style="min-height:110px"></textarea>
+      <textarea class="form-textarea" id="sheet-note-text" placeholder="Describe what you observed..." style="min-height:110px">${escapeHtml(state.sheetData.pendingText)}</textarea>
     </div>
+    <div id="add-note-photo-area" class="add-note-photo-area">${renderAddNotePhotoArea()}</div>
+    <div id="add-note-coach" class="add-note-coach">${renderAddNoteCoachTip(null)}</div>
+    <input type="file" id="add-note-file-input" accept="image/*" capture="environment" hidden />
     <div class="sheet-actions">
       <button class="btn btn-ghost" data-action="close-sheet">Cancel</button>
       <button class="btn btn-primary" data-action="sheet-save-note">Save</button>
     </div>
   `);
+
+  // Async fill in last photo thumbnail (don't block sheet open)
+  fetchLastPlantPhoto(plantId).then(photo => {
+    if (state.sheetMode !== 'add-note' || state.sheetData.plantId !== plantId) return;
+    const coach = document.getElementById('add-note-coach');
+    if (coach) coach.innerHTML = renderAddNoteCoachTip(photo);
+  });
+}
+
+function renderAddNotePhotoArea() {
+  const pending = state.sheetData?.pendingPhoto;
+  if (pending) {
+    return `
+      <div class="add-note-photo-preview">
+        <img class="add-note-photo-thumb" src="${escapeHtml(pending.previewUrl)}" alt="" />
+        <div class="add-note-photo-meta">
+          <div class="add-note-photo-meta-title">&#10003; Photo added</div>
+          <button type="button" class="add-note-photo-change" data-action="add-note-pick-photo">Tap to change</button>
+        </div>
+        <button type="button" class="add-note-photo-remove" data-action="add-note-remove-photo">&#10005; Remove</button>
+      </div>`;
+  }
+  return `<button type="button" class="add-note-photo-btn" data-action="add-note-pick-photo">📷 Add photo</button>`;
+}
+
+function renderAddNoteCoachTip(lastPhoto) {
+  let thumbHtml = '';
+  if (lastPhoto?.storage_url) {
+    const dateLabel = lastPhoto.created_at
+      ? new Date(lastPhoto.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : '';
+    thumbHtml = `
+      <div class="add-note-coach-last">
+        <img class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" />
+        <div class="add-note-coach-last-label">Last photo${dateLabel ? ' · ' + escapeHtml(dateLabel) : ''}</div>
+      </div>`;
+  }
+  return `
+    <div class="add-note-coach-text">
+      <div class="add-note-coach-title">📐 Match your last photo</div>
+      <div class="add-note-coach-body">Use the same angle/distance. Helps to see progress!</div>
+    </div>
+    ${thumbHtml}`;
+}
+
+function refreshAddNotePhotoArea() {
+  const area = document.getElementById('add-note-photo-area');
+  if (area) area.innerHTML = renderAddNotePhotoArea();
+}
+
+async function handleAddNoteFileSelected(file) {
+  console.log('[fileSelected] ENTER', { name: file?.name, type: file?.type, size: file?.size, sheetMode: state.sheetMode, sheetData: state.sheetData });
+  if (!file || !file.type?.startsWith('image/')) {
+    console.log('[fileSelected] rejected — not an image or no file');
+    return;
+  }
+  try {
+    const blob = await compressImage(file, 1200, 0.8);
+    console.log('[fileSelected] compressed', { blobSize: blob?.size, blobType: blob?.type });
+    if (!blob) return;
+    const previewUrl = URL.createObjectURL(blob);
+    if (state.sheetData?.pendingPhoto?.previewUrl) {
+      console.log('[fileSelected] revoking prior previewUrl', state.sheetData.pendingPhoto.previewUrl);
+      URL.revokeObjectURL(state.sheetData.pendingPhoto.previewUrl);
+    }
+    state.sheetData = state.sheetData || {};
+    state.sheetData.pendingPhoto = { blob, previewUrl };
+    console.log('[fileSelected] pendingPhoto set on sheetData', { sheetData: state.sheetData });
+    refreshAddNotePhotoArea();
+  } catch (err) {
+    console.error('[fileSelected] error:', err);
+    showToast('Could not load that image');
+  }
+}
+
+function clearPendingPhoto() {
+  const p = state.sheetData?.pendingPhoto;
+  if (p?.previewUrl) URL.revokeObjectURL(p.previewUrl);
+  if (state.sheetData) state.sheetData.pendingPhoto = null;
+}
+
+function openPhotoFullscreen(url) {
+  if (!url) return;
+  const div = document.createElement('div');
+  div.className = 'photo-fullscreen-overlay';
+  div.innerHTML = `
+    <button type="button" class="photo-fullscreen-close" aria-label="Close">&times;</button>
+    <img src="${escapeHtml(url)}" alt="" />
+  `;
+  const close = () => {
+    div.remove();
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+  };
+  div.addEventListener('click', close);
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(div);
+}
+
+function renderPhotoCapSheet(plantId) {
+  state.sheetMode = 'photo-cap';
+  openSheet(`
+    <div class="sheet-title">Photo limit reached</div>
+    <div class="photo-cap-body">
+      <div class="photo-cap-msg">Each plant can have up to ${PHOTO_CAP_PER_PLANT} photos. To add a new one, you'll need to remove an existing photo first.</div>
+    </div>
+    <div class="sheet-actions" style="flex-direction:column;gap:8px;">
+      <button class="btn btn-primary" data-action="photo-cap-delete-oldest" data-plant="${escapeHtml(plantId)}">Delete oldest photo</button>
+      <button class="btn btn-ghost" data-action="photo-cap-manage" data-plant="${escapeHtml(plantId)}">Manage photos</button>
+      <button class="btn btn-ghost" data-action="photo-cap-back">Back</button>
+    </div>
+  `);
+}
+
+async function renderManagePhotosSheet(plantId) {
+  state.sheetMode = 'manage-photos';
+  openSheet(`
+    <div class="sheet-title">Manage photos</div>
+    <div class="manage-photos-list" id="manage-photos-list"><div class="manage-photos-loading">Loading…</div></div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" data-action="photo-cap-back">&#8592; Back</button>
+    </div>
+  `);
+  const photos = await fetchAllPlantPhotos(plantId);
+  const list = document.getElementById('manage-photos-list');
+  if (!list || state.sheetMode !== 'manage-photos') return;
+  if (photos.length === 0) {
+    list.innerHTML = `<div class="manage-photos-empty">No photos yet.</div>`;
+    return;
+  }
+  list.innerHTML = photos.map(p => {
+    const date = p.created_at
+      ? new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : '';
+    return `
+      <div class="manage-photos-row" data-photo-id="${escapeHtml(p.id)}">
+        <img class="manage-photos-thumb" src="${escapeHtml(p.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(p.storage_url)}" />
+        <div class="manage-photos-date">${escapeHtml(date)}</div>
+        <button class="manage-photos-delete" data-action="manage-photos-delete" data-photo-id="${escapeHtml(p.id)}" data-plant="${escapeHtml(plantId)}" data-note-id="${escapeHtml(p.note_id ?? '')}" data-url="${escapeHtml(p.storage_url ?? '')}">Delete</button>
+      </div>`;
+  }).join('');
 }
 
 function renderEditNoteSheet(plantId, noteId) {
@@ -3716,6 +4170,7 @@ async function handleOnboardingFirstTask(plantId) {
 function renderApp() {
   if (state.view === 'home') renderHome();
   else if (state.view === 'plant') renderPlantDetail(state.plantId);
+  else if (state.view === 'manage-households') renderManageHouseholds();
 }
 
 function showOnboardingCompletionOverlay() {
@@ -3743,6 +4198,7 @@ function navigateTo(view, plantId = null) {
   state.plantId = plantId;
   if (view === 'home') renderHome();
   else if (view === 'plant') { plantDetailTab = 'summary'; renderPlantDetail(plantId); }
+  else if (view === 'manage-households') renderManageHouseholds();
 }
 
 // ============================================================
@@ -3790,6 +4246,35 @@ async function handleEvent(e) {
       pill?.setAttribute('aria-expanded', open ? 'true' : 'false');
       break;
     }
+
+    case 'open-manage-households': {
+      const switcher = document.getElementById('household-switcher');
+      const pill     = document.querySelector('.household-pill');
+      switcher?.classList.remove('open');
+      pill?.classList.remove('open');
+      pill?.setAttribute('aria-expanded', 'false');
+      manageHouseholdsEditingName = false;
+      navigateTo('manage-households');
+      break;
+    }
+
+    case 'manage-households-back':
+      navigateTo('home');
+      break;
+
+    case 'manage-households-start-edit':
+      manageHouseholdsEditingName = true;
+      renderManageHouseholds();
+      break;
+
+    case 'manage-households-cancel-name':
+      manageHouseholdsEditingName = false;
+      renderManageHouseholds();
+      break;
+
+    case 'manage-households-save-name':
+      await handleManageHouseholdsSaveName();
+      break;
 
     case 'open-menu':
       openMenu();
@@ -4547,21 +5032,59 @@ async function handleEvent(e) {
       break;
     }
 
+    case 'add-note-pick-photo': {
+      console.log('[pickPhoto] tapped', { sheetMode: state.sheetMode, sheetData: state.sheetData });
+      const textEl = document.getElementById('sheet-note-text');
+      if (textEl) state.sheetData.pendingText = textEl.value;
+      const input = document.getElementById('add-note-file-input');
+      console.log('[pickPhoto] input element', { found: !!input, prevValue: input?.value, prevFiles: input?.files?.length });
+      if (input) { input.value = ''; input.click(); }
+      break;
+    }
+
+    case 'add-note-remove-photo':
+      clearPendingPhoto();
+      refreshAddNotePhotoArea();
+      break;
+
+    case 'add-note-view-photo':
+      openPhotoFullscreen(target.dataset.url);
+      break;
+
+    case 'photo-cap-delete-oldest': {
+      const pid = target.dataset.plant;
+      await deleteOldestPlantPhoto(pid);
+      // Resume the save flow with the original plantId + preserved sheetData
+      renderAddNoteSheet(pid);
+      // Auto-trigger save since the user already committed
+      await runSaveNoteFlow(pid);
+      break;
+    }
+
+    case 'photo-cap-manage': {
+      await renderManagePhotosSheet(target.dataset.plant);
+      break;
+    }
+
+    case 'photo-cap-back': {
+      const pid = state.sheetData?.plantId;
+      if (pid) renderAddNoteSheet(pid);
+      break;
+    }
+
+    case 'manage-photos-delete': {
+      const photoId = target.dataset.photoId;
+      const pid     = target.dataset.plant;
+      const noteId  = target.dataset.noteId || null;
+      const url     = target.dataset.url || null;
+      await deletePlantPhoto({ id: photoId, storage_url: url, note_id: noteId });
+      await renderManagePhotosSheet(pid);
+      break;
+    }
+
     case 'sheet-save-note': {
       const { plantId: pid } = state.sheetData;
-      const text = document.getElementById('sheet-note-text')?.value?.trim();
-      if (!text) { alert('Please enter a note.'); return; }
-      await addNote(pid, text);
-      closeSheet();
-      if (state.view === 'home') {
-        renderHome();
-        showToast('Note added');
-      } else if (state.view === 'plant' && plantDetailTab === 'tasks') {
-        renderPlantDetail(pid);
-        showToast('Note added');
-      } else {
-        renderPlantDetail(pid);
-      }
+      await runSaveNoteFlow(pid);
       break;
     }
 
@@ -5572,6 +6095,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('sheet').addEventListener('click', handleEvent);
   document.getElementById('menu-panel').addEventListener('click', handleEvent);
   document.getElementById('toast').addEventListener('click', handleEvent);
+
+  document.getElementById('sheet').addEventListener('change', (ev) => {
+    console.log('[sheet change]', { targetId: ev.target?.id, filesCount: ev.target?.files?.length });
+    if (ev.target?.id === 'add-note-file-input') {
+      const file = ev.target.files?.[0];
+      if (file) handleAddNoteFileSelected(file);
+    }
+  });
   document.getElementById('overlay').addEventListener('click', closeSheet);
   document.getElementById('menu-overlay').addEventListener('click', closeMenu);
   document.addEventListener('keydown', e => {

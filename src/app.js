@@ -3265,6 +3265,67 @@ function closeMenu() {
   document.getElementById('menu-overlay').classList.remove('active');
 }
 
+function openCalendarSyncSheet() {
+  if (!currentMemberId || !householdId) {
+    showToast('Loading household data… please try again in a moment.');
+    return;
+  }
+  const base       = import.meta.env.VITE_SUPABASE_URL;
+  const baseHost   = base.replace('https://', '');
+  const meHttps    = `${base}/functions/v1/get-calendar-feed?member_id=${currentMemberId}`;
+  const meWebcal   = `webcal://${baseHost}/functions/v1/get-calendar-feed?member_id=${currentMemberId}`;
+  const hhHttps    = `${base}/functions/v1/get-calendar-feed?household_id=${householdId}`;
+  const hhWebcal   = `webcal://${baseHost}/functions/v1/get-calendar-feed?household_id=${householdId}`;
+
+  const urlPill = (url) => `
+    <div style="background:#f4f5f2;border-radius:8px;padding:8px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px;" title="${escapeHtml(url)}">${escapeHtml(url)}</div>`;
+
+  openSheet(`
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px;">
+      <div class="sheet-title" style="margin-bottom:0;">Sync to Calendar</div>
+      <button type="button" class="menu-close" data-action="close-sheet" aria-label="Close" style="position:static;">&#10005;</button>
+    </div>
+    <p style="font-size:13px;color:var(--text-muted);line-height:1.45;margin:0 0 18px;">Subscribe in your calendar app to see upcoming plant care tasks. The feed updates automatically.</p>
+
+    <div class="form-group" style="margin-bottom:18px;">
+      <div class="form-label">My Tasks</div>
+      <div style="font-size:12px;color:var(--text-muted);margin:-2px 0 8px;">Only tasks assigned to you</div>
+      ${urlPill(meHttps)}
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" data-action="copy-calendar-link" data-url="${escapeHtml(meHttps)}" style="flex:1;">Copy link</button>
+        <button class="btn btn-primary" data-action="subscribe-calendar" data-url="${escapeHtml(meWebcal)}" style="flex:1;">Subscribe</button>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:8px;">
+      <div class="form-label">All Household Tasks</div>
+      <div style="font-size:12px;color:var(--text-muted);margin:-2px 0 8px;">Every task across your household</div>
+      ${urlPill(hhHttps)}
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" data-action="copy-calendar-link" data-url="${escapeHtml(hhHttps)}" style="flex:1;">Copy link</button>
+        <button class="btn btn-primary" data-action="subscribe-calendar" data-url="${escapeHtml(hhWebcal)}" style="flex:1;">Subscribe</button>
+      </div>
+    </div>
+  `);
+}
+
+async function handleCopyCalendarLink(btn) {
+  const url = btn?.dataset?.url;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch (_) {
+    return;
+  }
+  const original = btn.textContent;
+  btn.textContent = 'Copied!';
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = original;
+    btn.disabled = false;
+  }, 2000);
+}
+
 function renderMenuPanel() {
   document.getElementById('menu-content').innerHTML = `
     <button class="menu-close" data-action="close-menu">&#10005;</button>
@@ -3279,6 +3340,10 @@ function renderMenuPanel() {
     <div class="menu-section">
       <div class="menu-section-title">Household</div>
       <button class="menu-item" disabled>Change Household <span class="menu-coming-soon">Coming soon</span></button>
+    </div>
+    <div class="menu-section">
+      <div class="menu-section-title">Calendar</div>
+      <button class="menu-item" data-action="open-calendar-sync">📅 Sync to Calendar</button>
     </div>
     <div class="menu-section">
       <div class="menu-section-title">Account</div>
@@ -4369,6 +4434,21 @@ async function handleEvent(e) {
       closeMenu();
       supabaseClient.auth.signOut().then(() => renderLoginScreen());
       break;
+
+    case 'open-calendar-sync':
+      closeMenu();
+      openCalendarSyncSheet();
+      break;
+
+    case 'copy-calendar-link':
+      await handleCopyCalendarLink(target);
+      break;
+
+    case 'subscribe-calendar': {
+      const url = target.dataset.url;
+      if (url) window.open(url);
+      break;
+    }
 
     case 'open-plant':
       navigateTo('plant', plantId);

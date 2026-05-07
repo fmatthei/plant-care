@@ -110,6 +110,7 @@ let isSaving = false;
 let householdId = null;
 let activityFeed = []; // merged care_log + notes, top 5 across all plants
 let currentUserId = null;
+let inRecovery = false;
 let swRegistration = null;
 let openedFromCaring = false;
 let openedFromCareLog = false;
@@ -119,16 +120,35 @@ let userTouchedArrivalDate = false;
 let manageHouseholdsEditingName = false;
 
 // ============================================================
-// ACTIVE USER
+// ACTIVE USER (auto-resolved from Supabase auth)
 // ============================================================
 
-function getActiveUser() {
-  return localStorage.getItem('active-user');
+async function routeAfterAuth() {
+  if (inRecovery) return;
+  await loadFromSupabase();
+
+  // routeAfterAuth: if loadFromSupabase already rendered an auth error, bail
+  if (!currentMemberId) return;
+
+  const currentMember = membersCache.find(m => m.id === currentMemberId);
+  if (!currentMember?.display_name) {
+    renderNameCaptureScreen();
+    return;
+  }
+
+  navigateTo('home');
+  posthog.capture('tab_viewed', { tab: 'my_plants' });
 }
 
-function setActiveUser(name) {
-  activeUser = name;
-  localStorage.setItem('active-user', name);
+function renderAuthErrorScreen(message) {
+  document.getElementById('app').innerHTML = `
+    <div class="user-select-screen">
+      <h2>Can't load household</h2>
+      <p style="color:var(--text-muted);font-size:14px;text-align:center;line-height:1.5;max-width:320px;margin:0 auto;">${escapeHtml(message)}</p>
+      <div class="user-select-buttons" style="margin-top:20px;">
+        <button class="btn btn-primary" data-action="menu-sign-out" style="width:100%;padding:14px;font-size:15px;">Sign out</button>
+      </div>
+    </div>`;
 }
 
 function renderLoginScreen(errorMsg) {
@@ -153,15 +173,9 @@ async function handleLogin() {
   const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error) {
     renderLoginScreen(error.message);
-  } else {
-    const saved = getActiveUser();
-    if (saved) {
-      activeUser = saved;
-      navigateTo('home');
-    } else {
-      renderUserSelect();
-    }
+    return;
   }
+  await routeAfterAuth();
 }
 
 function renderPasswordResetScreen(errorMsg) {
@@ -202,18 +216,8 @@ async function handlePasswordReset() {
       <p style="color:var(--text-muted);font-size:15px;text-align:center;">Your password has been updated. Redirecting to sign in…</p>
     </div>`;
   await supabaseClient.auth.signOut();
+  inRecovery = false;
   setTimeout(renderLoginScreen, 2000);
-}
-
-function renderUserSelect() {
-  document.getElementById('app').innerHTML = `
-    <div class="user-select-screen">
-      <h2>Who are you?</h2>
-      <div class="user-select-buttons">
-        <button class="user-select-btn" data-action="select-user" data-user="Matu">Matu</button>
-        <button class="user-select-btn" data-action="select-user" data-user="Vale">Vale</button>
-      </div>
-    </div>`;
 }
 
 function renderNameCaptureScreen() {
@@ -253,17 +257,12 @@ async function handleNameCapture() {
 
   if (error) return;
 
-  // Update the cache immediately so the rest of the app sees the new name
   const m = membersCache.find(m => m.id === currentMemberId);
   if (m) m.display_name = name;
 
-  const saved = getActiveUser();
-  if (saved) {
-    activeUser = saved;
-    navigateTo('home');
-  } else {
-    renderUserSelect();
-  }
+  activeUser = name;
+  navigateTo('home');
+  posthog.capture('tab_viewed', { tab: 'my_plants' });
 }
 
 // ============================================================
@@ -296,16 +295,18 @@ async function loadFromSupabase() {
   if (!user) return;
   currentUserId = user.id;
 
-  // 2. Look up household_id from household_members
+  // 2. Resolve household_id from auth user — needed to scope subsequent queries
   const { data: member } = await supabaseClient
     .from('household_members')
-    .select('household_id, id')
+    .select('household_id')
     .eq('user_id', user.id)
     .single();
-  if (!member) return;
+  if (!member) {
+    renderAuthErrorScreen("Your account isn't associated with a household. Contact your household admin.");
+    return;
+  }
 
   householdId = member.household_id;
-  currentMemberId = member.id;
 
   // 3. Fetch all non-deleted plants, household_members, and household name in parallel
   const [{ data: plantRows }, { data: memberRows }, { data: householdRow }] = await Promise.all([
@@ -316,7 +317,7 @@ async function loadFromSupabase() {
       .is('deleted_at', null),
     supabaseClient
       .from('household_members')
-      .select('id, display_name, color')
+      .select('id, display_name, color, user_id')
       .eq('household_id', householdId),
     supabaseClient
       .from('households')
@@ -335,10 +336,27 @@ async function loadFromSupabase() {
   // so handleSaveNewPlant() always has a valid membersCache even with no plants.
   membersCache = memberRows ?? [];
 
+  // Resolve current member from cache by user_id — replaces the legacy "Who are you" selector
+  const meInCache = membersCache.find(m => m.user_id === currentUserId);
+  if (!meInCache) {
+    renderAuthErrorScreen("You aren't listed as a member of this household.");
+    return;
+  }
+  currentMemberId = meInCache.id;
+  activeUser = meInCache.display_name ?? '';
+
   if (plantRows.length === 0) {
     plants = [];
     notes  = [];
     activityFeed = [];
+    const currentMember = membersCache.find(m => m.id === currentMemberId);
+    if (currentUserId && currentMemberId && householdId && currentMember && householdName) {
+      posthog.identify(currentUserId, {
+        display_name:   currentMember.display_name,
+        household_id:   householdId,
+        household_name: householdName,
+      });
+    }
     return;
   }
 
@@ -432,6 +450,15 @@ async function loadFromSupabase() {
   });
 
   await loadActivityFeed();
+
+  const currentMember = membersCache.find(m => m.id === currentMemberId);
+  if (currentUserId && currentMemberId && householdId && currentMember && householdName) {
+    posthog.identify(currentUserId, {
+      display_name:   currentMember.display_name,
+      household_id:   householdId,
+      household_name: householdName,
+    });
+  }
 }
 
 async function loadActivityFeed() {
@@ -450,7 +477,7 @@ async function loadActivityFeed() {
       .limit(10),
     supabaseClient
       .from('notes')
-      .select('plant_id, note, household_member_id, created_at')
+      .select('plant_id, note, household_member_id, created_at, photo_url')
       .in('plant_id', plantIds)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -472,6 +499,7 @@ async function loadActivityFeed() {
     plantName: plantMap[r.plant_id]?.name ?? '',
     note:      r.note,
     member:    ownerMap[r.household_member_id] ?? '',
+    photoUrl:  r.photo_url ?? null,
   }));
 
   activityFeed = [...careItems, ...noteItems]
@@ -738,7 +766,14 @@ async function markTaskDone(plantId, taskId) {
       task_type:           taskCfg.type,
       date:                todayStr(),
     })
-    .then(({ error }) => { if (error) console.error('markTaskDone care_log insert error:', error); });
+    .then(({ error }) => {
+      if (error) { console.error('markTaskDone care_log insert error:', error); return; }
+      posthog.capture('task_completed', {
+        plant_id:  plantId,
+        task_type: task.type,
+        task_name: task.name,
+      });
+    });
 
   fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/notify-care-log`, {
     method: 'POST',
@@ -1096,6 +1131,7 @@ async function runSaveNoteFlow(plantId) {
       const upRes = await uploadPlantPhoto(pendingPhoto.blob, plantId);
       photoUrl = upRes.publicUrl;
       console.log('[saveNote] upload OK', { path: upRes.path, publicUrl: photoUrl });
+      posthog.capture('photo_added', { plant_id: plantId });
     } else {
       console.log('[saveNote] no photo — skipping upload');
     }
@@ -1104,6 +1140,7 @@ async function runSaveNoteFlow(plantId) {
     const newNote = await addNote(plantId, text, null, photoUrl);
     console.log('[saveNote] addNote returned', { newNote });
     if (!newNote) throw new Error('Note insert failed');
+    posthog.capture('note_added', { plant_id: plantId, has_photo: !!photoUrl });
 
     if (photoUrl && newNote.id) {
       console.log('[saveNote] inserting plant_photos row', { plantId, noteId: newNote.id, photoUrl });
@@ -1593,10 +1630,14 @@ function renderHomeActivityFeed() {
         <span class="activity-time">${time}</span>
       </div>`;
     } else {
+      const thumbHtml = item.photoUrl
+        ? `<img src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;object-fit:cover;flex-shrink:0;cursor:zoom-in;" />`
+        : '';
       html += `
       <div class="activity-row">
         <span class="activity-icon">💬</span>
         <span class="activity-text">${escapeHtml(item.member)} · <span class="activity-note-preview">${escapeHtml(item.note)}</span> — ${escapeHtml(item.plantName)}</span>
+        ${thumbHtml}
         <span class="activity-time">${time}</span>
       </div>`;
     }
@@ -2589,6 +2630,9 @@ function renderSummaryTab(plant) {
           ? `data-action="edit-note" data-note="${escapeHtml(n.id)}" data-plant="${escapeHtml(plant.id)}"`
           : '';
         const bodyHtml = `<span style="font-size:13px;color:#4a4a4a;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px;">${escapeHtml(n.note ?? '')}</span>`;
+        const thumbHtml = n.photoUrl
+          ? `<img src="${escapeHtml(n.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(n.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;object-fit:cover;flex-shrink:0;cursor:zoom-in;" />`
+          : '';
         html += `<div style="margin:0 0 8px;display:flex;align-items:flex-start;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;${isOwn ? 'cursor:pointer;' : ''}" ${rowAction}>
           <span style="width:36px;height:36px;background:#e8f0fb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">💬</span>
           <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;margin-top:4px;"></span>
@@ -2597,6 +2641,7 @@ function renderSummaryTab(plant) {
             ${bodyHtml}
             <span style="font-size:11px;color:#8a8d86;margin-top:2px;">${escapeHtml(relTime)} · ${escapeHtml(absDate)}</span>
           </span>
+          ${thumbHtml}
         </div>`;
       }
     }
@@ -2770,7 +2815,7 @@ function renderNotesTab(plant) {
       : '';
 
     const photoThumbHtml = note.photoUrl
-      ? `<img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" />`
+      ? `<img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" />`
       : '';
 
     html += `
@@ -2919,7 +2964,7 @@ function renderCareLogNoteRow(note) {
   const preview = note.note.length > 30 ? note.note.slice(0, 30) + '…' : note.note;
 
   const photoThumbHtml = note.photoUrl
-    ? `<img class="carelog-note-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" />`
+    ? `<img class="carelog-note-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" />`
     : '';
 
   return `<div class="carelog-new-row" data-action="carelog-open-edit-note" data-plant="${escapeHtml(note.plantId)}" data-note="${escapeHtml(note.id)}">
@@ -3347,7 +3392,6 @@ function renderMenuPanel() {
     </div>
     <div class="menu-section">
       <div class="menu-section-title">Account</div>
-      <button class="menu-item" data-action="menu-switch-user">Switch User</button>
       <button class="menu-item" data-action="menu-export-data">&#8681; Export Backup</button>
       <button class="menu-item" data-action="menu-import-data">&#8679; Import Backup</button>
       <button class="menu-item" data-action="menu-show-onboarding">&#128218; Show getting started guide</button>
@@ -3740,7 +3784,7 @@ function renderAddNoteCoachTip(lastPhoto) {
       : '';
     thumbHtml = `
       <div class="add-note-coach-last">
-        <img class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" />
+        <img class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #c8c8c8;" />
         <div class="add-note-coach-last-label">Last photo${dateLabel ? ' · ' + escapeHtml(dateLabel) : ''}</div>
       </div>`;
   }
@@ -3845,11 +3889,132 @@ async function renderManagePhotosSheet(plantId) {
       : '';
     return `
       <div class="manage-photos-row" data-photo-id="${escapeHtml(p.id)}">
-        <img class="manage-photos-thumb" src="${escapeHtml(p.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(p.storage_url)}" />
+        <img class="manage-photos-thumb" src="${escapeHtml(p.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(p.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #c8c8c8;" />
         <div class="manage-photos-date">${escapeHtml(date)}</div>
         <button class="manage-photos-delete" data-action="manage-photos-delete" data-photo-id="${escapeHtml(p.id)}" data-plant="${escapeHtml(plantId)}" data-note-id="${escapeHtml(p.note_id ?? '')}" data-url="${escapeHtml(p.storage_url ?? '')}">Delete</button>
       </div>`;
   }).join('');
+}
+
+function renderEditNotePhotoSection(note, lastPhoto, photoMeta) {
+  if (note.photoUrl) {
+    const dateSrc = photoMeta?.created_at ?? note.createdAt;
+    const dateLabel = dateSrc
+      ? new Date(dateSrc).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : '';
+    return `
+      <div style="display:flex;align-items:center;gap:12px;padding:8px;background:#fff;border:1px solid #e4e9e0;border-radius:10px;">
+        <img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #c8c8c8;" />
+        <div style="flex:1;font-size:13px;color:#1a2e1f;">${escapeHtml(dateLabel)}</div>
+        <button class="manage-photos-delete" data-action="edit-note-delete-photo">Delete</button>
+      </div>`;
+  }
+  let coachHtml = '';
+  if (lastPhoto?.storage_url) {
+    const dateLabel = lastPhoto.created_at
+      ? new Date(lastPhoto.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : '';
+    coachHtml = `
+      <div class="add-note-coach" style="margin-top:8px;background:#eef5fc;border:1px solid #b8d4f0;">
+        <div class="add-note-coach-text">
+          <div class="add-note-coach-title" style="color:#1a4a7a;">💡 Match your last photo</div>
+          <div class="add-note-coach-body" style="color:#2a5a8a;">Same angle helps track progress!</div>
+        </div>
+        <div class="add-note-coach-last">
+          <img class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #c8c8c8;" />
+          <div class="add-note-coach-last-label" style="color:#5a82aa;">Last photo${dateLabel ? ' · ' + escapeHtml(dateLabel) : ''}</div>
+        </div>
+      </div>`;
+  }
+  return `
+    <button type="button" class="add-note-photo-btn" data-action="edit-note-pick-photo">📷 Add photo</button>
+    ${coachHtml}`;
+}
+
+async function fetchPhotoForNote(noteId) {
+  const { data, error } = await supabaseClient
+    .from('plant_photos')
+    .select('id, plant_id, note_id, storage_url, created_at')
+    .eq('note_id', noteId)
+    .maybeSingle();
+  if (error) { console.error('fetchPhotoForNote error:', error); return null; }
+  return data ?? null;
+}
+
+async function refreshEditNotePhotoSection() {
+  const noteId = state.sheetData?.noteId;
+  const plantId = state.sheetData?.plantId;
+  if (!noteId || !plantId) return;
+  const note = notes.find(n => n.id === noteId);
+  if (!note) return;
+
+  const area = document.getElementById('edit-note-photo-area');
+  if (!area) return;
+
+  if (note.photoUrl) {
+    area.innerHTML = renderEditNotePhotoSection(note, null, state.sheetData?.editNotePhotoMeta ?? null);
+    const meta = await fetchPhotoForNote(noteId);
+    if (state.sheetMode !== 'edit-note' || state.sheetData?.noteId !== noteId) return;
+    state.sheetData.editNotePhotoMeta = meta;
+    const area2 = document.getElementById('edit-note-photo-area');
+    if (area2 && note.photoUrl) area2.innerHTML = renderEditNotePhotoSection(note, null, meta);
+  } else {
+    state.sheetData.editNotePhotoMeta = null;
+    area.innerHTML = renderEditNotePhotoSection(note, null, null);
+    const lastPhoto = await fetchLastPlantPhoto(plantId);
+    if (state.sheetMode !== 'edit-note' || state.sheetData?.noteId !== noteId) return;
+    if (note.photoUrl) return;
+    const area2 = document.getElementById('edit-note-photo-area');
+    if (area2) area2.innerHTML = renderEditNotePhotoSection(note, lastPhoto, null);
+  }
+}
+
+async function handleEditNotePhotoFileSelected(file) {
+  if (!file || !file.type?.startsWith('image/')) return;
+  const noteId = state.sheetData?.noteId;
+  const plantId = state.sheetData?.plantId;
+  if (!noteId || !plantId) return;
+  const note = notes.find(n => n.id === noteId);
+  if (!note) return;
+
+  const count = await countPlantPhotos(plantId);
+  if (count >= PHOTO_CAP_PER_PLANT) {
+    showToast('Photo limit reached — manage photos first');
+    return;
+  }
+
+  let blob;
+  try {
+    blob = await compressImage(file, 1200, 0.8);
+  } catch (err) {
+    console.error('[editNotePhoto] compress error:', err);
+    showToast('Could not load that image');
+    return;
+  }
+  if (!blob) return;
+
+  try {
+    const upRes = await uploadPlantPhoto(blob, plantId);
+    const photoUrl = upRes.publicUrl;
+    posthog.capture('photo_added', { plant_id: plantId });
+    const { data: photoRow, error: ppErr } = await supabaseClient
+      .from('plant_photos')
+      .insert({ plant_id: plantId, note_id: noteId, storage_url: photoUrl })
+      .select('id, plant_id, note_id, storage_url, created_at')
+      .single();
+    if (ppErr) throw ppErr;
+    const { error: noteErr } = await supabaseClient
+      .from('notes')
+      .update({ photo_url: photoUrl })
+      .eq('id', noteId);
+    if (noteErr) throw noteErr;
+    note.photoUrl = photoUrl;
+    if (state.sheetData) state.sheetData.editNotePhotoMeta = photoRow;
+    await refreshEditNotePhotoSection();
+  } catch (err) {
+    console.error('[editNotePhoto] upload/attach failed:', err);
+    showToast('Could not save photo');
+  }
 }
 
 function renderEditNoteSheet(plantId, noteId) {
@@ -3874,6 +4039,9 @@ function renderEditNoteSheet(plantId, noteId) {
       <textarea class="form-textarea" id="sheet-edit-note-text" style="min-height:110px;width:100%;box-sizing:border-box;">${escapeHtml(note.note ?? '')}</textarea>
     </div>
 
+    <div id="edit-note-photo-area" style="padding:4px 16px 8px;">${renderEditNotePhotoSection(note, null, null)}</div>
+    <input type="file" id="edit-note-file-input" accept="image/*" capture="environment" hidden />
+
     <div class="task-delete-section" style="padding:4px 16px 6px;">
       <button class="task-delete-link" data-action="sheet-delete-note" data-plant="${escapeHtml(plantId)}" data-note="${escapeHtml(noteId)}" style="font-size:13px;">Delete note</button>
     </div>
@@ -3885,6 +4053,8 @@ function renderEditNoteSheet(plantId, noteId) {
       </div>
     </div>
   `);
+
+  refreshEditNotePhotoSection();
 }
 
 function renderEditPlantStep2Html(plant, selectedEmoji) {
@@ -4134,6 +4304,8 @@ async function handleSaveNewTask() {
 
   if (error) {
     console.error('handleSaveNewTask: Supabase insert error:', error);
+  } else {
+    posthog.capture('task_created', { plant_id: pid, task_type: type });
   }
 
   const taskId = inserted?.id ?? uid();
@@ -4369,15 +4541,6 @@ async function handleEvent(e) {
       await handleChangePassword();
       break;
 
-    case 'menu-switch-user': {
-      closeMenu();
-      const newUser = activeUser === 'Matu' ? 'Vale' : 'Matu';
-      setActiveUser(newUser);
-      renderHome();
-      showToast(`Switched to ${newUser}`);
-      break;
-    }
-
     case 'menu-export-data': {
       closeMenu();
       const exportData = localStorage.getItem('plant-care-v1') ?? '[]';
@@ -4473,6 +4636,7 @@ async function handleEvent(e) {
     case 'switch-tab': {
       activeTab = target.dataset.tab;
       renderHome();
+      posthog.capture('tab_viewed', { tab: activeTab === 'plants' ? 'my_plants' : 'caring' });
       break;
     }
 
@@ -4486,19 +4650,6 @@ async function handleEvent(e) {
       console.log('enable-notifications handler reached');
       await subscribeToPush();
       if (Notification.permission === 'granted') showToast('Notifications enabled');
-      renderHome();
-      break;
-    }
-
-    case 'select-user': {
-      const user = target.dataset.user;
-      setActiveUser(user);
-      navigateTo('home');
-      break;
-    }
-
-    case 'switch-user': {
-      setActiveUser(activeUser === 'Matu' ? 'Vale' : 'Matu');
       renderHome();
       break;
     }
@@ -4808,6 +4959,27 @@ async function handleEvent(e) {
       closeSheet();
       if (_restoreTab && state.view === 'plant') plantDetailTab = _restoreTab;
       renderPlantDetail(state.plantId);
+      break;
+    }
+
+    case 'edit-note-pick-photo': {
+      const input = document.getElementById('edit-note-file-input');
+      if (input) { input.value = ''; input.click(); }
+      break;
+    }
+
+    case 'edit-note-delete-photo': {
+      const _nid = state.sheetData?.noteId;
+      if (!_nid) break;
+      const _note = notes.find(n => n.id === _nid);
+      if (!_note?.photoUrl) break;
+      if (!confirm('Delete this photo?')) break;
+      let _meta = state.sheetData?.editNotePhotoMeta;
+      if (!_meta?.id) _meta = await fetchPhotoForNote(_nid);
+      if (!_meta?.id) { showToast('Could not find photo'); break; }
+      await deletePlantPhoto({ id: _meta.id, storage_url: _meta.storage_url, note_id: _nid });
+      if (state.sheetData) state.sheetData.editNotePhotoMeta = null;
+      await refreshEditNotePhotoSection();
       break;
     }
 
@@ -5221,6 +5393,7 @@ async function handleEvent(e) {
     case 'plant-detail-tab':
       plantDetailTab = target.dataset.tab;
       renderPlantDetail(state.plantId);
+      posthog.capture('tab_viewed', { tab: plantDetailTab === 'carelog' ? 'care_log' : plantDetailTab });
       break;
 
     case 'carelog-segment':
@@ -6181,6 +6354,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (ev.target?.id === 'add-note-file-input') {
       const file = ev.target.files?.[0];
       if (file) handleAddNoteFileSelected(file);
+    } else if (ev.target?.id === 'edit-note-file-input') {
+      const file = ev.target.files?.[0];
+      if (file) handleEditNotePhotoFileSelected(file);
     }
   });
   document.getElementById('overlay').addEventListener('click', closeSheet);
@@ -6219,8 +6395,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     pill?.setAttribute('aria-expanded', 'false');
   });
 
+  localStorage.removeItem('active-user');
+
   supabaseClient.auth.onAuthStateChange(async (event, session) => {
     if (event === 'PASSWORD_RECOVERY') {
+      inRecovery = true;
       renderPasswordResetScreen();
       return;
     }
@@ -6236,20 +6415,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    await loadFromSupabase();
-
-    const currentMember = membersCache.find(m => m.id === currentMemberId);
-    if (currentMemberId && !currentMember?.display_name) {
-      renderNameCaptureScreen();
-      return;
-    }
-
-    const saved = getActiveUser();
-    if (saved) {
-      activeUser = saved;
-      navigateTo('home');
-    } else {
-      renderUserSelect();
-    }
+    await routeAfterAuth();
   });
 });

@@ -126,3 +126,15 @@ underlying CSS classes (`notes-tab-thumb`, `carelog-note-thumb`,
   done — type-check / build is necessary but not sufficient.
 - Don't create planning or summary `.md` files unless asked. Conversation
   context + commit messages are the persistence layer.
+
+## PostHog analytics
+
+- Project token: `phc_krWWP8MENsyRqoG8QNe6xorFJRfwUiqG2GCsWgJNRVDH`
+- API host: `https://us.i.posthog.com`
+- Snippet is in `index.html` `<head>`.
+- `posthog.identify()` is called at the end of `loadFromSupabase()` and inside
+  the empty-household early-return branch. Uses `currentUserId` as distinct ID.
+  Properties: `display_name`, `household_id`, `household_name`.
+- To fire a custom event anywhere in `src/app.js`:
+  `posthog.capture('event_name', { property: value })`
+- Do not call `posthog.identify()` anywhere else.

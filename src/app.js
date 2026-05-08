@@ -443,6 +443,7 @@ async function loadFromSupabase() {
       id:               plantRow.id,
       name:             plantRow.name,
       emoji:            plantRow.emoji            ?? '🪴',
+      photoUrl:         plantRow.photo_url        ?? null,
       dateAcquired: plantRow.date_acquired ?? '',
       tasks,
       careLog,
@@ -996,6 +997,10 @@ async function updateNote(noteId, newText) {
 const PLANT_PHOTOS_BUCKET = 'plant-photos';
 const PHOTO_CAP_PER_PLANT = 5;
 
+function plantIconImgHtml(photoUrl, sizePx, radiusCss) {
+  return `<img src="${escapeHtml(photoUrl)}" alt="" style="width:${sizePx}px;height:${sizePx}px;object-fit:cover;border-radius:${radiusCss};border:1.5px solid #c8c8c8;box-sizing:border-box;display:inline-block;vertical-align:middle;flex-shrink:0;" />`;
+}
+
 async function compressImage(file, maxDim = 1200, quality = 0.8) {
   const objUrl = URL.createObjectURL(file);
   try {
@@ -1263,24 +1268,62 @@ function renderAddPlantProgressDots(currentStep) {
   </div>`;
 }
 
-function renderAddPlantStep1Html(activeTab, selectedEmoji) {
+function renderAddPlantStep1Html(activeTab, selectedEmoji, pendingPhoto) {
   const emojis = activeTab === 'all' ? PLANT_EMOJIS : (EMOJI_CATEGORIES[activeTab] ?? PLANT_EMOJIS);
+  const isEditFlow = state.sheetMode === 'edit-plant';
+  const showPhotoUI = state.sheetMode === 'add-plant' || isEditFlow;
+  const hasPhoto = showPhotoUI && !!pendingPhoto?.previewUrl;
+  const grayedStyle = hasPhoto ? 'opacity:0.38;pointer-events:none;' : '';
+  const gridGrayedStyle = hasPhoto ? 'opacity:0.38;pointer-events:none;filter:grayscale(1);' : '';
+  const dividerGrayedStyle = hasPhoto ? 'opacity:0.38;' : '';
+
+  const photoRowHtml = hasPhoto ? `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #e5e5e5;border-radius:10px;margin-top:12px;">
+      <img src="${escapeHtml(pendingPhoto.previewUrl)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:1.5px solid #c8c8c8;flex-shrink:0;" />
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;font-size:15px;">Photo added</div>
+        <div style="color:#6b7280;font-size:13px;margin-top:2px;">This will be used as your plant icon</div>
+      </div>
+      <button type="button" data-action="add-plant-remove-photo" style="flex-shrink:0;padding:8px 12px;background:#fff5f5;border:0.5px solid #f0c0c0;color:#c0392b;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;">Remove</button>
+    </div>` : `
+    <div data-action="add-plant-pick-photo" style="display:flex;align-items:center;gap:12px;padding:12px;background:#eef5ee;border:1px solid #a8c4a8;border-radius:10px;margin-top:12px;cursor:pointer;">
+      <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">📷</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;font-size:15px;">Add a photo instead</div>
+        <div style="color:#6b7280;font-size:13px;margin-top:2px;">You can also do this later from the plant page</div>
+      </div>
+      <div style="flex-shrink:0;color:#9ca3af;font-size:20px;">›</div>
+    </div>`;
+
   return `
     ${renderAddPlantProgressDots(1)}
-    <div class="sheet-title">Add a plant</div>
-    <div class="add-plant-subtitle">Pick an icon that looks like yours</div>
-    <div class="emoji-cat-tabs">
+    <div class="sheet-title">Pick an icon</div>
+    <div class="add-plant-subtitle">Choose something that looks like yours</div>
+    <div class="emoji-cat-tabs" style="${grayedStyle}">
       <button class="emoji-cat-tab${activeTab === 'all' ? ' active' : ''}" data-action="add-plant-tab" data-tab="all">All (35)</button>
       <button class="emoji-cat-tab${activeTab === 'foliage' ? ' active' : ''}" data-action="add-plant-tab" data-tab="foliage">🌿 Foliage</button>
       <button class="emoji-cat-tab${activeTab === 'flowers' ? ' active' : ''}" data-action="add-plant-tab" data-tab="flowers">🌸 Flowers</button>
       <button class="emoji-cat-tab${activeTab === 'edibles' ? ' active' : ''}" data-action="add-plant-tab" data-tab="edibles">🍋 Edibles</button>
     </div>
-    <div class="add-plant-emoji-grid" id="add-plant-emoji-grid">
+    <div class="add-plant-emoji-grid" id="add-plant-emoji-grid" style="${gridGrayedStyle}">
       ${renderAddPlantEmojiItems(emojis, selectedEmoji)}
     </div>
+    ${showPhotoUI ? `
+    <div style="display:flex;align-items:center;gap:10px;margin-top:14px;color:#9ca3af;font-size:13px;${dividerGrayedStyle}">
+      <div style="flex:1;height:1px;background:#e5e5e5;"></div>
+      <div>none of these look like yours?</div>
+      <div style="flex:1;height:1px;background:#e5e5e5;"></div>
+    </div>
+    ${photoRowHtml}
+    <input type="file" id="add-plant-file-input" accept="image/*" capture="environment" hidden />` : ''}
+    ${isEditFlow ? `
+    <div class="sheet-actions" style="margin-top:16px;display:flex;gap:8px;">
+      <button data-action="edit-plant-change-cancel" style="flex:1;background:transparent;border:0.5px solid #d0dcd0;border-radius:12px;padding:11px;font-size:14px;font-weight:500;color:#1a1a1a;cursor:pointer;font-family:inherit;">← Cancel</button>
+      <button data-action="add-plant-next" style="flex:1;background:#3a6b3a;color:#fff;border:none;border-radius:12px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Done</button>
+    </div>` : `
     <div class="sheet-actions" style="margin-top:16px;">
       <button class="btn btn-primary" data-action="add-plant-next" style="flex:1;">Next →</button>
-    </div>`;
+    </div>`}`;
 }
 
 function renderAddPlantStep2Html(selectedEmoji) {
@@ -1445,6 +1488,7 @@ function attachAddPlantStep3Listener() {
 // ============================================================
 
 const FEEDBACK_BUBBLE_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
+const PENCIL_EDIT_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`;
 
 function renderHeaderRight() {
   const activeMember = membersCache.find(m => m.display_name === activeUser);
@@ -1526,7 +1570,9 @@ function renderHomeDueToday() {
       : `<span style="color:#b07a2a;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · due today</span>`;
 
     html += `<div class="activity-row home-due-today-row attention-row ${urgencyRowCls}" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
-      <span style="width:26px;height:26px;border-radius:8px;background:${tileBg};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>
+      ${plant.photoUrl
+        ? plantIconImgHtml(plant.photoUrl, 26, '8px')
+        : `<span style="width:26px;height:26px;border-radius:8px;background:${tileBg};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>`}
       <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;"></span>
       <span class="activity-icon">${cfg.icon}</span>
       <span class="home-due-today-info">
@@ -1884,7 +1930,9 @@ function renderHome() {
       html += `
     <div class="plant-card" data-action="open-plant" data-plant="${plant.id}">
       <div class="plant-card-row">
-        <span class="plant-card-emoji">${plant.emoji}</span>
+        ${plant.photoUrl
+          ? `<span class="plant-card-emoji">${plantIconImgHtml(plant.photoUrl, 36, '8px')}</span>`
+          : `<span class="plant-card-emoji">${plant.emoji}</span>`}
         <div class="plant-card-meta">
           <div class="plant-card-name">${escapeHtml(plant.name)}</div>
           ${lastCareLabel(plant)}
@@ -2135,7 +2183,9 @@ function renderSchedule() {
         html += `<div class="upcoming-row" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
           ${dateColHtml()}
           <div class="upcoming-card">
-            <span class="upcoming-card-emoji-tile">${plant.emoji}</span>
+            ${plant.photoUrl
+              ? plantIconImgHtml(plant.photoUrl, 36, '8px')
+              : `<span class="upcoming-card-emoji-tile">${plant.emoji}</span>`}
             <span class="upcoming-card-divider"></span>
             <span class="upcoming-card-icon">${cfg.icon}</span>
             <span class="home-due-today-info">
@@ -2169,9 +2219,13 @@ function renderPlantDetail(plantId) {
   <div class="app-header">
     <button class="back-btn" data-action="go-home">&#8249;</button>
     <div class="detail-header-title">
-      <span class="detail-header-emoji-circle">${plant.emoji}</span>
-      <span class="detail-header-name">${escapeHtml(plant.name)}</span>
-      <button class="header-edit-plant-btn" data-action="open-edit-plant" data-plant="${plant.id}">Edit</button>
+      ${plant.photoUrl
+        ? plantIconImgHtml(plant.photoUrl, 30, '50%')
+        : `<span class="detail-header-emoji-circle">${plant.emoji}</span>`}
+      <div class="detail-header-name-row">
+        <span class="detail-header-name">${escapeHtml(plant.name)}</span>
+        <button class="header-edit-pencil-btn" data-action="open-edit-plant" data-plant="${plant.id}" aria-label="Edit plant">${PENCIL_EDIT_SVG}</button>
+      </div>
     </div>
     <button class="header-feedback-btn" data-action="feedback" aria-label="Report a bug">${FEEDBACK_BUBBLE_SVG}</button>
     <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
@@ -4256,18 +4310,44 @@ function renderEditNoteSheet(plantId, noteId) {
   refreshEditNotePhotoSection();
 }
 
-function renderEditPlantStep2Html(plant, selectedEmoji) {
-  const emoji = selectedEmoji ?? plant.emoji ?? '🪴';
+function renderEditPlantStep2Html(plant) {
+  const sd = state.sheetData;
   const dateDisplay = plant.dateAcquired
     ? new Date(plant.dateAcquired + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : 'Set date';
+  const nameValue = sd.editPlantName ?? plant.name;
+
+  let iconHtml;
+  let sublabel;
+  if (sd.editIconMode === 'photo') {
+    const photoSrc = sd.pendingPlantPhoto?.previewUrl ?? sd.editExistingPhotoUrl ?? '';
+    iconHtml = `<img src="${escapeHtml(photoSrc)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:1.5px solid #c8c8c8;flex-shrink:0;display:block;box-sizing:border-box;" />`;
+    sublabel = 'Tap Change to retake, pick a new one, or use an icon';
+  } else {
+    const emoji = sd.selectedEmoji ?? plant.emoji ?? '🪴';
+    iconHtml = `<div style="width:40px;height:40px;background:#f0f4f0;border:0.5px solid #d0dcd0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:22px;line-height:1;box-sizing:border-box;">${escapeHtml(emoji)}</div>`;
+    sublabel = 'Tap Change to pick a new icon or add a photo';
+  }
+
   return `
     <div class="sheet-title edit-plant-sheet-title">Edit plant</div>
-    <div class="edit-plant-field-label">ICON &amp; NAME</div>
-    <div class="edit-plant-icon-name-row" id="edit-plant-fields">
-      <button class="edit-plant-emoji-tile" data-action="add-plant-change-emoji">${escapeHtml(emoji)}</button>
-      <input type="text" class="form-input" id="sheet-plant-name" value="${escapeHtml(plant.name)}" placeholder="Plant name" style="flex:1;">
+
+    <div class="edit-plant-field-label">PLANT ICON</div>
+    <div id="edit-plant-icon-row" style="display:flex;align-items:center;gap:12px;margin-top:4px;padding-bottom:14px;">
+      ${iconHtml}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:500;color:#1a1a1a;">Plant icon</div>
+        <div style="font-size:11px;color:#888;margin-top:2px;">${sublabel}</div>
+      </div>
+      <button data-action="edit-plant-change-icon" style="font-size:12px;color:#3a6b3a;background:transparent;border:0.5px solid #a8c4a8;border-radius:8px;padding:5px 10px;cursor:pointer;font-family:inherit;flex-shrink:0;">Change</button>
     </div>
+    <div style="height:0.5px;background:var(--border);margin-bottom:14px;"></div>
+
+    <div class="edit-plant-field-label" style="margin-top:0;">NAME</div>
+    <div id="edit-plant-fields">
+      <input type="text" class="form-input" id="sheet-plant-name" value="${escapeHtml(nameValue)}" placeholder="Plant name">
+    </div>
+
     <div class="edit-plant-field-label" style="margin-top:14px;">ARRIVAL DATE</div>
     <div class="arrival-step2-row">
       <div class="arrival-step2-left">
@@ -4279,11 +4359,10 @@ function renderEditPlantStep2Html(plant, selectedEmoji) {
         <input type="date" id="sheet-acquired-date" style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;max-width:100%;" value="${escapeHtml(plant.dateAcquired ?? '')}">
       </label>
     </div>
-    <div class="sheet-actions" style="margin-top:20px;" id="edit-plant-save-row">
-      <button class="btn btn-primary" data-action="sheet-save-plant" style="flex:1;">Save changes</button>
-    </div>
-    <div class="edit-plant-delete-section">
-      <button class="edit-plant-delete-btn" data-action="edit-plant-show-delete" id="edit-plant-delete-btn">Delete plant</button>
+
+    <div style="height:0.5px;background:var(--border);margin-top:20px;"></div>
+    <div id="edit-plant-delete-wrap">
+      <button data-action="edit-plant-show-delete" id="edit-plant-delete-btn" style="background:transparent;border:none;color:#c04040;font-size:13px;padding:10px 0;width:100%;text-align:left;cursor:pointer;font-family:inherit;">Delete plant</button>
       <div class="edit-plant-delete-confirm" id="edit-plant-delete-confirm" style="display:none;">
         <div class="edit-plant-delete-confirm-body">This will permanently delete the plant and all its tasks, notes, and care history. This cannot be undone.</div>
         <div class="edit-plant-delete-confirm-actions">
@@ -4291,6 +4370,12 @@ function renderEditPlantStep2Html(plant, selectedEmoji) {
           <button class="btn" data-action="delete-plant" data-plant="${escapeHtml(String(plant.id))}" style="flex:1;background:#c62828;color:#fff;">Yes, delete forever</button>
         </div>
       </div>
+    </div>
+    <div style="height:0.5px;background:var(--border);"></div>
+
+    <div style="margin-top:14px;display:flex;gap:8px;" id="edit-plant-save-row">
+      <button data-action="edit-plant-cancel" style="flex:1;background:transparent;border:0.5px solid #d0dcd0;border-radius:12px;padding:11px;font-size:14px;font-weight:500;color:#1a1a1a;cursor:pointer;font-family:inherit;">← Cancel</button>
+      <button data-action="sheet-save-plant" style="flex:1;background:#3a6b3a;color:#fff;border:none;border-radius:12px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Save changes</button>
     </div>`;
 }
 
@@ -4299,9 +4384,18 @@ function renderEditPlantSheet(plantId) {
   if (!plant) return;
 
   state.sheetMode = 'edit-plant';
-  state.sheetData = { plantId, step: 2, selectedEmoji: plant.emoji, activeTab: 'all' };
+  state.sheetData = {
+    plantId,
+    step: 2,
+    selectedEmoji: plant.emoji,
+    activeTab: 'all',
+    editIconMode: plant.photoUrl ? 'photo' : 'emoji',
+    editExistingPhotoUrl: plant.photoUrl ?? null,
+    pendingPlantPhoto: null,
+    editPlantName: null,
+  };
 
-  openSheet(renderEditPlantStep2Html(plant, plant.emoji));
+  openSheet(renderEditPlantStep2Html(plant));
   attachArrivalDateListener('Set date');
 }
 
@@ -4309,19 +4403,36 @@ async function handleSavePlant() {
   if (isSaving) return;
   isSaving = true;
   try {
-  const { plantId: pid } = state.sheetData;
+  const sd = state.sheetData;
+  const { plantId: pid } = sd;
   const plant = getPlant(pid);
   if (!plant) return;
 
   const name  = document.getElementById('sheet-plant-name')?.value?.trim();
-  const emoji = state.sheetData.selectedEmoji
+  const emoji = sd.selectedEmoji
     || document.querySelector('#sheet .emoji-option.selected')?.dataset.emoji
     || document.getElementById('sheet-plant-emoji')?.value?.trim();
   const date  = document.getElementById('sheet-acquired-date')?.value;
 
+  let newPhotoUrl = null;
+  if (sd.editIconMode === 'photo') {
+    if (sd.pendingPlantPhoto?.blob) {
+      try {
+        const upRes = await uploadPlantPhoto(sd.pendingPlantPhoto.blob, pid);
+        newPhotoUrl = upRes.publicUrl;
+      } catch (err) {
+        console.error('handleSavePlant: photo upload error:', err);
+        newPhotoUrl = sd.editExistingPhotoUrl;
+      }
+    } else {
+      newPhotoUrl = sd.editExistingPhotoUrl;
+    }
+  }
+
   const localUpdates = {
     name:         name  || plant.name,
     emoji:        emoji || plant.emoji,
+    photoUrl:     newPhotoUrl,
     dateAcquired: date  || null,
   };
 
@@ -4330,6 +4441,7 @@ async function handleSavePlant() {
   const dbUpdates = {
     name:         localUpdates.name,
     emoji:        localUpdates.emoji,
+    photo_url:    newPhotoUrl,
     date_acquired: localUpdates.dateAcquired,
   };
 
@@ -4338,6 +4450,10 @@ async function handleSavePlant() {
     .update(dbUpdates)
     .eq('id', pid)
     .then(({ error }) => { if (error) console.error('handleSavePlant error:', error); });
+
+  if (sd.pendingPlantPhoto?.previewUrl) {
+    URL.revokeObjectURL(sd.pendingPlantPhoto.previewUrl);
+  }
 
   closeSheet();
   renderPlantDetail(pid);
@@ -4349,8 +4465,36 @@ async function handleSavePlant() {
 
 function renderAddPlantSheet() {
   state.sheetMode = 'add-plant';
-  state.sheetData = { step: 1, selectedEmoji: '🪴', activeTab: 'all' };
-  openSheet(renderAddPlantStep1Html('all', '🪴'));
+  state.sheetData = { step: 1, selectedEmoji: '🪴', activeTab: 'all', pendingPlantPhoto: null };
+  openSheet(renderAddPlantStep1Html('all', '🪴', null));
+}
+
+async function handleAddPlantFileSelected(file) {
+  if (!file || !file.type?.startsWith('image/')) return;
+  try {
+    const blob = await compressImage(file, 1200, 0.8);
+    if (!blob) return;
+    const previewUrl = URL.createObjectURL(blob);
+    if (state.sheetData?.pendingPlantPhoto?.previewUrl) {
+      URL.revokeObjectURL(state.sheetData.pendingPlantPhoto.previewUrl);
+    }
+    state.sheetData = state.sheetData || {};
+    state.sheetData.pendingPlantPhoto = { blob, previewUrl };
+    openSheet(renderAddPlantStep1Html(
+      state.sheetData.activeTab || 'all',
+      state.sheetData.selectedEmoji || '🪴',
+      state.sheetData.pendingPlantPhoto
+    ));
+  } catch (err) {
+    console.error('[addPlantFileSelected] error:', err);
+    showToast('Could not load that image');
+  }
+}
+
+function clearPendingPlantPhoto() {
+  const p = state.sheetData?.pendingPlantPhoto;
+  if (p?.previewUrl) URL.revokeObjectURL(p.previewUrl);
+  if (state.sheetData) state.sheetData.pendingPlantPhoto = null;
 }
 
 async function handleSaveNewPlant() {
@@ -4382,6 +4526,7 @@ async function handleSaveNewPlant() {
   const emoji = state.sheetData.selectedEmoji || '🪴';
   const dateAcquired = userTouchedArrivalDate ? (getSelectDate('arrival') || null) : null;
   const sortOrder = plants.length + 1;
+  const pendingPhoto = state.sheetData.pendingPlantPhoto;
 
   const { data: inserted, error } = await supabaseClient
     .from('plants')
@@ -4401,11 +4546,31 @@ async function handleSaveNewPlant() {
     return;
   }
 
+  let photoUrl = null;
+  if (pendingPhoto?.blob && inserted?.id) {
+    try {
+      const upRes = await uploadPlantPhoto(pendingPhoto.blob, inserted.id);
+      photoUrl = upRes.publicUrl;
+      const { error: updErr } = await supabaseClient
+        .from('plants')
+        .update({ photo_url: photoUrl })
+        .eq('id', inserted.id);
+      if (updErr) {
+        console.error('handleSaveNewPlant: photo_url update error:', updErr);
+        photoUrl = null;
+      }
+    } catch (err) {
+      console.error('handleSaveNewPlant: photo upload error:', err);
+    }
+    if (pendingPhoto.previewUrl) URL.revokeObjectURL(pendingPhoto.previewUrl);
+  }
+
   const newPlant = {
     id:           inserted?.id ?? uid(),
     name,
     emoji,
     dateAcquired: dateAcquired ?? '',
+    photoUrl:     photoUrl,
     tasks:        [],
     careLog:      [],
   };
@@ -5070,22 +5235,76 @@ async function handleEvent(e) {
       renderEditPlantSheet(plantId);
       break;
 
+    case 'edit-plant-change-icon': {
+      const nameInput = document.getElementById('sheet-plant-name');
+      if (nameInput) state.sheetData.editPlantName = nameInput.value;
+
+      state.sheetData.subSheetSnapshot = {
+        selectedEmoji: state.sheetData.selectedEmoji,
+        pendingPlantPhoto: state.sheetData.pendingPlantPhoto,
+        activeTab: state.sheetData.activeTab,
+      };
+
+      if (state.sheetData.editIconMode === 'photo') {
+        state.sheetData.pendingPlantPhoto = null;
+        state.sheetData.selectedEmoji = null;
+      }
+
+      state.sheetData.step = 1;
+      openSheet(renderAddPlantStep1Html(
+        state.sheetData.activeTab || 'all',
+        state.sheetData.selectedEmoji,
+        state.sheetData.pendingPlantPhoto
+      ));
+      break;
+    }
+
+    case 'edit-plant-change-cancel': {
+      const snap = state.sheetData.subSheetSnapshot;
+      if (snap) {
+        const cur = state.sheetData.pendingPlantPhoto;
+        if (cur && cur !== snap.pendingPlantPhoto && cur.blob && cur.previewUrl) {
+          URL.revokeObjectURL(cur.previewUrl);
+        }
+        state.sheetData.selectedEmoji = snap.selectedEmoji;
+        state.sheetData.pendingPlantPhoto = snap.pendingPlantPhoto;
+        state.sheetData.activeTab = snap.activeTab;
+        state.sheetData.subSheetSnapshot = null;
+      }
+      state.sheetData.step = 2;
+      const editPlant = getPlant(state.sheetData.plantId);
+      openSheet(renderEditPlantStep2Html(editPlant));
+      attachArrivalDateListener('Set date');
+      break;
+    }
+
+    case 'edit-plant-cancel':
+      if (state.sheetData?.pendingPlantPhoto?.blob && state.sheetData.pendingPlantPhoto.previewUrl) {
+        URL.revokeObjectURL(state.sheetData.pendingPlantPhoto.previewUrl);
+      }
+      closeSheet();
+      break;
+
     case 'edit-plant-show-delete': {
       document.getElementById('edit-plant-delete-btn').style.display = 'none';
       document.getElementById('edit-plant-delete-confirm').style.display = '';
       const lockStyle = 'pointer-events:none;opacity:0.4;';
+      const iconRow = document.getElementById('edit-plant-icon-row');
+      if (iconRow) iconRow.style.cssText = lockStyle;
       document.getElementById('edit-plant-fields').style.cssText = lockStyle;
       document.getElementById('edit-plant-arrival-pill').style.cssText = lockStyle;
-      document.getElementById('edit-plant-save-row').style.cssText = lockStyle;
+      document.getElementById('edit-plant-save-row').style.cssText = `${lockStyle}margin-top:14px;display:flex;gap:8px;`;
       break;
     }
 
     case 'edit-plant-hide-delete': {
       document.getElementById('edit-plant-delete-btn').style.display = '';
       document.getElementById('edit-plant-delete-confirm').style.display = 'none';
+      const iconRow = document.getElementById('edit-plant-icon-row');
+      if (iconRow) iconRow.style.cssText = 'display:flex;align-items:center;gap:12px;margin-top:4px;padding-bottom:14px;';
       document.getElementById('edit-plant-fields').style.cssText = '';
       document.getElementById('edit-plant-arrival-pill').style.cssText = '';
-      document.getElementById('edit-plant-save-row').style.cssText = '';
+      document.getElementById('edit-plant-save-row').style.cssText = 'margin-top:14px;display:flex;gap:8px;';
       break;
     }
 
@@ -5211,14 +5430,20 @@ async function handleEvent(e) {
     }
 
     case 'add-plant-next': {
-      const emoji = state.sheetData.selectedEmoji || '🪴';
-      state.sheetData.selectedEmoji = emoji;
       state.sheetData.step = 2;
       if (state.sheetMode === 'edit-plant') {
+        const newIconMode = state.sheetData.pendingPlantPhoto ? 'photo' : 'emoji';
+        if (newIconMode === 'emoji' && !state.sheetData.selectedEmoji) {
+          state.sheetData.selectedEmoji = state.sheetData.subSheetSnapshot?.selectedEmoji || '🪴';
+        }
+        state.sheetData.editIconMode = newIconMode;
+        state.sheetData.subSheetSnapshot = null;
         const editPlant = getPlant(state.sheetData.plantId);
-        openSheet(renderEditPlantStep2Html(editPlant, emoji));
+        openSheet(renderEditPlantStep2Html(editPlant));
         attachArrivalDateListener('Set date');
       } else {
+        const emoji = state.sheetData.selectedEmoji || '🪴';
+        state.sheetData.selectedEmoji = emoji;
         openSheet(renderAddPlantStep2Html(emoji));
         attachAddPlantNameListener();
         const savedName = state.sheetData.plantName;
@@ -5256,14 +5481,29 @@ async function handleEvent(e) {
         attachAddPlantStep2State();
       } else {
         state.sheetData.step = 1;
-        openSheet(renderAddPlantStep1Html(state.sheetData.activeTab || 'all', state.sheetData.selectedEmoji || '🪴'));
+        openSheet(renderAddPlantStep1Html(state.sheetData.activeTab || 'all', state.sheetData.selectedEmoji || '🪴', state.sheetData.pendingPlantPhoto));
       }
       break;
     }
 
     case 'add-plant-change-emoji':
       state.sheetData.step = 1;
-      openSheet(renderAddPlantStep1Html(state.sheetData.activeTab || 'all', state.sheetData.selectedEmoji || '🪴'));
+      openSheet(renderAddPlantStep1Html(state.sheetData.activeTab || 'all', state.sheetData.selectedEmoji || '🪴', state.sheetData.pendingPlantPhoto));
+      break;
+
+    case 'add-plant-pick-photo': {
+      const input = document.getElementById('add-plant-file-input');
+      if (input) { input.value = ''; input.click(); }
+      break;
+    }
+
+    case 'add-plant-remove-photo':
+      clearPendingPlantPhoto();
+      openSheet(renderAddPlantStep1Html(
+        state.sheetData.activeTab || 'all',
+        state.sheetData.selectedEmoji || '🪴',
+        null
+      ));
       break;
 
     case 'add-task':
@@ -6562,6 +6802,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else if (ev.target?.id === 'edit-note-file-input') {
       const file = ev.target.files?.[0];
       if (file) handleEditNotePhotoFileSelected(file);
+    } else if (ev.target?.id === 'add-plant-file-input') {
+      const file = ev.target.files?.[0];
+      if (file) handleAddPlantFileSelected(file);
     }
   });
   document.getElementById('overlay').addEventListener('click', closeSheet);

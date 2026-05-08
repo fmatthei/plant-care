@@ -1601,7 +1601,7 @@ function renderHomeActivityFeed() {
     <span class="home-section-header-text">Recent activity</span>
   </div>
   <div class="home-activity-feed"><div class="activity-list">
-    <div class="activity-row">
+    <div class="activity-row activity-row--home">
       <span class="activity-icon" style="opacity:0.3;">💧</span>
       <span class="activity-text" style="color:#bbb;">Care actions will appear here</span>
     </div>
@@ -1624,17 +1624,17 @@ function renderHomeActivityFeed() {
         ? `${escapeHtml(item.member)} ${escapeHtml(verb)} ${escapeHtml(item.plantName)}`
         : `${escapeHtml(item.member)} · ${escapeHtml(item.taskName)} — ${escapeHtml(item.plantName)}`;
       html += `
-      <div class="activity-row">
+      <div class="activity-row activity-row--home">
         <span class="activity-icon">${icon}</span>
         <span class="activity-text">${text}</span>
         <span class="activity-time">${time}</span>
       </div>`;
     } else {
       const thumbHtml = item.photoUrl
-        ? `<img src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;object-fit:cover;flex-shrink:0;cursor:zoom-in;" />`
+        ? `<img class="activity-thumb-inline" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" />`
         : '';
       html += `
-      <div class="activity-row">
+      <div class="activity-row activity-row--home">
         <span class="activity-icon">💬</span>
         <span class="activity-text">${escapeHtml(item.member)} · <span class="activity-note-preview">${escapeHtml(item.note)}</span> — ${escapeHtml(item.plantName)}</span>
         ${thumbHtml}
@@ -2429,6 +2429,22 @@ function renderSummaryTab(plant) {
   </button>`;
   }
 
+  // ── Photo timeline entry (only if 2+ photos) ──────────────
+  const summaryPhotoCount = notes.filter(n => n.plantId === plant.id && n.photoUrl).length;
+  if (summaryPhotoCount >= 2) {
+    html += `
+  <div data-action="open-slideshow" data-plant="${escapeHtml(plant.id)}" style="display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:10px;padding:10px 14px;margin:0 0 12px;cursor:pointer;">
+    <span style="width:30px;height:30px;background:#eaf3de;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#3b6d11" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h2l1.5-2h3l1.5 2h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/><circle cx="8" cy="9" r="2.5"/></svg>
+    </span>
+    <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+      <span style="font-size:14px;font-weight:500;color:#1a1a1a;">Photo timeline</span>
+      <span style="font-size:12px;color:#8a8d86;">${summaryPhotoCount} photos · tap to view</span>
+    </span>
+    <span style="width:30px;height:30px;background:#3d6b3d;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff;font-size:13px;line-height:1;" aria-hidden="true">▶</span>
+  </div>`;
+  }
+
   // ── Zone 2: Needs attention today ─────────────────────────
   const attentionTasks = plant.tasks.filter(t => {
     if (t.paused) return false;
@@ -2631,7 +2647,7 @@ function renderSummaryTab(plant) {
           : '';
         const bodyHtml = `<span style="font-size:13px;color:#4a4a4a;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px;">${escapeHtml(n.note ?? '')}</span>`;
         const thumbHtml = n.photoUrl
-          ? `<img src="${escapeHtml(n.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(n.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;object-fit:cover;flex-shrink:0;cursor:zoom-in;" />`
+          ? `<img class="activity-thumb-inline" src="${escapeHtml(n.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(n.photoUrl)}" />`
           : '';
         html += `<div style="margin:0 0 8px;display:flex;align-items:flex-start;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;${isOwn ? 'cursor:pointer;' : ''}" ${rowAction}>
           <span style="width:36px;height:36px;background:#e8f0fb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">💬</span>
@@ -3832,13 +3848,182 @@ function clearPendingPhoto() {
   if (state.sheetData) state.sheetData.pendingPhoto = null;
 }
 
+function openSlideshow(plantId, originPhotoId) {
+  const plant = getPlant(plantId);
+  if (!plant) return;
+
+  const sequence = notes
+    .filter(n => n.plantId === plantId && n.photoUrl)
+    .slice()
+    .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+  if (sequence.length === 0) return;
+
+  const foundOriginIdx = originPhotoId
+    ? sequence.findIndex(n => n.id === originPhotoId)
+    : -1;
+  const originIndex = foundOriginIdx >= 0 ? foundOriginIdx : null;
+
+  let currentIndex = 0;
+  let autoPlayInterval = null;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'photo-slideshow-overlay';
+  overlay.innerHTML = `
+    <div class="slideshow-topbar">
+      <button type="button" class="slideshow-close" aria-label="Close">&times;</button>
+      <div class="slideshow-count"></div>
+      <div class="slideshow-plant">${escapeHtml(plant.name ?? '')}</div>
+    </div>
+    <div class="slideshow-photo-area">
+      <button type="button" class="slideshow-nav slideshow-nav-prev" aria-label="Previous">&#8249;</button>
+      <img class="slideshow-photo" alt="" />
+      <div class="slideshow-origin-badge" hidden>📍 you opened this one</div>
+      <div class="slideshow-date-pill"></div>
+      <button type="button" class="slideshow-nav slideshow-nav-next" aria-label="Next">&#8250;</button>
+    </div>
+    <div class="slideshow-note-strip" hidden></div>
+    <div class="slideshow-bottom">
+      <div class="slideshow-dots"></div>
+      <button type="button" class="slideshow-playpause" aria-label="Play">▶</button>
+      <div class="slideshow-tap-hint" hidden>Tap to close</div>
+    </div>
+  `;
+
+  const img         = overlay.querySelector('.slideshow-photo');
+  const countEl     = overlay.querySelector('.slideshow-count');
+  const noteStrip   = overlay.querySelector('.slideshow-note-strip');
+  const tapHint     = overlay.querySelector('.slideshow-tap-hint');
+  const dateEl      = overlay.querySelector('.slideshow-date-pill');
+  const dotsWrap    = overlay.querySelector('.slideshow-dots');
+  const prevBtn     = overlay.querySelector('.slideshow-nav-prev');
+  const nextBtn     = overlay.querySelector('.slideshow-nav-next');
+  const playBtn     = overlay.querySelector('.slideshow-playpause');
+  const originBadge = overlay.querySelector('.slideshow-origin-badge');
+
+  const stopAutoPlay = () => {
+    if (autoPlayInterval) {
+      clearInterval(autoPlayInterval);
+      autoPlayInterval = null;
+    }
+    playBtn.textContent = '▶';
+    playBtn.setAttribute('aria-label', 'Play');
+  };
+
+  const startAutoPlay = () => {
+    if (currentIndex >= sequence.length - 1) return;
+    autoPlayInterval = setInterval(() => {
+      if (currentIndex >= sequence.length - 1) {
+        stopAutoPlay();
+        return;
+      }
+      currentIndex++;
+      renderCurrent();
+    }, 3000);
+    playBtn.textContent = '⏸';
+    playBtn.setAttribute('aria-label', 'Pause');
+  };
+
+  const renderCurrent = () => {
+    const note = sequence[currentIndex];
+    img.src = note.photoUrl;
+    countEl.textContent = `${currentIndex + 1} of ${sequence.length}`;
+
+    dateEl.textContent = note.createdAt
+      ? new Date(note.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : '';
+    dateEl.hidden = !note.createdAt;
+
+    const noteText = (note.note ?? '').trim();
+    if (noteText) {
+      noteStrip.textContent = noteText;
+      noteStrip.hidden = false;
+    } else {
+      noteStrip.textContent = '';
+      noteStrip.hidden = true;
+    }
+
+    const atStart = currentIndex === 0;
+    const atEnd   = currentIndex === sequence.length - 1;
+    prevBtn.disabled = atStart;
+    nextBtn.disabled = atEnd;
+    prevBtn.style.visibility = atStart ? 'hidden' : '';
+    nextBtn.style.visibility = atEnd   ? 'hidden' : '';
+
+    originBadge.hidden = !(originIndex !== null && currentIndex === originIndex);
+    tapHint.hidden = !atEnd;
+
+    dotsWrap.innerHTML = sequence.map((_, i) => {
+      const cls = ['slideshow-dot'];
+      if (i === currentIndex) cls.push('active');
+      else if (originIndex !== null && i === originIndex) cls.push('origin');
+      return `<span class="${cls.join(' ')}"></span>`;
+    }).join('');
+  };
+
+  const close = () => {
+    stopAutoPlay();
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+    if (originPhotoId) {
+      const originNote = sequence.find(n => n.id === originPhotoId);
+      if (originNote?.photoUrl) openPhotoFullscreen(originNote.photoUrl);
+    }
+  };
+
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+  };
+
+  overlay.querySelector('.slideshow-close').addEventListener('click', close);
+  img.addEventListener('click', close);
+  prevBtn.addEventListener('click', () => {
+    if (prevBtn.disabled) return;
+    stopAutoPlay();
+    currentIndex--;
+    renderCurrent();
+  });
+  nextBtn.addEventListener('click', () => {
+    if (nextBtn.disabled) return;
+    stopAutoPlay();
+    currentIndex++;
+    renderCurrent();
+  });
+  playBtn.addEventListener('click', () => {
+    if (autoPlayInterval) {
+      stopAutoPlay();
+    } else {
+      startAutoPlay();
+    }
+  });
+
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
+  renderCurrent();
+}
+
 function openPhotoFullscreen(url) {
   if (!url) return;
+
+  const matchingNote = notes.find(n => n.photoUrl === url);
+  const overlayPlantId = matchingNote?.plantId ?? null;
+  const photoCount = overlayPlantId
+    ? notes.filter(n => n.plantId === overlayPlantId && n.photoUrl).length
+    : 0;
+  const showSlideshow = !!overlayPlantId && photoCount >= 2;
+
+  const slideshowHtml = showSlideshow
+    ? `<div class="photo-fullscreen-bottom">
+        <button type="button" class="photo-fullscreen-slideshow"><span aria-hidden="true">▶</span><span>Play slideshow</span></button>
+        <div class="photo-fullscreen-count">${photoCount} photos</div>
+      </div>`
+    : '';
+
   const div = document.createElement('div');
   div.className = 'photo-fullscreen-overlay';
   div.innerHTML = `
     <button type="button" class="photo-fullscreen-close" aria-label="Close">&times;</button>
     <img src="${escapeHtml(url)}" alt="" />
+    ${slideshowHtml}
   `;
   const close = () => {
     div.remove();
@@ -3847,9 +4032,23 @@ function openPhotoFullscreen(url) {
   const onKey = (e) => {
     if (e.key === 'Escape') { e.preventDefault(); close(); }
   };
-  div.addEventListener('click', close);
+  div.addEventListener('click', (e) => {
+    if (e.target !== div) return;
+    close();
+  });
+  div.querySelector('.photo-fullscreen-close')?.addEventListener('click', close);
   document.addEventListener('keydown', onKey);
   document.body.appendChild(div);
+
+  if (showSlideshow) {
+    const btn = div.querySelector('.photo-fullscreen-slideshow');
+    btn?.addEventListener('click', (e) => {
+      e.stopImmediatePropagation();
+      const originId = matchingNote?.id ?? null;
+      close();
+      openSlideshow(overlayPlantId, originId);
+    });
+  }
 }
 
 function renderPhotoCapSheet(plantId) {
@@ -5302,6 +5501,12 @@ async function handleEvent(e) {
     case 'add-note-view-photo':
       openPhotoFullscreen(target.dataset.url);
       break;
+
+    case 'open-slideshow': {
+      const pid = target.dataset.plant;
+      openSlideshow(pid, null);
+      break;
+    }
 
     case 'photo-cap-delete-oldest': {
       const pid = target.dataset.plant;

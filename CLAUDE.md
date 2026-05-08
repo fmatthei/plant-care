@@ -106,17 +106,23 @@ should query Supabase directly, not assume any of this state.
 
 ## Unified thumbnail style
 
-All photo thumbnails use one of two sizes, both with `1.5px solid #c8c8c8`:
+All photo thumbnails use a `1.5px solid #c8c8c8` border. Three size tiers:
 
-- **Inline** (36 × 36, r7): My Plants Recent Activity, Summary Recent Activity,
-  Notes tab, Care Log
-- **Featured** (56 × 56, r8): Edit Note photo row, Manage Photos rows, Add Note
-  + Edit Note coach tips
+- **Compact inline** (28 × 28, r6) — class `.activity-thumb-inline` in
+  `src/style.css`. Used by: My Plants Recent Activity, Summary Recent Activity.
+- **Standard inline** (36 × 36, r7) — inline `style="..."` on each `<img>`.
+  Used by: Notes tab, Care Log.
+- **Featured** (56 × 56, r8) — inline `style="..."` on each `<img>`. Used by:
+  Edit Note photo row, Manage Photos rows, Add Note coach tip, Edit Note
+  coach tip.
 
-Style is applied via inline `style="..."` on each `<img>`, overriding the
-underlying CSS classes (`notes-tab-thumb`, `carelog-note-thumb`,
-`manage-photos-thumb`, `add-note-coach-last-thumb`). The class borders in
-`style.css` are now dead on these surfaces — left in place, not relied on.
+The two Recent Activity surfaces migrated to a shared CSS class in Brief #172;
+every other surface still uses inline `style="..."` on the `<img>`, which
+overrides the underlying CSS classes (`notes-tab-thumb`, `carelog-note-thumb`,
+`manage-photos-thumb`, `add-note-coach-last-thumb`). Those class declarations
+in `style.css` carry stale dimensions/colors and are dead on the surfaces that
+override them — left in place, not relied on. To change a non-Recent-Activity
+thumbnail, edit the inline `style` on the `<img>`, not the class.
 
 ## Conventions
 

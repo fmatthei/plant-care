@@ -475,19 +475,20 @@ async function loadActivityFeed() {
       .select('plant_id, task_name, task_type, household_member_id, created_at')
       .in('plant_id', plantIds)
       .order('created_at', { ascending: false })
-      .limit(10),
+      .limit(20),
     supabaseClient
       .from('notes')
       .select('plant_id, note, household_member_id, created_at, photo_url')
       .in('plant_id', plantIds)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
-      .limit(10),
+      .limit(20),
   ]);
 
   const careItems = (careRows ?? []).map(r => ({
     type:      'care',
     sortKey:   r.created_at,
+    plantId:   r.plant_id,
     plantName: plantMap[r.plant_id]?.name ?? '',
     taskName:  r.task_name,
     taskType:  r.task_type,
@@ -497,6 +498,7 @@ async function loadActivityFeed() {
   const noteItems = (noteRows ?? []).map(r => ({
     type:      'note',
     sortKey:   r.created_at,
+    plantId:   r.plant_id,
     plantName: plantMap[r.plant_id]?.name ?? '',
     note:      r.note,
     member:    ownerMap[r.household_member_id] ?? '',
@@ -505,7 +507,7 @@ async function loadActivityFeed() {
 
   activityFeed = [...careItems, ...noteItems]
     .sort((a, b) => (b.sortKey ?? '').localeCompare(a.sortKey ?? ''))
-    .slice(0, 5);
+    .slice(0, 15);
 }
 
 // ============================================================
@@ -973,6 +975,27 @@ async function deleteNote(noteId) {
   if (isSaving) return;
   isSaving = true;
   try {
+    const { data: photoRows, error: photoFetchErr } = await supabaseClient
+      .from('plant_photos')
+      .select('id, storage_url, note_id')
+      .eq('note_id', noteId);
+    if (photoFetchErr) console.error('deleteNote: plant_photos fetch error:', photoFetchErr);
+
+    if (photoRows?.length) {
+      for (const photoRow of photoRows) {
+        await deletePlantPhoto(photoRow);
+      }
+    } else {
+      const inMemNote = notes.find(n => n.id === noteId);
+      if (inMemNote?.photoUrl) {
+        const path = storagePathFromPublicUrl(inMemNote.photoUrl);
+        if (path) {
+          const { error: storageErr } = await supabaseClient.storage.from(PLANT_PHOTOS_BUCKET).remove([path]);
+          if (storageErr) console.error('deleteNote storage cleanup error:', storageErr);
+        }
+      }
+    }
+
     const { error } = await supabaseClient
       .from('notes')
       .update({ deleted_at: new Date().toISOString() })
@@ -1046,9 +1069,11 @@ function storagePathFromPublicUrl(url) {
 
 async function countPlantPhotos(plantId) {
   const { count, error } = await supabaseClient
-    .from('plant_photos')
+    .from('notes')
     .select('*', { count: 'exact', head: true })
-    .eq('plant_id', plantId);
+    .eq('plant_id', plantId)
+    .not('photo_url', 'is', null)
+    .is('deleted_at', null);
   if (error) { console.error('countPlantPhotos error:', error); return 0; }
   return count ?? 0;
 }
@@ -1104,7 +1129,7 @@ async function runSaveNoteFlow(plantId) {
   console.log('[saveNote] ENTER', { plantId, sheetData: state.sheetData, isSaving });
   const textEl = document.getElementById('sheet-note-text');
   const text = (textEl?.value ?? state.sheetData?.pendingText ?? '').trim();
-  if (!text) { alert('Please enter a note.'); return; }
+  if (!text && !state.sheetData?.pendingPhoto) { alert('Please add a note or photo.'); return; }
   state.sheetData.pendingText = text;
 
   const pendingPhoto = state.sheetData?.pendingPhoto;
@@ -1315,13 +1340,14 @@ function renderAddPlantStep1Html(activeTab, selectedEmoji, pendingPhoto) {
       <div style="flex:1;height:1px;background:#e5e5e5;"></div>
     </div>
     ${photoRowHtml}
-    <input type="file" id="add-plant-file-input" accept="image/*" capture="environment" hidden />` : ''}
+    <input type="file" id="add-plant-file-input" accept="image/*" hidden />` : ''}
     ${isEditFlow ? `
     <div class="sheet-actions" style="margin-top:16px;display:flex;gap:8px;">
       <button data-action="edit-plant-change-cancel" style="flex:1;background:transparent;border:0.5px solid #d0dcd0;border-radius:12px;padding:11px;font-size:14px;font-weight:500;color:#1a1a1a;cursor:pointer;font-family:inherit;">← Cancel</button>
       <button data-action="add-plant-next" style="flex:1;background:#3a6b3a;color:#fff;border:none;border-radius:12px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Done</button>
     </div>` : `
-    <div class="sheet-actions" style="margin-top:16px;">
+    <div class="sheet-actions" style="margin-top:16px;display:flex;gap:8px;">
+      <button data-action="sheet-cancel" style="flex:1;background:transparent;border:0.5px solid #d0dcd0;border-radius:12px;padding:11px;font-size:14px;font-weight:500;color:#1a1a1a;cursor:pointer;font-family:inherit;">← Cancel</button>
       <button class="btn btn-primary" data-action="add-plant-next" style="flex:1;">Next →</button>
     </div>`}`;
 }
@@ -1564,7 +1590,6 @@ function renderHomeDueToday() {
     const ownerInitial = (task.owner ?? '?')[0].toUpperCase();
     const daysLate = Math.abs(days);
     const urgencyRowCls = overdue ? 'attention-row--overdue' : 'attention-row--duetoday';
-    const tileBg        = overdue ? '#fce8e8' : '#fdf3e8';
     const subtitleHtml = overdue
       ? `<span style="color:#c0392b;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${daysLate} day${daysLate !== 1 ? 's' : ''} late</span>`
       : `<span style="color:#b07a2a;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · due today</span>`;
@@ -1572,7 +1597,7 @@ function renderHomeDueToday() {
     html += `<div class="activity-row home-due-today-row attention-row ${urgencyRowCls}" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
       ${plant.photoUrl
         ? plantIconImgHtml(plant.photoUrl, 26, '8px')
-        : `<span style="width:26px;height:26px;border-radius:8px;background:${tileBg};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>`}
+        : `<span style="width:26px;height:26px;border-radius:8px;background:#eef2ee;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>`}
       <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;"></span>
       <span class="activity-icon">${cfg.icon}</span>
       <span class="home-due-today-info">
@@ -1645,6 +1670,7 @@ function renderHomeActivityFeed() {
   <div class="home-section-header">
     <div class="home-section-header-accent" style="background:var(--primary);"></div>
     <span class="home-section-header-text">Recent activity</span>
+    <button class="summary-view-all-link" style="margin-left:auto;" data-action="open-household-activity">View more</button>
   </div>
   <div class="home-activity-feed"><div class="activity-list">
     <div class="activity-row activity-row--home">
@@ -1658,6 +1684,7 @@ function renderHomeActivityFeed() {
   <div class="home-section-header">
     <div class="home-section-header-accent" style="background:var(--primary);"></div>
     <span class="home-section-header-text">Recent activity</span>
+    <button class="summary-view-all-link" style="margin-left:auto;" data-action="open-household-activity">View more</button>
   </div>
   <div class="home-activity-feed"><div class="activity-list">`;
 
@@ -1677,7 +1704,7 @@ function renderHomeActivityFeed() {
       </div>`;
     } else {
       const thumbHtml = item.photoUrl
-        ? `<img class="activity-thumb-inline" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" />`
+        ? `<span class="care-log-thumb"><img class="activity-thumb-inline" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" /></span>`
         : '';
       html += `
       <div class="activity-row activity-row--home">
@@ -2332,6 +2359,109 @@ function renderManageHouseholds() {
   }
 }
 
+function renderHouseholdActivity() {
+  const activeMember = membersCache.find(m => m.display_name === activeUser);
+  const userColor    = activeMember?.color ?? '#2e7d51';
+  const initial      = (activeUser ?? '?')[0].toUpperCase();
+
+  const filtered = activityFeed.filter(item => matchesFilter(item.member));
+
+  let bodyHtml;
+  if (filtered.length === 0) {
+    bodyHtml = `<div class="detail-empty" style="padding:48px 16px;text-align:center;color:#888;">No activity yet${activeFilter.length ? ' for selected users' : ''}.</div>`;
+  } else {
+    let lastMon = null;
+    let lastDate = null;
+    let rowsHtml = '';
+    for (const item of filtered) {
+      const dateStr  = item.sortKey ? item.sortKey.split('T')[0] : null;
+      const monthKey = dateStr ? dateStr.slice(0, 7) : null;
+
+      if (monthKey && monthKey !== lastMon) {
+        lastMon = monthKey;
+        lastDate = null;
+        const [y, m] = monthKey.split('-').map(Number);
+        const lbl = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        rowsHtml += `<div class="carelog-month-header">${lbl.toUpperCase()}</div>`;
+      }
+
+      let dayAbbr = '—', dayNum = '—';
+      if (dateStr) {
+        const d = new Date(dateStr + 'T12:00:00');
+        if (!isNaN(d.getTime())) {
+          dayAbbr = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase().slice(0, 3);
+          dayNum  = String(d.getDate());
+        }
+      }
+
+      const showDate = dateStr !== lastDate;
+      lastDate = dateStr;
+      const dateColHtml = showDate
+        ? `<div class="upcoming-date-col"><span class="upcoming-date-dow">${dayAbbr}</span><span class="upcoming-date-num">${dayNum}</span></div>`
+        : `<div class="upcoming-date-col" aria-hidden="true"></div>`;
+
+      const plant         = plants.find(p => p.id === item.plantId);
+      const plantName     = plant?.name ?? item.plantName ?? '';
+      const plantEmoji    = plant?.emoji ?? '🪴';
+      const plantPhotoUrl = plant?.photoUrl ?? null;
+
+      const plantTileHtml = plantPhotoUrl
+        ? plantIconImgHtml(plantPhotoUrl, 32, '8px')
+        : `<span style="width:32px;height:32px;border-radius:8px;background:#e8f0e4;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;line-height:1;">${escapeHtml(plantEmoji)}</span>`;
+
+      const member       = membersCache.find(m => m.display_name === item.member);
+      const ownerColor   = member?.color ?? '#888';
+      const ownerInitial = (item.member ?? '?')[0].toUpperCase();
+
+      let titleText, subtitleText, taskIcon, photoThumbHtml = '';
+      if (item.type === 'care') {
+        titleText    = item.taskName ?? 'Care';
+        subtitleText = plantName;
+        taskIcon     = CARE_ICON[item.taskType] ?? '✅';
+      } else {
+        titleText = 'Note added';
+        const noteText  = (item.note ?? '').trim();
+        const truncated = noteText.length > 30 ? noteText.slice(0, 30) + '…' : noteText;
+        subtitleText = noteText ? `${plantName} · ${truncated}` : plantName;
+        taskIcon     = '💬';
+        if (item.photoUrl) {
+          photoThumbHtml = `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`;
+        }
+      }
+
+      rowsHtml += `<div class="upcoming-row">
+        ${dateColHtml}
+        <div class="upcoming-card">
+          ${plantTileHtml}
+          <span class="upcoming-card-divider"></span>
+          <span class="upcoming-card-icon">${taskIcon}</span>
+          <span class="home-due-today-info">
+            <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(titleText)}</span>
+            <span class="home-due-today-plant">${escapeHtml(subtitleText)}</span>
+          </span>
+          ${photoThumbHtml}
+          <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInitial)}</span>
+        </div>
+      </div>`;
+    }
+    bodyHtml = `<div class="upcoming-rows" style="padding:0 16px 80px;">${rowsHtml}</div>`;
+  }
+
+  const html = `
+  <div class="app-header">
+    <button class="back-btn" data-action="go-home" aria-label="Back">&#8249;</button>
+    <div class="detail-header-title">
+      <span class="detail-header-name">Household activity</span>
+    </div>
+    <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
+  </div>
+  ${renderUserFilterPills()}
+  ${bodyHtml}`;
+
+  document.getElementById('app').innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
 async function handleManageHouseholdsSaveName() {
   const input = document.getElementById('manage-household-name-input');
   if (!input) return;
@@ -2639,7 +2769,11 @@ function renderSummaryTab(plant) {
   }
 
   // ── Zone 3b: Recent activity (last 3 entries) ─────────────
-  html += summarySectionHeader('Recent activity');
+  html += `<div style="display:flex;align-items:center;gap:8px;padding:16px 0 8px;">
+    <span style="width:3px;height:14px;background:#3a6b3a;border-radius:2px;flex-shrink:0;"></span>
+    <span style="font-size:11px;font-weight:500;color:#6b7a6b;text-transform:uppercase;letter-spacing:0.05em;">Recent activity</span>
+    <button class="summary-view-all-link" style="margin-left:auto;" data-action="plant-detail-tab" data-tab="carelog">View more</button>
+  </div>`;
 
   const plantNotes = notes.filter(n => n.plantId === plant.id);
   const activityItems = [
@@ -2701,7 +2835,7 @@ function renderSummaryTab(plant) {
           : '';
         const bodyHtml = `<span style="font-size:13px;color:#4a4a4a;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px;">${escapeHtml(n.note ?? '')}</span>`;
         const thumbHtml = n.photoUrl
-          ? `<img class="activity-thumb-inline" src="${escapeHtml(n.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(n.photoUrl)}" />`
+          ? `<span class="care-log-thumb"><img class="activity-thumb-inline" src="${escapeHtml(n.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(n.photoUrl)}" /></span>`
           : '';
         html += `<div style="margin:0 0 8px;display:flex;align-items:flex-start;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;${isOwn ? 'cursor:pointer;' : ''}" ${rowAction}>
           <span style="width:36px;height:36px;background:#e8f0fb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">💬</span>
@@ -2716,10 +2850,6 @@ function renderSummaryTab(plant) {
       }
     }
   }
-
-  html += `<div style="display:flex;justify-content:center;padding:6px 0 4px;">
-    <button class="summary-view-all-link" data-action="plant-detail-tab" data-tab="carelog">View all</button>
-  </div>`;
 
   return html;
 }
@@ -2850,7 +2980,7 @@ function renderNotesTab(plant) {
   }
 
   const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
-  html += `<div style="padding:0 16px 80px;">`;
+  html += `<div class="notes-tab-container" style="padding:0 16px 16px;">`;
   let lastMon = null;
 
   for (const note of filteredNotes) {
@@ -2885,7 +3015,7 @@ function renderNotesTab(plant) {
       : '';
 
     const photoThumbHtml = note.photoUrl
-      ? `<img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" />`
+      ? `<span class="care-log-thumb"><img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`
       : '';
 
     html += `
@@ -3034,7 +3164,7 @@ function renderCareLogNoteRow(note) {
   const preview = note.note.length > 30 ? note.note.slice(0, 30) + '…' : note.note;
 
   const photoThumbHtml = note.photoUrl
-    ? `<img class="carelog-note-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" />`
+    ? `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`
     : '';
 
   return `<div class="carelog-new-row" data-action="carelog-open-edit-note" data-plant="${escapeHtml(note.plantId)}" data-note="${escapeHtml(note.id)}">
@@ -3912,13 +4042,11 @@ function openSlideshow(plantId, originPhotoId) {
     .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
   if (sequence.length === 0) return;
 
-  const foundOriginIdx = originPhotoId
-    ? sequence.findIndex(n => n.id === originPhotoId)
-    : -1;
-  const originIndex = foundOriginIdx >= 0 ? foundOriginIdx : null;
-
   let currentIndex = 0;
-  let autoPlayInterval = null;
+
+  const plantTileHtml = plant.photoUrl
+    ? `<span class="slideshow-plant-tile"><img src="${escapeHtml(plant.photoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" /></span>`
+    : `<span class="slideshow-plant-tile">${escapeHtml(plant.emoji ?? '🪴')}</span>`;
 
   const overlay = document.createElement('div');
   overlay.className = 'photo-slideshow-overlay';
@@ -3929,53 +4057,36 @@ function openSlideshow(plantId, originPhotoId) {
       <div class="slideshow-plant">${escapeHtml(plant.name ?? '')}</div>
     </div>
     <div class="slideshow-photo-area">
-      <button type="button" class="slideshow-nav slideshow-nav-prev" aria-label="Previous">&#8249;</button>
       <img class="slideshow-photo" alt="" />
-      <div class="slideshow-origin-badge" hidden>📍 you opened this one</div>
-      <div class="slideshow-date-pill"></div>
+      <button type="button" class="slideshow-nav slideshow-nav-prev" aria-label="Previous">&#8249;</button>
       <button type="button" class="slideshow-nav slideshow-nav-next" aria-label="Next">&#8250;</button>
     </div>
-    <div class="slideshow-note-strip" hidden></div>
-    <div class="slideshow-bottom">
-      <div class="slideshow-dots"></div>
-      <button type="button" class="slideshow-playpause" aria-label="Play">▶</button>
-      <div class="slideshow-tap-hint" hidden>Tap to close</div>
+    <div class="slideshow-gap"></div>
+    <div class="slideshow-panel">
+      <div class="slideshow-meta">
+        ${plantTileHtml}
+        <span class="slideshow-plant-name">${escapeHtml(plant.name ?? '')}</span>
+        <span class="slideshow-date"></span>
+        <span class="slideshow-avatar"></span>
+      </div>
+      <div class="slideshow-note-label">NOTE</div>
+      <div class="slideshow-note-text"></div>
+      <div class="slideshow-divider"></div>
+      <div class="slideshow-controls">
+        <div class="slideshow-dots"></div>
+      </div>
     </div>
   `;
 
-  const img         = overlay.querySelector('.slideshow-photo');
-  const countEl     = overlay.querySelector('.slideshow-count');
-  const noteStrip   = overlay.querySelector('.slideshow-note-strip');
-  const tapHint     = overlay.querySelector('.slideshow-tap-hint');
-  const dateEl      = overlay.querySelector('.slideshow-date-pill');
-  const dotsWrap    = overlay.querySelector('.slideshow-dots');
-  const prevBtn     = overlay.querySelector('.slideshow-nav-prev');
-  const nextBtn     = overlay.querySelector('.slideshow-nav-next');
-  const playBtn     = overlay.querySelector('.slideshow-playpause');
-  const originBadge = overlay.querySelector('.slideshow-origin-badge');
-
-  const stopAutoPlay = () => {
-    if (autoPlayInterval) {
-      clearInterval(autoPlayInterval);
-      autoPlayInterval = null;
-    }
-    playBtn.textContent = '▶';
-    playBtn.setAttribute('aria-label', 'Play');
-  };
-
-  const startAutoPlay = () => {
-    if (currentIndex >= sequence.length - 1) return;
-    autoPlayInterval = setInterval(() => {
-      if (currentIndex >= sequence.length - 1) {
-        stopAutoPlay();
-        return;
-      }
-      currentIndex++;
-      renderCurrent();
-    }, 3000);
-    playBtn.textContent = '⏸';
-    playBtn.setAttribute('aria-label', 'Pause');
-  };
+  const img        = overlay.querySelector('.slideshow-photo');
+  const countEl    = overlay.querySelector('.slideshow-count');
+  const dateEl     = overlay.querySelector('.slideshow-date');
+  const avatarEl   = overlay.querySelector('.slideshow-avatar');
+  const noteTextEl = overlay.querySelector('.slideshow-note-text');
+  const dotsWrap   = overlay.querySelector('.slideshow-dots');
+  const prevBtn    = overlay.querySelector('.slideshow-nav-prev');
+  const nextBtn    = overlay.querySelector('.slideshow-nav-next');
+  const photoArea  = overlay.querySelector('.slideshow-photo-area');
 
   const renderCurrent = () => {
     const note = sequence[currentIndex];
@@ -3985,37 +4096,34 @@ function openSlideshow(plantId, originPhotoId) {
     dateEl.textContent = note.createdAt
       ? new Date(note.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
       : '';
-    dateEl.hidden = !note.createdAt;
+
+    const member        = membersCache.find(m => m.id === note.memberId);
+    const memberColor   = member?.color ?? '#888';
+    const memberInitial = (member?.display_name ?? note.author ?? '?')[0].toUpperCase();
+    avatarEl.style.background = memberColor;
+    avatarEl.textContent = memberInitial;
 
     const noteText = (note.note ?? '').trim();
     if (noteText) {
-      noteStrip.textContent = noteText;
-      noteStrip.hidden = false;
+      noteTextEl.textContent = noteText;
+      noteTextEl.classList.remove('slideshow-note-text--empty');
     } else {
-      noteStrip.textContent = '';
-      noteStrip.hidden = true;
+      noteTextEl.textContent = 'No note added.';
+      noteTextEl.classList.add('slideshow-note-text--empty');
     }
 
     const atStart = currentIndex === 0;
     const atEnd   = currentIndex === sequence.length - 1;
-    prevBtn.disabled = atStart;
-    nextBtn.disabled = atEnd;
-    prevBtn.style.visibility = atStart ? 'hidden' : '';
-    nextBtn.style.visibility = atEnd   ? 'hidden' : '';
-
-    originBadge.hidden = !(originIndex !== null && currentIndex === originIndex);
-    tapHint.hidden = !atEnd;
+    prevBtn.style.display = atStart ? 'none' : '';
+    nextBtn.style.display = atEnd   ? 'none' : '';
 
     dotsWrap.innerHTML = sequence.map((_, i) => {
-      const cls = ['slideshow-dot'];
-      if (i === currentIndex) cls.push('active');
-      else if (originIndex !== null && i === originIndex) cls.push('origin');
-      return `<span class="${cls.join(' ')}"></span>`;
+      const cls = i === currentIndex ? 'slideshow-dot active' : 'slideshow-dot';
+      return `<span class="${cls}"></span>`;
     }).join('');
   };
 
   const close = () => {
-    stopAutoPlay();
     overlay.remove();
     document.removeEventListener('keydown', onKey);
     if (originPhotoId) {
@@ -4029,24 +4137,34 @@ function openSlideshow(plantId, originPhotoId) {
   };
 
   overlay.querySelector('.slideshow-close').addEventListener('click', close);
-  img.addEventListener('click', close);
   prevBtn.addEventListener('click', () => {
-    if (prevBtn.disabled) return;
-    stopAutoPlay();
-    currentIndex--;
-    renderCurrent();
+    if (currentIndex > 0) {
+      currentIndex--;
+      renderCurrent();
+    }
   });
   nextBtn.addEventListener('click', () => {
-    if (nextBtn.disabled) return;
-    stopAutoPlay();
-    currentIndex++;
-    renderCurrent();
+    if (currentIndex < sequence.length - 1) {
+      currentIndex++;
+      renderCurrent();
+    }
   });
-  playBtn.addEventListener('click', () => {
-    if (autoPlayInterval) {
-      stopAutoPlay();
-    } else {
-      startAutoPlay();
+
+  let touchStartX = null;
+  photoArea.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0]?.clientX ?? null;
+  }, { passive: true });
+  photoArea.addEventListener('touchend', (e) => {
+    if (touchStartX == null) return;
+    const endX = e.changedTouches[0]?.clientX ?? touchStartX;
+    const deltaX = endX - touchStartX;
+    touchStartX = null;
+    if (deltaX > 40 && currentIndex > 0) {
+      currentIndex--;
+      renderCurrent();
+    } else if (deltaX < -40 && currentIndex < sequence.length - 1) {
+      currentIndex++;
+      renderCurrent();
     }
   });
 
@@ -4055,54 +4173,181 @@ function openSlideshow(plantId, originPhotoId) {
   renderCurrent();
 }
 
-function openPhotoFullscreen(url) {
+function openPhotoFullscreen(url, noteId = null, plantId = null) {
   if (!url) return;
 
-  const matchingNote = notes.find(n => n.photoUrl === url);
-  const overlayPlantId = matchingNote?.plantId ?? null;
-  const photoCount = overlayPlantId
-    ? notes.filter(n => n.plantId === overlayPlantId && n.photoUrl).length
-    : 0;
-  const showSlideshow = !!overlayPlantId && photoCount >= 2;
+  let matchingNote = noteId
+    ? notes.find(n => n.id === noteId)
+    : notes.find(n => n.photoUrl === url);
+  const resolvedPlantId = plantId ?? matchingNote?.plantId ?? null;
 
-  const slideshowHtml = showSlideshow
-    ? `<div class="photo-fullscreen-bottom">
-        <button type="button" class="photo-fullscreen-slideshow"><span aria-hidden="true">▶</span><span>Play slideshow</span></button>
-        <div class="photo-fullscreen-count">${photoCount} photos</div>
-      </div>`
-    : '';
+  const photoSequence = resolvedPlantId
+    ? notes
+        .filter(n => n.plantId === resolvedPlantId && n.photoUrl)
+        .slice()
+        .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
+    : [];
+
+  let currentIndex = 0;
+  if (matchingNote) {
+    const idx = photoSequence.findIndex(n => n.id === matchingNote.id);
+    if (idx >= 0) currentIndex = idx;
+  }
+  const originIndex = currentIndex;
+  const hasMultiple = photoSequence.length > 1;
+
+  const arrowsHtml = hasMultiple ? `
+      <button type="button" class="photo-fullscreen-arrow photo-fullscreen-arrow-prev" aria-label="Previous">&#8249;</button>
+      <button type="button" class="photo-fullscreen-arrow photo-fullscreen-arrow-next" aria-label="Next">&#8250;</button>` : '';
+  const countHtml = hasMultiple ? `<div class="photo-fullscreen-count"></div>` : '';
+  const dotsHtml  = hasMultiple ? `<div class="photo-fullscreen-dots"></div>` : '';
+
+  const contextPanelHtml = matchingNote ? `
+      <div class="photo-fullscreen-context">
+        <div class="photo-fullscreen-meta">
+          <span class="photo-fullscreen-plant-tile"></span>
+          <span class="photo-fullscreen-plant-name"></span>
+          <span class="photo-fullscreen-date-badge"></span>
+          <span class="photo-fullscreen-avatar"></span>
+        </div>
+        <div class="photo-fullscreen-note-label">NOTE</div>
+        <div class="photo-fullscreen-note-text"></div>
+        ${dotsHtml}
+      </div>` : '';
 
   const div = document.createElement('div');
   div.className = 'photo-fullscreen-overlay';
+  if (!matchingNote) div.classList.add('is-zoomed');
   div.innerHTML = `
     <button type="button" class="photo-fullscreen-close" aria-label="Close">&times;</button>
-    <img src="${escapeHtml(url)}" alt="" />
-    ${slideshowHtml}
+    <div class="photo-fullscreen-photo-area">
+      <img src="${escapeHtml(url)}" alt="" />
+      ${arrowsHtml}
+      ${countHtml}
+      ${matchingNote ? `<div class="photo-fullscreen-zoom-icon">⤢</div>` : ''}
+    </div>
+    ${contextPanelHtml}
   `;
+
+  const photoArea  = div.querySelector('.photo-fullscreen-photo-area');
+  const imgEl      = photoArea?.querySelector('img');
+  const iconEl     = photoArea?.querySelector('.photo-fullscreen-zoom-icon');
+  const prevBtn    = div.querySelector('.photo-fullscreen-arrow-prev');
+  const nextBtn    = div.querySelector('.photo-fullscreen-arrow-next');
+  const countEl    = div.querySelector('.photo-fullscreen-count');
+  const dotsWrap   = div.querySelector('.photo-fullscreen-dots');
+  const tileEl     = div.querySelector('.photo-fullscreen-plant-tile');
+  const nameEl     = div.querySelector('.photo-fullscreen-plant-name');
+  const dateEl     = div.querySelector('.photo-fullscreen-date-badge');
+  const avatarEl   = div.querySelector('.photo-fullscreen-avatar');
+  const noteTextEl = div.querySelector('.photo-fullscreen-note-text');
+
+  const positionZoomIcon = () => {
+    if (!imgEl || !photoArea || !iconEl) return;
+    const areaW = photoArea.clientWidth;
+    const areaH = photoArea.clientHeight;
+    if (!imgEl.naturalWidth || !imgEl.naturalHeight || !areaW || !areaH) return;
+    const imgRatio  = imgEl.naturalWidth / imgEl.naturalHeight;
+    const areaRatio = areaW / areaH;
+    let renderedW, renderedH;
+    if (imgRatio > areaRatio) {
+      renderedW = areaW;
+      renderedH = areaW / imgRatio;
+    } else {
+      renderedH = areaH;
+      renderedW = areaH * imgRatio;
+    }
+    const offsetX = (areaW - renderedW) / 2;
+    const offsetY = (areaH - renderedH) / 2;
+    iconEl.style.right  = (areaW - offsetX - renderedW + 10) + 'px';
+    iconEl.style.bottom = (areaH - offsetY - renderedH + 10) + 'px';
+  };
+
+  const renderCurrent = () => {
+    const note = photoSequence[currentIndex] ?? matchingNote;
+    if (!note) return;
+
+    if (imgEl) imgEl.src = note.photoUrl;
+
+    if (countEl) countEl.textContent = `${currentIndex + 1} of ${photoSequence.length}`;
+
+    const currentPlant = plants.find(p => p.id === note.plantId);
+    if (tileEl) {
+      tileEl.innerHTML = currentPlant?.photoUrl
+        ? `<img src="${escapeHtml(currentPlant.photoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" />`
+        : escapeHtml(currentPlant?.emoji ?? '🪴');
+    }
+    if (nameEl) nameEl.textContent = currentPlant?.name ?? '';
+    if (dateEl) {
+      dateEl.textContent = note.createdAt
+        ? new Date(note.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : '';
+    }
+    if (avatarEl) {
+      const member = membersCache.find(m => m.id === note.memberId);
+      avatarEl.style.background = member?.color ?? '#888';
+      avatarEl.textContent = (member?.display_name ?? note.author ?? '?')[0].toUpperCase();
+    }
+    if (noteTextEl) {
+      const text = (note.note ?? '').trim();
+      if (text) {
+        noteTextEl.textContent = text;
+        noteTextEl.classList.remove('photo-fullscreen-note-text--empty');
+      } else {
+        noteTextEl.textContent = 'No note added.';
+        noteTextEl.classList.add('photo-fullscreen-note-text--empty');
+      }
+    }
+
+    if (dotsWrap) {
+      dotsWrap.innerHTML = photoSequence.map((_, i) => {
+        const cls = ['photo-fullscreen-dot'];
+        if (i === currentIndex) cls.push('active');
+        if (i === originIndex) cls.push('origin');
+        return `<span class="${cls.join(' ')}"></span>`;
+      }).join('');
+    }
+
+    if (prevBtn) prevBtn.style.display = currentIndex === 0 ? 'none' : '';
+    if (nextBtn) nextBtn.style.display = currentIndex === photoSequence.length - 1 ? 'none' : '';
+  };
+
   const close = () => {
     div.remove();
+    document.body.classList.remove('photo-overlay-open');
     document.removeEventListener('keydown', onKey);
   };
   const onKey = (e) => {
     if (e.key === 'Escape') { e.preventDefault(); close(); }
   };
-  div.addEventListener('click', (e) => {
-    if (e.target !== div) return;
-    close();
-  });
   div.querySelector('.photo-fullscreen-close')?.addEventListener('click', close);
+
+  if (matchingNote) {
+    imgEl?.addEventListener('click', () => { div.classList.toggle('is-zoomed'); });
+    if (imgEl?.complete && imgEl.naturalWidth > 0) positionZoomIcon();
+    imgEl?.addEventListener('load', positionZoomIcon);
+  }
+
+  prevBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (currentIndex > 0) {
+      currentIndex--;
+      renderCurrent();
+    }
+  });
+  nextBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (currentIndex < photoSequence.length - 1) {
+      currentIndex++;
+      renderCurrent();
+    }
+  });
+
   document.addEventListener('keydown', onKey);
   document.body.appendChild(div);
+  document.body.classList.add('photo-overlay-open');
 
-  if (showSlideshow) {
-    const btn = div.querySelector('.photo-fullscreen-slideshow');
-    btn?.addEventListener('click', (e) => {
-      e.stopImmediatePropagation();
-      const originId = matchingNote?.id ?? null;
-      close();
-      openSlideshow(overlayPlantId, originId);
-    });
-  }
+  if (matchingNote) renderCurrent();
 }
 
 function renderPhotoCapSheet(plantId) {
@@ -4772,6 +5017,7 @@ function renderApp() {
   if (state.view === 'home') renderHome();
   else if (state.view === 'plant') renderPlantDetail(state.plantId);
   else if (state.view === 'manage-households') renderManageHouseholds();
+  else if (state.view === 'household-activity') renderHouseholdActivity();
 }
 
 function showOnboardingCompletionOverlay() {
@@ -4800,6 +5046,7 @@ function navigateTo(view, plantId = null) {
   if (view === 'home') renderHome();
   else if (view === 'plant') { plantDetailTab = 'summary'; renderPlantDetail(plantId); }
   else if (view === 'manage-households') renderManageHouseholds();
+  else if (view === 'household-activity') renderHouseholdActivity();
 }
 
 // ============================================================
@@ -4995,6 +5242,11 @@ async function handleEvent(e) {
 
     case 'go-home':
       navigateTo('home');
+      break;
+
+    case 'open-household-activity':
+      navigateTo('household-activity');
+      posthog.capture('household_activity_viewed');
       break;
 
     case 'switch-tab': {

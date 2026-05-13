@@ -108,6 +108,7 @@ let membersCache = []; // household_members rows: { id, display_name }
 let currentMemberId = null;
 let isSaving = false;
 let householdId = null;
+let userHouseholds = [];
 let activityFeed = []; // merged care_log + notes, top 5 across all plants
 let currentUserId = null;
 let inRecovery = false;
@@ -296,17 +297,32 @@ async function loadFromSupabase() {
   currentUserId = user.id;
 
   // 2. Resolve household_id from auth user — needed to scope subsequent queries
-  const { data: member } = await supabaseClient
+  const { data: userMemberRows } = await supabaseClient
     .from('household_members')
     .select('household_id')
-    .eq('user_id', user.id)
-    .single();
-  if (!member) {
+    .eq('user_id', user.id);
+
+  if (!userMemberRows || userMemberRows.length === 0) {
     renderAuthErrorScreen("Your account isn't associated with a household. Contact your household admin.");
     return;
   }
 
-  householdId = member.household_id;
+  const householdIds = userMemberRows.map(r => r.household_id);
+
+  const { data: householdRows } = await supabaseClient
+    .from('households')
+    .select('id, name')
+    .in('id', householdIds);
+
+  userHouseholds = householdIds.map(id => ({
+    id,
+    name: householdRows?.find(h => h.id === id)?.name || 'Household'
+  }));
+
+  const validIds = userHouseholds.map(h => h.id);
+  if (!householdId || !validIds.includes(householdId)) {
+    householdId = userHouseholds[0].id;
+  }
 
   // 3. Fetch all non-deleted plants, household_members, and household name in parallel
   const [{ data: plantRows }, { data: memberRows }, { data: householdRow }] = await Promise.all([
@@ -1832,10 +1848,15 @@ function renderHome() {
       <div class="household-switcher" id="household-switcher" role="menu">
         <div class="household-switcher-inner">
           <div class="household-switcher-label">Your households</div>
-          <button class="household-switcher-item">
-            <span class="household-switcher-item-name">${escapeHtml(householdName ?? 'My Household')}</span>
-            <span class="household-switcher-check">✓</span>
-          </button>
+          ${userHouseholds.map(h => {
+            const isActive   = h.id === householdId;
+            const showCheck  = isActive && userHouseholds.length > 1;
+            const actionAttr = isActive ? '' : ` data-action="switch-household" data-household-id="${h.id}"`;
+            return `<button class="household-switcher-item"${actionAttr}>
+            <span class="household-switcher-item-name">${escapeHtml(h.name)}</span>
+            ${showCheck ? '<span class="household-switcher-check">✓</span>' : ''}
+          </button>`;
+          }).join('')}
           <div class="household-switcher-divider"></div>
           <button class="household-switcher-manage" data-action="open-manage-households">
             <span class="household-switcher-manage-icon" aria-hidden="true">⚙️</span>
@@ -5103,6 +5124,21 @@ async function handleEvent(e) {
       pill?.setAttribute('aria-expanded', 'false');
       manageHouseholdsEditingName = false;
       navigateTo('manage-households');
+      break;
+    }
+
+    case 'switch-household': {
+      const newId = target.dataset.householdId;
+      if (!newId || newId === householdId) break;
+      const switcher = document.getElementById('household-switcher');
+      const pill     = document.querySelector('.household-pill');
+      switcher?.classList.remove('open');
+      pill?.classList.remove('open');
+      pill?.setAttribute('aria-expanded', 'false');
+      householdId = newId;
+      activeTab = 'plants';
+      await loadFromSupabase();
+      navigateTo('home');
       break;
     }
 

@@ -1099,7 +1099,9 @@ body {
 .btn {
   border: none;
   border-radius: var(--radius-xs);
-  padding: 8px 13px;
+  padding: 0 16px;
+  height: 48px;
+  min-height: 48px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1107,8 +1109,9 @@ body {
   touch-action: manipulation;
   transition: opacity 0.1s, transform 0.1s;
   font-family: inherit;
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
 }
 
@@ -1903,7 +1906,7 @@ body {
   border-bottom: 1px solid var(--border);
   padding: 0 16px;
   position: sticky;
-  top: var(--header-height);
+  top: 48px;
   z-index: 1001;
 }
 
@@ -3091,8 +3094,8 @@ body.menu-open {
 /* ===== Home header (gradient + household pill) ===== */
 .app-header.app-header--home {
   background: var(--primary);
-  height: auto;
-  padding: 16px 18px 14px;
+  height: 48px;
+  padding: 0 16px;
   gap: 10px;
   z-index: 1100;
 }
@@ -3119,8 +3122,8 @@ body.menu-open {
 
 .app-header--home .header-household-name {
   min-width: 0;
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
   letter-spacing: -0.02em;
   color: #fff;
   white-space: nowrap;
@@ -3130,12 +3133,12 @@ body.menu-open {
 }
 
 .app-header--home .header-chevron {
-  min-width: 32px;
-  min-height: 32px;
+  min-width: 20px;
+  min-height: 20px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
-  font-size: 16px;
+  font-size: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3148,9 +3151,9 @@ body.menu-open {
 }
 
 .app-header--home .user-initial-circle {
-  width: 36px;
-  height: 36px;
-  font-size: 14px;
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
   font-weight: 700;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
@@ -3600,6 +3603,22 @@ body.menu-open {
   opacity: 0.75;
 }
 
+/* ===== Plant Detail Header (compact variant — matches home header) ===== */
+.app-header.app-header--plant-detail {
+  height: 48px;
+}
+
+.app-header--plant-detail .detail-header-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.app-header--plant-detail .user-initial-circle {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+}
+
 /* ===== Plant Detail Tabs ===== */
 .plant-detail-tabs {
   display: flex;
@@ -3607,7 +3626,7 @@ body.menu-open {
   border-bottom: 1px solid var(--border);
   padding: 0 4px;
   position: sticky;
-  top: var(--header-height);
+  top: 48px;
   z-index: 9;
 }
 
@@ -4180,6 +4199,153 @@ div + .section-header-bar {
   color: var(--primary);
   border: 2px solid var(--primary);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* ===== Summary tab — collapsible FAB ===== */
+.summary-fab {
+  position: fixed;
+  bottom: 20px;
+  right: calc(50% - 240px + 16px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  z-index: 50;
+}
+
+@media (max-width: 480px) {
+  .summary-fab {
+    right: 16px;
+  }
+}
+
+.summary-fab-main {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: #2e7d51;
+  color: #fff;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(46, 125, 81, 0.4);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  z-index: 52;
+  transition: transform 0.12s;
+}
+
+.summary-fab-main:active {
+  opacity: 0.85;
+  transform: scale(0.97);
+}
+
+.summary-fab-icon {
+  display: none;
+  line-height: 1;
+}
+
+.summary-fab .summary-fab-icon-plus {
+  display: inline-block;
+}
+
+.summary-fab.expanded .summary-fab-icon-plus {
+  display: none;
+}
+
+.summary-fab.expanded .summary-fab-icon-close {
+  display: inline-block;
+  font-size: 22px;
+}
+
+.summary-fab-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(244, 246, 242, 0.7);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+  z-index: 49;
+}
+
+.summary-fab.expanded .summary-fab-scrim {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.summary-fab-options {
+  display: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  position: relative;
+  z-index: 52;
+}
+
+.summary-fab.expanded .summary-fab-options {
+  display: flex;
+}
+
+.summary-fab-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.summary-fab-option:active {
+  opacity: 0.85;
+}
+
+.summary-fab-option-label {
+  background: #fff;
+  border: 0.5px solid #dde8dd;
+  border-radius: 16px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a2e1a;
+  line-height: 1.2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  white-space: nowrap;
+}
+
+.summary-fab-option-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.14);
+}
+
+.summary-fab-option-icon--note {
+  background: #fff;
+  border: 2px solid #2e7d51;
+}
+
+.summary-fab-option-icon--task {
+  background: #2e7d51;
+  color: #fff;
+  font-size: 26px;
+  font-weight: 400;
 }
 
 /* ===== Care Log Segmented Control ===== */

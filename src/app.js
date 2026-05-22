@@ -1440,11 +1440,11 @@ function renderAddPlantStep1Html(activeTab, selectedEmoji, pendingPhoto) {
     <input type="file" id="add-plant-file-input" accept="image/*" hidden />` : ''}
     ${isEditFlow ? `
     <div class="sheet-actions" style="margin-top:16px;display:flex;gap:8px;">
-      <button data-action="edit-plant-change-cancel" style="flex:1;background:transparent;border:0.5px solid #d0dcd0;border-radius:12px;padding:11px;font-size:14px;font-weight:500;color:#1a1a1a;cursor:pointer;font-family:inherit;">← Cancel</button>
-      <button data-action="add-plant-next" style="flex:1;background:#3a6b3a;color:#fff;border:none;border-radius:12px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Done</button>
+      <button class="btn btn-ghost" data-action="edit-plant-change-cancel" style="flex:1;">Cancel</button>
+      <button class="btn btn-primary" data-action="add-plant-next" style="flex:1;">Done</button>
     </div>` : `
     <div class="sheet-actions" style="margin-top:16px;display:flex;gap:8px;">
-      <button data-action="sheet-cancel" style="flex:1;background:transparent;border:0.5px solid #d0dcd0;border-radius:12px;padding:11px;font-size:14px;font-weight:500;color:#1a1a1a;cursor:pointer;font-family:inherit;">← Cancel</button>
+      <button class="btn btn-ghost" data-action="sheet-cancel" style="flex:1;">Cancel</button>
       <button class="btn btn-primary" data-action="add-plant-next" style="flex:1;">Next →</button>
     </div>`}`;
 }
@@ -2352,7 +2352,7 @@ function renderPlantDetail(plantId) {
   const initial      = (activeUser ?? '?')[0].toUpperCase();
 
   let html = `
-  <div class="app-header">
+  <div class="app-header app-header--plant-detail">
     <button class="back-btn" data-action="go-home">&#8249;</button>
     <div class="detail-header-title">
       ${plant.photoUrl
@@ -2393,14 +2393,35 @@ function renderPlantDetail(plantId) {
     && (getOnboardingStep() === 2 || getOnboardingStep() === 3);
   const showNote = plantDetailTab === 'summary' || plantDetailTab === 'notes' || plantDetailTab === 'carelog';
   const showTask = !isOnboardingTasksView && (plantDetailTab === 'summary' || plantDetailTab === 'tasks' || plantDetailTab === 'carelog');
-  html += `<div class="detail-fab-stack">`;
-  if (showNote) {
-    html += `<button class="detail-fab detail-fab-note" data-action="add-note" data-plant="${plant.id}">&#128221; Add note</button>`;
+  if (plantDetailTab === 'summary') {
+    html += `
+      <div class="summary-fab" id="summary-fab">
+        <div class="summary-fab-scrim" data-action="summary-fab-collapse"></div>
+        <div class="summary-fab-options">
+          <button class="summary-fab-option" data-action="summary-fab-add-note" data-plant="${plant.id}">
+            <span class="summary-fab-option-label">Add note</span>
+            <span class="summary-fab-option-icon summary-fab-option-icon--note">&#128221;</span>
+          </button>
+          <button class="summary-fab-option" data-action="summary-fab-add-task" data-plant="${plant.id}">
+            <span class="summary-fab-option-label">Add task</span>
+            <span class="summary-fab-option-icon summary-fab-option-icon--task">+</span>
+          </button>
+        </div>
+        <button class="summary-fab-main" data-action="summary-fab-toggle" aria-label="Add">
+          <span class="summary-fab-icon summary-fab-icon-plus">+</span>
+          <span class="summary-fab-icon summary-fab-icon-close">&#10005;</span>
+        </button>
+      </div>`;
+  } else {
+    html += `<div class="detail-fab-stack">`;
+    if (showNote) {
+      html += `<button class="detail-fab detail-fab-note" data-action="add-note" data-plant="${plant.id}">&#128221; Add note</button>`;
+    }
+    if (showTask) {
+      html += `<button class="detail-fab detail-fab-task" data-action="add-task" data-plant="${plant.id}">&#43; Add task</button>`;
+    }
+    html += `</div>`;
   }
-  if (showTask) {
-    html += `<button class="detail-fab detail-fab-task" data-action="add-task" data-plant="${plant.id}">&#43; Add task</button>`;
-  }
-  html += `</div>`;
 
   document.getElementById('app').innerHTML = html;
   window.scrollTo(0, 0);
@@ -2783,7 +2804,8 @@ function renderSummaryTab(plant) {
         const ownerColor  = ownerMember?.color ?? '#888';
         const ownerInit   = (task.owner ?? '?')[0].toUpperCase();
         const d           = daysUntilDue(task);
-        const status      = d < 0 ? 'Overdue' : 'Due today';
+        const daysLate    = Math.abs(d);
+        const status      = d < 0 ? `${daysLate} day${daysLate !== 1 ? 's' : ''} overdue` : 'Due today';
         const metaText    = `${status} · ${recurrenceLabel(task)}`;
         const rowAction   = d < 0 ? 'caring-overdue-row-tap' : 'edit-task';
         const urgencyCls  = d < 0 ? 'attention-row--overdue' : 'attention-row--duetoday';
@@ -4984,8 +5006,8 @@ function renderEditPlantStep2Html(plant) {
     <div style="height:0.5px;background:var(--border);"></div>
 
     <div style="margin-top:14px;display:flex;gap:8px;" id="edit-plant-save-row">
-      <button data-action="edit-plant-cancel" style="flex:1;background:transparent;border:0.5px solid #d0dcd0;border-radius:12px;padding:11px;font-size:14px;font-weight:500;color:#1a1a1a;cursor:pointer;font-family:inherit;">← Cancel</button>
-      <button data-action="sheet-save-plant" style="flex:1;background:#3a6b3a;color:#fff;border:none;border-radius:12px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">Save changes</button>
+      <button class="btn btn-ghost" data-action="edit-plant-cancel" style="flex:1;">Cancel</button>
+      <button class="btn btn-primary" data-action="sheet-save-plant" style="flex:1;">Save changes</button>
     </div>`;
 }
 
@@ -6009,6 +6031,30 @@ async function handleEvent(e) {
       if (document.querySelector('.coach-overlay, .notif-overlay')) return;
       renderAddNoteSheet(plantId);
       break;
+
+    case 'summary-fab-toggle': {
+      document.getElementById('summary-fab')?.classList.toggle('expanded');
+      break;
+    }
+
+    case 'summary-fab-collapse': {
+      document.getElementById('summary-fab')?.classList.remove('expanded');
+      break;
+    }
+
+    case 'summary-fab-add-note': {
+      document.getElementById('summary-fab')?.classList.remove('expanded');
+      if (document.querySelector('.coach-overlay, .notif-overlay')) return;
+      renderAddNoteSheet(plantId);
+      break;
+    }
+
+    case 'summary-fab-add-task': {
+      document.getElementById('summary-fab')?.classList.remove('expanded');
+      if (document.querySelector('.coach-overlay, .notif-overlay')) return;
+      renderAddTaskStep1(plantId);
+      break;
+    }
 
     case 'close-sheet':
       closeSheet();

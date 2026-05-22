@@ -1,0 +1,22 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - heading "Plant Care" [level=2] [ref=e4]
+    - generic [ref=e5]:
+      - textbox "Email" [ref=e6]
+      - textbox "Password" [ref=e7]
+      - button "Sign In" [ref=e8] [cursor=pointer]
+  - generic [ref=e14]:
+    - generic [ref=e15]:
+      - heading "Mock plant detail page" [level=2] [ref=e16]
+      - paragraph [ref=e17]: Summary tab content goes here.
+      - paragraph [ref=e18]: "Last action: (none)"
+    - generic [ref=e19]:
+      - generic [ref=e23]:
+        - button "Add note 📝" [ref=e24] [cursor=pointer]:
+          - generic [ref=e25]: Add note
+          - generic [ref=e26]: 📝
+        - button "Add task +" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: Add task
+          - generic [ref=e29]: +
+      - button "Add" [active] [ref=e20] [cursor=pointer]:
+        - generic [ref=e30]: ✕

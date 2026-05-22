@@ -2786,7 +2786,8 @@ function renderSummaryTab(plant) {
         const status      = d < 0 ? 'Overdue' : 'Due today';
         const metaText    = `${status} · ${recurrenceLabel(task)}`;
         const rowAction   = d < 0 ? 'caring-overdue-row-tap' : 'edit-task';
-        html += `<div class="attention-row" style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff8f0;border:0.5px solid #f0d8b0;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="${rowAction}" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
+        const urgencyCls  = d < 0 ? 'attention-row--overdue' : 'attention-row--duetoday';
+        html += `<div class="attention-row ${urgencyCls}" style="margin:0 0 8px;display:flex;align-items:center;gap:10px;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="${rowAction}" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
           <span style="width:36px;height:36px;background:#eef3eb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${cfg.icon}</span>
           <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;"></span>
           <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
@@ -6548,19 +6549,22 @@ async function handleEvent(e) {
 
     // DEV TOOLS — remove before public launch
     case 'dev-seed-empty':     showDevToolsConfirm('empty',     'Empty state');  break;
-    case 'dev-seed-medium':    showDevToolsConfirm('medium',    'Medium usage'); break;
-    case 'dev-seed-heavy':     showDevToolsConfirm('heavy',     'Heavy usage');  break;
-    case 'dev-seed-medium-v2': showDevToolsConfirm('medium-v2', 'Medium v2');    break;
-    case 'dev-seed-heavy-v2':  showDevToolsConfirm('heavy-v2',  'Heavy v2');     break;
     case 'dev-seed-heavy-v3':  showDevToolsConfirm('heavy-v3',  'Heavy v3');     break;
     case 'dev-tools-cancel': document.getElementById('dev-tools-body').innerHTML = `
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
-      <button class="dev-tools-btn" data-action="dev-seed-medium">🌿 Medium usage</button>
-      <button class="dev-tools-btn" data-action="dev-seed-heavy">🌳 Heavy usage</button>
-      <button class="dev-tools-btn" data-action="dev-seed-medium-v2">🌿 Medium v2</button>
-      <button class="dev-tools-btn" data-action="dev-seed-heavy-v2">🌳 Heavy v2</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy-v3">🌳 Heavy v3</button>`; break;
-    case 'dev-tools-confirm': await runDevSeed(target.dataset.scenario); break;
+    case 'dev-tools-confirm': {
+      if (target.disabled) break;
+      target.disabled = true;
+      const _origLabel = target.textContent;
+      target.textContent = 'Running…';
+      const _ok = await runDevSeed(target.dataset.scenario);
+      if (!_ok) {
+        target.disabled = false;
+        target.textContent = _origLabel;
+      }
+      break;
+    }
   }
   } catch (err) {
     console.error('handleEvent error:', err);
@@ -6935,10 +6939,6 @@ function openDevToolsPanel() {
     <div style="font-size:11px;color:#888;margin-bottom:16px;">Seed data scenarios — replaces all current household data</div>
     <div id="dev-tools-body">
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
-      <button class="dev-tools-btn" data-action="dev-seed-medium">🌿 Medium usage</button>
-      <button class="dev-tools-btn" data-action="dev-seed-heavy">🌳 Heavy usage</button>
-      <button class="dev-tools-btn" data-action="dev-seed-medium-v2">🌿 Medium v2</button>
-      <button class="dev-tools-btn" data-action="dev-seed-heavy-v2">🌳 Heavy v2</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy-v3">🌳 Heavy v3</button>
     </div>
     <button class="add-plant-back-link" data-action="close-sheet" style="margin-top:12px;">Cancel</button>
@@ -6959,32 +6959,26 @@ function showDevToolsConfirm(scenario, label) {
 
 async function runDevSeed(scenario) {
   const labels = {
-    empty:       'Empty state',
-    medium:      'Medium usage',
-    heavy:       'Heavy usage',
-    'medium-v2': 'Medium v2',
-    'heavy-v2':  'Heavy v2',
-    'heavy-v3':  'Heavy v3',
+    empty:      'Empty state',
+    'heavy-v3': 'Heavy v3',
   };
   try {
-    if (scenario === 'empty')      await seedEmpty();
-    if (scenario === 'medium')     await seedMedium();
-    if (scenario === 'heavy')      await seedHeavy();
-    if (scenario === 'medium-v2')  await seedMediumV2();
-    if (scenario === 'heavy-v2')   await seedHeavyV2();
-    if (scenario === 'heavy-v3')   await seedHeavyV3();
+    if (scenario === 'empty')    await seedEmpty({ resetOnboarding: true });
+    if (scenario === 'heavy-v3') await seedHeavyV3();
     closeSheet();
     await loadFromSupabase();
     navigateTo('home');
     showToast(`✅ ${labels[scenario]} data loaded`);
+    return true;
   } catch (err) {
     console.error('[DevTools] seed error:', err);
     showToast('❌ Seed failed — check console');
+    return false;
   }
 }
 
 // Wipe all plants in household (tasks/care_log/notes are plant-scoped)
-async function seedEmpty() {
+async function seedEmpty({ resetOnboarding = false } = {}) {
   const now = new Date().toISOString();
   const { data: rows } = await supabaseClient
     .from('plants').select('id').eq('household_id', householdId).is('deleted_at', null);
@@ -6992,489 +6986,17 @@ async function seedEmpty() {
     await supabaseClient.from('plants').update({ deleted_at: now })
       .in('id', rows.map(r => r.id));
   }
-}
-
-async function seedMedium() {
-  await seedEmpty();
-
-  const today  = todayStr();
-  const member0 = membersCache[0]?.id ?? null;
-  const member1 = (membersCache[1] ?? membersCache[0])?.id ?? null;
-
-  // ── Plants ──────────────────────────────────────────────────
-  const plantDefs = [
-    { emoji: '🌿', name: 'Monstera',        days_ago: 45  },
-    { emoji: '🌸', name: 'Bougainvillea',   days_ago: 120 },
-    { emoji: '🍊', name: 'Mandarin Tree',   days_ago: 200 },
-  ];
-
-  const insertedPlants = [];
-  for (let i = 0; i < plantDefs.length; i++) {
-    const def = plantDefs[i];
-    const { data } = await supabaseClient.from('plants').insert({
-      household_id:  householdId,
-      name:          def.name,
-      emoji:         def.emoji,
-      date_acquired: addDays(today, -def.days_ago),
-      sort_order:    i + 1,
-    }).select().single();
-    insertedPlants.push(data);
-  }
-
-  const [monstera, bougain, mandarin] = insertedPlants;
-
-  // ── Tasks ────────────────────────────────────────────────────
-  const taskDefs = [
-    { plant: monstera,  name: 'Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 7,  unit: 'days', days: [] }, last_done: addDays(today, -3),  next_due_override: null },
-    { plant: monstera,  name: 'Fertilize',        icon: '🌱', type: 'fertilize', recurrence: { type: 'interval', every: 30, unit: 'days', days: [] }, last_done: addDays(today, -20), next_due_override: null },
-    { plant: bougain,   name: 'Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 5,  unit: 'days', days: [] }, last_done: addDays(today, -12), next_due_override: null },
-    { plant: bougain,   name: 'Check Pests',     icon: '🐛', type: 'pest',      recurrence: { type: 'interval', every: 14, unit: 'days', days: [] }, last_done: addDays(today, -10), next_due_override: null },
-    { plant: mandarin,  name: 'Watering', icon: '💧', type: 'water',     recurrence: { type: 'interval', every: 7,  unit: 'days', days: [] }, last_done: today,              next_due_override: null },
-    { plant: mandarin,  name: 'Repot',           icon: '🪴', type: 'repot',     recurrence: { type: 'one-off' },                                      last_done: null,               next_due_override: addDays(today, 5) },
-  ];
-
-  const insertedTasks = [];
-  for (let i = 0; i < taskDefs.length; i++) {
-    const t = taskDefs[i];
-    const { data } = await supabaseClient.from('tasks').insert({
-      plant_id:          t.plant.id,
-      name:              t.name,
-      icon:              t.icon,
-      type:              t.type,
-      recurrence:        t.recurrence,
-      owner_id:          member0,
-      paused:            false,
-      note:              '',
-      sort_order:        i + 1,
-      last_done:         t.last_done,
-      next_due_override: t.next_due_override,
-    }).select().single();
-    insertedTasks.push(data);
-  }
-
-  // ── Care log (5 entries over last 2 weeks) ───────────────────
-  const careEntries = [
-    { plant: monstera, task: insertedTasks[0], member: member0, days_ago: 3,  tname: 'Watering', ttype: 'water'     },
-    { plant: monstera, task: insertedTasks[1], member: member1, days_ago: 20, tname: 'Fertilize',       ttype: 'fertilize' },
-    { plant: bougain,  task: insertedTasks[2], member: member0, days_ago: 6,  tname: 'Watering', ttype: 'water'     },
-    { plant: bougain,  task: insertedTasks[3], member: member1, days_ago: 10, tname: 'Check Pests',     ttype: 'pest'      },
-    { plant: mandarin, task: insertedTasks[4], member: member0, days_ago: 0,  tname: 'Watering', ttype: 'water'     },
-  ];
-  for (const e of careEntries) {
-    const ts = new Date(); ts.setDate(ts.getDate() - e.days_ago); ts.setHours(10, 0, 0, 0);
-    await supabaseClient.from('care_log').insert({
-      plant_id:            e.plant.id,
-      task_id:             e.task?.id ?? null,
-      household_member_id: e.member,
-      task_name:           e.tname,
-      task_type:           e.ttype,
-      date:                ts.toISOString().split('T')[0],
-      created_at:          ts.toISOString(),
-    });
-  }
-
-  // ── Notes (2) ────────────────────────────────────────────────
-  const note1ts = new Date(); note1ts.setDate(note1ts.getDate() - 5);
-  const note2ts = new Date(); note2ts.setDate(note2ts.getDate() - 12);
-  await supabaseClient.from('notes').insert({ plant_id: monstera.id,  household_member_id: member0, note: 'New leaf coming in!',            created_at: note1ts.toISOString() });
-  await supabaseClient.from('notes').insert({ plant_id: bougain.id,   household_member_id: member1, note: 'Spotted a few spider mites.',    created_at: note2ts.toISOString() });
-}
-
-async function seedHeavy() {
-  await seedEmpty();
-
-  const today  = todayStr();
-  const member0 = membersCache[0]?.id ?? null;
-  const member1 = (membersCache[1] ?? membersCache[0])?.id ?? null;
-
-  // ── Plants ──────────────────────────────────────────────────
-  const plantDefs = [
-    { emoji: '🌿', name: 'Fiddle Leaf Fig',    days_ago: 365 },
-    { emoji: '🌺', name: 'Birds of Paradise',  days_ago: 300 },
-    { emoji: '🫒', name: 'Olive Tree',         days_ago: 250 },
-    { emoji: '🌵', name: 'Cactus',             days_ago: 180 },
-    { emoji: '🎋', name: 'Bamboo',             days_ago: 90  },
-    { emoji: '🌻', name: 'Sunflower',          days_ago: 30  },
-  ];
-
-  const insertedPlants = [];
-  for (let i = 0; i < plantDefs.length; i++) {
-    const def = plantDefs[i];
-    const { data } = await supabaseClient.from('plants').insert({
-      household_id:  householdId,
-      name:          def.name,
-      emoji:         def.emoji,
-      date_acquired: addDays(today, -def.days_ago),
-      sort_order:    i + 1,
-    }).select().single();
-    insertedPlants.push(data);
-  }
-
-  // ── Tasks (3-4 per plant) ─────────────────────────────────────
-  const taskMatrix = [
-    // Fiddle Leaf Fig
-    [
-      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -2), ndo: null },
-      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -28), ndo: null },
-      { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -10), ndo: null },
-      { name: 'Rotate',          icon: '🔄', type: 'rotate',    rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -5),  ndo: null },
-    ],
-    // Birds of Paradise
-    [
-      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 5,  unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null },
-      { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -25), ndo: null },
-      { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null },
-    ],
-    // Olive Tree
-    [
-      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: today,               ndo: null },
-      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null },
-      { name: 'Repot',           icon: '🪴', type: 'repot',     rec: { type: 'one-off' },                                     ld: null,                ndo: addDays(today, 3) },
-    ],
-    // Cactus
-    [
-      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null },
-      { name: 'Check',           icon: '🔍', type: 'check',     rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -29), ndo: null },
-    ],
-    // Bamboo
-    [
-      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 3,  unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null },
-      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null },
-      { name: 'Rotate',          icon: '🔄', type: 'rotate',    rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -2),  ndo: null },
-    ],
-    // Sunflower
-    [
-      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 2,  unit: 'days', days: [] }, ld: addDays(today, -2),  ndo: null },
-      { name: 'Check',           icon: '🔍', type: 'check',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -5),  ndo: null },
-      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -7),  ndo: null },
-    ],
-  ];
-
-  const allTasks = [];
-  for (let pi = 0; pi < insertedPlants.length; pi++) {
-    const plant = insertedPlants[pi];
-    for (let ti = 0; ti < taskMatrix[pi].length; ti++) {
-      const t = taskMatrix[pi][ti];
-      const { data } = await supabaseClient.from('tasks').insert({
-        plant_id:          plant.id,
-        name:              t.name,
-        icon:              t.icon,
-        type:              t.type,
-        recurrence:        t.rec,
-        owner_id:          ti % 2 === 0 ? member0 : member1,
-        paused:            false,
-        note:              '',
-        sort_order:        ti + 1,
-        last_done:         t.ld,
-        next_due_override: t.ndo,
-      }).select().single();
-      allTasks.push({ task: data, plant });
+  if (resetOnboarding) {
+    if (currentMemberId) {
+      localStorage.removeItem(`onboarding_step_${currentMemberId}`);
+      localStorage.removeItem(`onboarding_plant_id_${currentMemberId}`);
+      localStorage.removeItem(`onboarding_task_id_${currentMemberId}`);
+      localStorage.removeItem(`onboarding_show_coachmark_${currentMemberId}`);
+      localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
     }
+    localStorage.removeItem('onboarding_coordination_shown');
+    if (activeUser) localStorage.removeItem(`push_accepted_${activeUser}`);
   }
-
-  // ── Care log (20 entries over last 3 months) ──────────────────
-  const careTypes = [
-    { tname: 'Watering', ttype: 'water'     },
-    { tname: 'Fertilize',       ttype: 'fertilize' },
-    { tname: 'Check Pests',     ttype: 'pest'      },
-    { tname: 'Rotate',          ttype: 'rotate'    },
-    { tname: 'Prune',           ttype: 'prune'     },
-  ];
-  const careOffsets = [0, 2, 5, 7, 10, 14, 18, 21, 25, 30, 35, 42, 50, 58, 65, 75, 85, 95, 75, 90];
-  for (let i = 0; i < 20; i++) {
-    const entry = allTasks[i % allTasks.length];
-    const ct    = careTypes[i % careTypes.length];
-    const ts    = new Date(); ts.setDate(ts.getDate() - careOffsets[i]); ts.setHours(9 + (i % 8), 0, 0, 0);
-    await supabaseClient.from('care_log').insert({
-      plant_id:            entry.plant.id,
-      task_id:             entry.task?.id ?? null,
-      household_member_id: i % 2 === 0 ? member0 : member1,
-      task_name:           ct.tname,
-      task_type:           ct.ttype,
-      date:                ts.toISOString().split('T')[0],
-      created_at:          ts.toISOString(),
-    });
-  }
-
-  // ── Notes (8 across plants) ───────────────────────────────────
-  const noteDefs = [
-    { pi: 0, member: member0, days_ago: 5,   text: 'New leaf coming in — 4th this year!' },
-    { pi: 0, member: member1, days_ago: 30,  text: 'Moved closer to the window.' },
-    { pi: 1, member: member0, days_ago: 8,   text: 'Spider mites spotted. Treated with neem oil.' },
-    { pi: 1, member: member1, days_ago: 60,  text: 'Pruned back the leggy stems.' },
-    { pi: 2, member: member0, days_ago: 15,  text: 'First flower buds forming!' },
-    { pi: 3, member: member1, days_ago: 20,  text: 'Repotted into cactus mix.' },
-    { pi: 4, member: member0, days_ago: 3,   text: 'Yellowing on lower stalks — may be overwatered.' },
-    { pi: 5, member: member1, days_ago: 10,  text: 'Growing faster than expected.' },
-  ];
-  for (const n of noteDefs) {
-    const ts = new Date(); ts.setDate(ts.getDate() - n.days_ago);
-    await supabaseClient.from('notes').insert({
-      plant_id:            insertedPlants[n.pi].id,
-      household_member_id: n.member,
-      note:                n.text,
-      created_at:          ts.toISOString(),
-    });
-  }
-}
-
-// ── v2 helpers ────────────────────────────────────────────────
-async function seedFirstPlantAllTypes(today, m0, m1, sortOrder) {
-  const { data: plant } = await supabaseClient.from('plants').insert({
-    household_id:  householdId,
-    name:          'Fiddle Leaf Fig',
-    emoji:         '🌿',
-    date_acquired: addDays(today, -200),
-    sort_order:    sortOrder,
-  }).select().single();
-
-  // Every task type — water, fertilize, repot, prune, pest, rotate, plus one custom.
-  // Icons match TASK_CONFIG so Care Log renders them correctly via getTaskConfig().
-  const taskDefs = [
-    { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null                  },
-    { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -15), ndo: addDays(today, 15)    },
-    { name: 'Repot',           icon: '🪴', type: 'repot',     rec: { type: 'one-off' },                                     ld: null,                ndo: addDays(today, 10)    },
-    { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 60, unit: 'days', days: [] }, ld: addDays(today, -22), ndo: null                  },
-    { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -7),  ndo: null                  },
-    { name: 'Rotate',          icon: '🔄', type: 'rotate',    rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -5),  ndo: addDays(today, 16)    },
-    { name: 'Mist Leaves',     icon: '💦', type: 'custom',    rec: { type: 'interval', every: 3,  unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null                  },
-  ];
-
-  const tasks = [];
-  for (let i = 0; i < taskDefs.length; i++) {
-    const t = taskDefs[i];
-    const { data } = await supabaseClient.from('tasks').insert({
-      plant_id:          plant.id,
-      name:              t.name,
-      icon:              t.icon,
-      type:              t.type,
-      recurrence:        t.rec,
-      owner_id:          i % 2 === 0 ? m0 : m1,
-      paused:            false,
-      note:              '',
-      sort_order:        i + 1,
-      last_done:         t.ld,
-      next_due_override: t.ndo,
-    }).select().single();
-    tasks.push(data);
-  }
-
-  // One care_log per task type, spread across the last 90 days.
-  const careOffsets = [2, 12, 25, 38, 52, 68, 85];
-  for (let i = 0; i < taskDefs.length; i++) {
-    const t = taskDefs[i];
-    const ts = new Date(); ts.setDate(ts.getDate() - careOffsets[i]); ts.setHours(10, 0, 0, 0);
-    await supabaseClient.from('care_log').insert({
-      plant_id:            plant.id,
-      task_id:             tasks[i].id,
-      household_member_id: i % 2 === 0 ? m0 : m1,
-      task_name:           t.name,
-      task_type:           t.type,
-      date:                ts.toISOString().split('T')[0],
-      created_at:          ts.toISOString(),
-    });
-  }
-
-  // 2 notes — one from each member
-  const n1ts = new Date(); n1ts.setDate(n1ts.getDate() - 8);
-  const n2ts = new Date(); n2ts.setDate(n2ts.getDate() - 25);
-  await supabaseClient.from('notes').insert({ plant_id: plant.id, household_member_id: m0, note: 'New leaf unfurled this week.',          created_at: n1ts.toISOString() });
-  await supabaseClient.from('notes').insert({ plant_id: plant.id, household_member_id: m1, note: 'Moved to a brighter spot on the shelf.', created_at: n2ts.toISOString() });
-
-  return plant;
-}
-
-async function seedSecondaryPlantV2(today, m0, m1, plantInfo, taskDefs, careOffsets, noteDefs, sortOrder) {
-  const { data: plant } = await supabaseClient.from('plants').insert({
-    household_id:  householdId,
-    name:          plantInfo.name,
-    emoji:         plantInfo.emoji,
-    date_acquired: addDays(today, -plantInfo.daysAgo),
-    sort_order:    sortOrder,
-  }).select().single();
-
-  const tasks = [];
-  for (let i = 0; i < taskDefs.length; i++) {
-    const t = taskDefs[i];
-    const { data } = await supabaseClient.from('tasks').insert({
-      plant_id:          plant.id,
-      name:              t.name,
-      icon:              t.icon,
-      type:              t.type,
-      recurrence:        t.rec,
-      owner_id:          i % 2 === 0 ? m0 : m1,
-      paused:            false,
-      note:              '',
-      sort_order:        i + 1,
-      last_done:         t.ld,
-      next_due_override: t.ndo ?? null,
-    }).select().single();
-    tasks.push(data);
-  }
-
-  for (let i = 0; i < careOffsets.length; i++) {
-    const taskIdx = i % taskDefs.length;
-    const t = taskDefs[taskIdx];
-    const ts = new Date(); ts.setDate(ts.getDate() - careOffsets[i]); ts.setHours(9 + (i % 8), 0, 0, 0);
-    await supabaseClient.from('care_log').insert({
-      plant_id:            plant.id,
-      task_id:             tasks[taskIdx].id,
-      household_member_id: i % 2 === 0 ? m0 : m1,
-      task_name:           t.name,
-      task_type:           t.type,
-      date:                ts.toISOString().split('T')[0],
-      created_at:          ts.toISOString(),
-    });
-  }
-
-  for (let i = 0; i < noteDefs.length; i++) {
-    const n = noteDefs[i];
-    const ts = new Date(); ts.setDate(ts.getDate() - n.daysAgo);
-    await supabaseClient.from('notes').insert({
-      plant_id:            plant.id,
-      household_member_id: i % 2 === 0 ? m0 : m1,
-      note:                n.text,
-      created_at:          ts.toISOString(),
-    });
-  }
-}
-
-async function seedMediumV2() {
-  // Complete wipe of the household's data so repeated seed runs never accumulate
-  // duplicate or orphaned rows. Children before parent to respect plant_id FK.
-  if (householdId) {
-    const { data: allPlants } = await supabaseClient
-      .from('plants').select('id').eq('household_id', householdId);
-    const plantIds = (allPlants ?? []).map(r => r.id);
-    if (plantIds.length) {
-      await supabaseClient.from('care_log').delete().in('plant_id', plantIds);
-      await supabaseClient.from('notes').delete().in('plant_id', plantIds);
-      await supabaseClient.from('tasks').delete().in('plant_id', plantIds);
-      await supabaseClient.from('plants').delete().in('id', plantIds);
-    }
-  }
-
-  const today = todayStr();
-  const m0 = membersCache[0]?.id ?? null;
-  const m1 = (membersCache[1] ?? membersCache[0])?.id ?? null;
-
-  await seedFirstPlantAllTypes(today, m0, m1, 1);
-
-  await seedSecondaryPlantV2(today, m0, m1,
-    { name: 'Bougainvillea', emoji: '🌸', daysAgo: 120 },
-    [
-      { name: 'Check Pests',     icon: '🐛', type: 'pest',  rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -10), ndo: today                 },
-      { name: 'Watering',        icon: '💧', type: 'water', rec: { type: 'interval', every: 5,  unit: 'days', days: [] }, ld: addDays(today, -2),  ndo: null                  },
-      { name: 'Repot',           icon: '🪴', type: 'repot', rec: { type: 'one-off' },                                     ld: null,                ndo: addDays(today, -7)    },
-    ],
-    [0, 1],
-    [{ daysAgo: 10, text: 'Flowers opening up — neon pink this year.' }],
-    2
-  );
-
-  await seedSecondaryPlantV2(today, m0, m1,
-    { name: 'Mandarin Tree', emoji: '🍊', daysAgo: 300 },
-    [
-      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -28), ndo: null },
-      { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 90, unit: 'days', days: [] }, ld: addDays(today, -30), ndo: null },
-      { name: 'Watering',        icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: today,               ndo: null },
-    ],
-    [4, 3, 30],
-    [{ daysAgo: 20, text: 'First fruit forming!' }],
-    3
-  );
-}
-
-async function seedHeavyV2() {
-  // Complete wipe of the household's data so repeated seed runs never accumulate
-  // duplicate or orphaned rows. Children before parent to respect plant_id FK.
-  if (householdId) {
-    const { data: allPlants } = await supabaseClient
-      .from('plants').select('id').eq('household_id', householdId);
-    const plantIds = (allPlants ?? []).map(r => r.id);
-    if (plantIds.length) {
-      await supabaseClient.from('care_log').delete().in('plant_id', plantIds);
-      await supabaseClient.from('notes').delete().in('plant_id', plantIds);
-      await supabaseClient.from('tasks').delete().in('plant_id', plantIds);
-      await supabaseClient.from('plants').delete().in('id', plantIds);
-    }
-  }
-
-  const today = todayStr();
-  const m0 = membersCache[0]?.id ?? null;
-  const m1 = (membersCache[1] ?? membersCache[0])?.id ?? null;
-
-  await seedFirstPlantAllTypes(today, m0, m1, 1);
-
-  await seedSecondaryPlantV2(today, m0, m1,
-    { name: 'Birds of Paradise', emoji: '🌺', daysAgo: 300 },
-    [
-      { name: 'Watering', icon: '💧', type: 'water',     rec: { type: 'interval', every: 5,  unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null                  },
-      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -28), ndo: null                  },
-      { name: 'Check Pests',     icon: '🐛', type: 'pest',      rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: today                 },
-      { name: 'Repot',           icon: '🪴', type: 'repot',     rec: { type: 'one-off' },                                     ld: null,                ndo: addDays(today, -7)    },
-    ],
-    [6, 14, 28, 42, 60, 80],
-    [
-      { daysAgo: 10, text: 'Repotted into larger container.' },
-      { daysAgo: 45, text: 'Yellowing leaves — adjusted light.' },
-    ],
-    2
-  );
-
-  await seedSecondaryPlantV2(today, m0, m1,
-    { name: 'Olive Tree', emoji: '🫒', daysAgo: 250 },
-    [
-      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -1),  ndo: null },
-      { name: 'Watering',        icon: '💧', type: 'water',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: today,               ndo: null },
-      { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 90, unit: 'days', days: [] }, ld: addDays(today, -55), ndo: null },
-      { name: 'Repot',           icon: '🪴', type: 'repot',     rec: { type: 'one-off' },                                     ld: null,                ndo: addDays(today, 3) },
-    ],
-    [0, 12, 25, 42, 65, 85, 7],
-    [{ daysAgo: 15, text: 'First flower buds forming!' }],
-    3
-  );
-
-  await seedSecondaryPlantV2(today, m0, m1,
-    { name: 'Cactus', emoji: '🌵', daysAgo: 180 },
-    [
-      { name: 'Watering',        icon: '💧', type: 'water',  rec: { type: 'interval', every: 21, unit: 'days', days: [] }, ld: addDays(today, -28), ndo: null },
-      { name: 'Check Pests',     icon: '🐛', type: 'pest',   rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -5),  ndo: null },
-      { name: 'Check',           icon: '🔍', type: 'check',  rec: { type: 'interval', every: 30, unit: 'days', days: [] }, ld: addDays(today, -29), ndo: null },
-      { name: 'Rotate',          icon: '🔄', type: 'rotate', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null },
-    ],
-    [22, 1, 29, 43, 60],
-    [{ daysAgo: 20, text: 'Repotted into cactus mix.' }],
-    4
-  );
-
-  await seedSecondaryPlantV2(today, m0, m1,
-    { name: 'Bamboo', emoji: '🎋', daysAgo: 90 },
-    [
-      { name: 'Watering',        icon: '💧', type: 'water',     rec: { type: 'interval', every: 3,  unit: 'days', days: [] }, ld: addDays(today, -3),  ndo: null },
-      { name: 'Prune',           icon: '✂️',  type: 'prune',     rec: { type: 'interval', every: 60, unit: 'days', days: [] }, ld: addDays(today, -30), ndo: null },
-      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -12), ndo: null },
-      { name: 'Rotate',          icon: '🔄', type: 'rotate',    rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -2),  ndo: null },
-    ],
-    [15, 3, 20, 30, 45, 75, 9, 60],
-    [
-      { daysAgo: 3,  text: 'Yellowing on lower stalks — may be overwatered.' },
-      { daysAgo: 40, text: 'Trimmed off damaged leaves.' },
-    ],
-    5
-  );
-
-  await seedSecondaryPlantV2(today, m0, m1,
-    { name: 'Sunflower', emoji: '🌻', daysAgo: 30 },
-    [
-      { name: 'Check',           icon: '🔍', type: 'check',     rec: { type: 'interval', every: 7,  unit: 'days', days: [] }, ld: addDays(today, -5), ndo: null },
-      { name: 'Watering',        icon: '💧', type: 'water',     rec: { type: 'interval', every: 2,  unit: 'days', days: [] }, ld: addDays(today, -2), ndo: null },
-      { name: 'Fertilize',       icon: '🌱', type: 'fertilize', rec: { type: 'interval', every: 14, unit: 'days', days: [] }, ld: addDays(today, -7), ndo: null },
-    ],
-    [4, 6, 10, 14, 20],
-    [{ daysAgo: 10, text: 'Growing faster than expected.' }],
-    6
-  );
 }
 
 async function seedHeavyV3() {
@@ -7531,10 +7053,20 @@ async function seedHeavyV3() {
     rec: { type: 'interval', every: 7, unit: 'days', days: [] },
     owner: memberA, ld: addDays(today, -10), ndo: null,
   });
-  await insertTask(mandarin.id, 1, {
+  const mandarinFert = await insertTask(mandarin.id, 1, {
     name: 'Fertilizing', icon: '🌿', type: 'fertilize',
     rec: { type: 'interval', every: 5, unit: 'days', days: [] },
     owner: memberB, ld: addDays(today, -5), ndo: null,
+  });
+  const mandarinTs = new Date(); mandarinTs.setDate(mandarinTs.getDate() - 5); mandarinTs.setHours(10, 0, 0, 0);
+  await supabaseClient.from('care_log').insert({
+    plant_id:            mandarin.id,
+    task_id:             mandarinFert.id,
+    household_member_id: memberB,
+    task_name:           'Fertilizing',
+    task_type:           'fertilize',
+    date:                addDays(today, -5),
+    created_at:          mandarinTs.toISOString(),
   });
 
   // 2. Pothos — overdue watering with exact-multiple displacement (prompt suppressed);
@@ -7577,10 +7109,20 @@ async function seedHeavyV3() {
     rec: { type: 'weekdays', days: cactusWeekdays },
     owner: memberA, ld: addDays(today, -12), ndo: null,
   });
-  await insertTask(cactus.id, 1, {
+  const cactusFert = await insertTask(cactus.id, 1, {
     name: 'Fertilizing', icon: '🌿', type: 'fertilize',
     rec: { type: 'interval', every: 30, unit: 'days', days: [] },
     owner: memberB, ld: addDays(today, -5), ndo: null, paused: true,
+  });
+  const cactusTs = new Date(); cactusTs.setDate(cactusTs.getDate() - 5); cactusTs.setHours(10, 0, 0, 0);
+  await supabaseClient.from('care_log').insert({
+    plant_id:            cactus.id,
+    task_id:             cactusFert.id,
+    household_member_id: memberB,
+    task_name:           'Fertilizing',
+    task_type:           'fertilize',
+    date:                addDays(today, -5),
+    created_at:          cactusTs.toISOString(),
   });
 
   // 4. Bougainvillea — upcoming watering (mark-done-early test); pending one-off repot.
@@ -7593,10 +7135,20 @@ async function seedHeavyV3() {
     sort_order:    4,
     photo_url:     'https://kmkfywdzoitgdtbttxaa.supabase.co/storage/v1/object/public/plant-photos/test-assets/bugam-photo.jpeg',
   }).select().single();
-  await insertTask(bougainvillea.id, 0, {
+  const bougainWater = await insertTask(bougainvillea.id, 0, {
     name: 'Watering', icon: '💧', type: 'water',
     rec: { type: 'interval', every: 7, unit: 'days', days: [] },
     owner: memberA, ld: addDays(today, -3), ndo: null,
+  });
+  const bougainTs = new Date(); bougainTs.setDate(bougainTs.getDate() - 3); bougainTs.setHours(10, 0, 0, 0);
+  await supabaseClient.from('care_log').insert({
+    plant_id:            bougainvillea.id,
+    task_id:             bougainWater.id,
+    household_member_id: memberA,
+    task_name:           'Watering',
+    task_type:           'water',
+    date:                addDays(today, -3),
+    created_at:          bougainTs.toISOString(),
   });
   await insertTask(bougainvillea.id, 1, {
     name: 'Repot', icon: '🪴', type: 'repot',
@@ -7606,10 +7158,20 @@ async function seedHeavyV3() {
 
   // 5. Fern — due-today misting + 3 notes (last two with photos).
   const fern = await insertPlant('Fern', '🌿', 5, 40);
-  await insertTask(fern.id, 0, {
+  const fernMisting = await insertTask(fern.id, 0, {
     name: 'Misting', icon: '💦', type: 'water',
     rec: { type: 'interval', every: 2, unit: 'days', days: [] },
     owner: memberA, ld: addDays(today, -2), ndo: null,
+  });
+  const fernTs = new Date(); fernTs.setDate(fernTs.getDate() - 2); fernTs.setHours(10, 0, 0, 0);
+  await supabaseClient.from('care_log').insert({
+    plant_id:            fern.id,
+    task_id:             fernMisting.id,
+    household_member_id: memberA,
+    task_name:           'Misting',
+    task_type:           'water',
+    date:                addDays(today, -2),
+    created_at:          fernTs.toISOString(),
   });
 
   const FERN_PHOTO_BASE = 'https://kmkfywdzoitgdtbttxaa.supabase.co/storage/v1/object/public/plant-photos/test-assets';

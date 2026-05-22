@@ -1,0 +1,525 @@
+# Design system audit — src/style.css
+# Generated from style.css; 5285 lines, 99953 bytes.
+
+## CSS Variable Definitions (:root)
+(53 declarations)
+
+  --bg                      #f2f5f2
+  --card                    #ffffff
+  --primary                 #2e7d51
+  --primary-dark            #1b5e38
+  --primary-light           #e6f4ec
+  --text                    #1c2b1c
+  --text-muted              #6b7c6b
+  --border                  #dde8dd
+  --shadow-sm               0 1px 3px rgba(0,0,0,0.07), 0 2px 6px rgba(0,0,0,0.04)
+  --shadow                  0 2px 12px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.04)
+  --radius                  16px
+  --radius-sm               12px
+  --radius-xs               8px
+  --water                   #1565c0
+  --water-bg                #e3f2fd
+  --refill                  #0277bd
+  --refill-bg               #e1f5fe
+  --fertilize               #2e7d32
+  --fertilize-bg            #e8f5e9
+  --check                   #bf360c
+  --check-bg                #fbe9e7
+  --repot                   #6d4c41
+  --repot-bg                #efebe9
+  --prune                   #558b2f
+  --prune-bg                #f1f8e9
+  --pest                    #bf6a00
+  --pest-bg                 #fff8e1
+  --rotate                  #4527a0
+  --rotate-bg               #ede7f6
+  --custom                  #00838f
+  --custom-bg               #e0f7fa
+  --matu                    #283593
+  --matu-bg                 #e8eaf6
+  --vale                    #880e4f
+  --vale-bg                 #fce4ec
+  --due                     #c62828
+  --due-bg                  #ffebee
+  --soon                    #e65100
+  --soon-bg                 #fff3e0
+  --ok                      #1b5e20
+  --ok-bg                   #e8f5e9
+  --header-height           62px
+  --color-text-primary      var(--text)
+  --color-text-muted        var(--text-muted)
+  --color-bg-primary        var(--card)
+  --color-bg-secondary      var(--bg)
+  --color-border-secondary  var(--border)
+  --color-border-primary    var(--primary)
+  --color-bg-success        var(--primary-light)
+  --color-bg-info           #e3f2fd
+  --border-radius-md        var(--radius-xs)
+  --border-radius-lg        var(--radius-sm)
+  --color-green-600         #3d5a3e
+
+## Hardcoded Colors (hex / rgb / rgba)
+(184 unique values, 359 occurrences)
+
+    40×  #fff
+    14×  #3a6b3a
+     8×  #1a2e1a
+     7×  #1a2e1f
+     7×  #888
+     7×  #dde3d8
+     6×  #000
+     6×  #2e7d51
+     6×  #e4e9e0
+     5×  #4a7c5f
+     5×  #aaa
+     5×  #f4f6f2
+     5×  rgba(0, 0, 0, 0.12)
+     4×  #4a6340
+     4×  #9aaa94
+     4×  #bbb
+     4×  #c8d4c2
+     4×  rgba(255, 255, 255, 0.18)
+     3×  #3a5a3a
+     3×  #4a7a5a
+     3×  #b45309
+     3×  #c0392b
+     3×  #c8d4c0
+     3×  #dde6d8
+     3×  rgba(0, 0, 0, 0.45)
+     3×  rgba(255, 255, 255, 0.15)
+     3×  rgba(255, 255, 255, 0.55)
+     2×  #1c2b1c
+     2×  #2a5a2a
+     2×  #2d5a3f
+     2×  #3a6b4a
+     2×  #999
+     2×  #b04848
+     2×  #b0bca8
+     2×  #ddd
+     2×  #e3f2fd
+     2×  #e65100
+     2×  #e8f0e4
+     2×  #e8f0e8
+     2×  #e8f5e9
+     2×  #eeeeee
+     2×  #eef3eb
+     2×  #eef5ec
+     2×  #f0c89a
+     2×  #f0f4ec
+     2×  #f0f4ee
+     2×  #f5c2c2
+     2×  #f6f5f0
+     2×  #fce8e8
+     2×  #fdf3e8
+     2×  #ffcdd2
+     2×  #fff3e0
+     2×  #fff8e1
+     2×  #ffffff
+     2×  rgba(0, 0, 0, 0.04)
+     2×  rgba(0, 0, 0, 0.05)
+     2×  rgba(0, 0, 0, 0.1)
+     2×  rgba(0, 0, 0, 0.25)
+     2×  rgba(255, 255, 255, 0.22)
+     2×  rgba(255, 255, 255, 0.8)
+     2×  rgba(46, 125, 81, 0.4)
+     1×  #00838f
+     1×  #0277bd
+     1×  #0d1f12
+     1×  #107
+     1×  #107b
+     1×  #111c11
+     1×  #1565c0
+     1×  #178b
+     1×  #180a
+     1×  #181
+     1×  #181b
+     1×  #1a1a1a
+     1×  #1b5e20
+     1×  #1b5e38
+     1×  #1c4d1c
+     1×  #222
+     1×  #254f36
+     1×  #283593
+     1×  #2e4a35
+     1×  #2e7d32
+     1×  #333
+     1×  #3a5232
+     1×  #3b6d11
+     1×  #3d5a3e
+     1×  #3e7050
+     1×  #444
+     1×  #4527a0
+     1×  #4a4a4a
+     1×  #4a5a4a
+     1×  #555
+     1×  #558b2f
+     1×  #5a6f5d
+     1×  #5d4037
+     1×  #6a9a6a
+     1×  #6b7c6b
+     1×  #6d4c41
+     1×  #6e7a6c
+     1×  #7a8a74
+     1×  #7aaa74
+     1×  #7fc99a
+     1×  #880e4f
+     1×  #888888
+     1×  #8a8d86
+     1×  #8a9a84
+     1×  #8a9e8a
+     1×  #a8c5a8
+     1×  #a8d4a0
+     1×  #a93226
+     1×  #b07a2a
+     1×  #bf360c
+     1×  #bf6a00
+     1×  #bfcbbf
+     1×  #c62828
+     1×  #c8c8c8
+     1×  #c8d0c2
+     1×  #c8dfc8
+     1×  #ccc
+     1×  #d0d0d0
+     1×  #d4d4d4
+     1×  #d4ddca
+     1×  #d4e8ce
+     1×  #d6ddd2
+     1×  #d8b8b8
+     1×  #d97706
+     1×  #dddddd
+     1×  #dde8dd
+     1×  #e0f7fa
+     1×  #e1f5fe
+     1×  #e6f4ec
+     1×  #e8a0a0
+     1×  #e8eaf6
+     1×  #e8ece4
+     1×  #e8f4e8
+     1×  #ebebeb
+     1×  #ede7f6
+     1×  #eee
+     1×  #eef1ec
+     1×  #eef2ea
+     1×  #eef2ee
+     1×  #efebe9
+     1×  #f0c0c0
+     1×  #f0f4f0
+     1×  #f0f8ee
+     1×  #f1f8e9
+     1×  #f2f5f2
+     1×  #f4faf4
+     1×  #f5c6c6
+     1×  #f5d9a0
+     1×  #f5e0c0
+     1×  #f6faf4
+     1×  #f7f9f7
+     1×  #f8f8f8
+     1×  #f9a825
+     1×  #f9fdf7
+     1×  #fafcfa
+     1×  #fbe9e7
+     1×  #fce4ec
+     1×  #fde8e8
+     1×  #fef3c7
+     1×  #ffebee
+     1×  #fff5f5
+     1×  #fff8f0
+     1×  #fff8f8
+     1×  rgba(0, 0, 0, 0.06)
+     1×  rgba(0, 0, 0, 0.07)
+     1×  rgba(0, 0, 0, 0.08)
+     1×  rgba(0, 0, 0, 0.09)
+     1×  rgba(0, 0, 0, 0.14)
+     1×  rgba(0, 0, 0, 0.18)
+     1×  rgba(0, 0, 0, 0.2)
+     1×  rgba(0, 0, 0, 0.28)
+     1×  rgba(0, 0, 0, 0.30)
+     1×  rgba(0, 0, 0, 0.38)
+     1×  rgba(0, 0, 0, 0.4)
+     1×  rgba(255, 255, 255, 0.2)
+     1×  rgba(255, 255, 255, 0.3)
+     1×  rgba(255, 255, 255, 0.32)
+     1×  rgba(255, 255, 255, 0.4)
+     1×  rgba(255, 255, 255, 0.6)
+     1×  rgba(255, 255, 255, 0.75)
+     1×  rgba(255, 255, 255, 0.9)
+     1×  rgba(58, 90, 58, 0.4)
+     1×  rgba(74, 124, 95, 0.12)
+
+## Font Sizes
+(19 unique values, 276 occurrences)
+
+    51×  13px
+    50×  12px
+    40×  11px
+    32×  14px
+    21×  15px
+    20×  16px
+    18×  10px
+     9×  22px
+     8×  20px
+     7×  18px
+     5×  9px
+     4×  17px
+     4×  24px
+     2×  36px
+     1×  28px
+     1×  30px
+     1×  32px
+     1×  56px
+     1×  64px
+
+## Font Weights
+(6 unique values, 141 occurrences)
+
+    52×  700
+    44×  500
+    38×  600
+     4×  400
+     2×  800
+     1×  normal
+
+## Border Radius
+(26 unique values, 152 occurrences)
+
+    30×  50%
+    19×  10px
+    14×  20px
+    13×  var(--radius-sm)
+    12×  6px
+    12×  8px
+    12×  var(--radius-xs)
+     7×  12px
+     5×  13px
+     3×  14px
+     3×  2px
+     3×  var(--radius)
+     2×  0
+     2×  28px
+     2×  4px
+     2×  7px
+     2×  var(--border-radius-md)
+     1×  0 0 10px 10px
+     1×  0 12px 12px 0
+     1×  10px 10px 0 0
+     1×  14px 14px 0 0
+     1×  18px 18px 0 0
+     1×  20px 20px 0 0
+     1×  999px
+     1×  9px
+     1×  var(--border-radius-lg)
+
+## Spacing — padding / margin
+(shorthand and single-side reported separately)
+
+## Padding (shorthand `padding:`)
+(106 unique values, 174 occurrences)
+
+    13×  0
+     8×  12px 14px
+     5×  10px 14px
+     5×  14px
+     4×  11px 12px
+     4×  12px
+     4×  3px 9px
+     3×  10px 12px
+     3×  16px
+     3×  2px 8px
+     3×  4px 10px
+     3×  4px 8px
+     3×  5px 12px
+     3×  6px 10px
+     3×  8px 10px
+     2×  0 16px
+     2×  11px
+     2×  11px 10px
+     2×  14px 16px
+     2×  2px 0
+     2×  32px 24px
+     2×  3px
+     2×  4px 0
+     2×  4px 0 6px
+     2×  4px 6px
+     2×  6px 0
+     2×  6px 12px
+     2×  6px 14px
+     2×  8px
+     2×  8px 14px
+     2×  9px 13px
+     1×  0 0 80px
+     1×  0 0 8px
+     1×  0 16px 140px
+     1×  0 16px 4px
+     1×  0 16px 8px
+     1×  0 4px
+     1×  10px
+     1×  10px 0 10px 16px
+     1×  10px 10px 10px 14px
+     1×  10px 12px 6px
+     1×  10px 16px
+     1×  10px 16px 2px
+     1×  10px 16px 4px
+     1×  10px 16px 8px
+     1×  11px 22px 11px 18px
+     1×  11px 4px
+     1×  12px 14px 10px
+     1×  12px 14px 13px
+     1×  12px 16px 8px
+     1×  12px 20px
+     1×  12px 20px calc(28px + env(safe-area-inset-bottom, 0px))
+     1×  12px 24px
+     1×  12px 8px
+     1×  13px
+     1×  13px 16px 5px
+     1×  13px 20px
+     1×  14px 16px 6px
+     1×  14px 20px 8px
+     1×  14px 22px
+     1×  14px 28px
+     1×  16px 0 28px
+     1×  16px 18px 14px
+     1×  16px 20px calc(20px + env(safe-area-inset-bottom, 0px))
+     1×  18px
+     1×  18px 0 4px
+     1×  18px 16px 32px
+     1×  1px 6px
+     1×  22px 16px 8px
+     1×  2px
+     1×  2px 16px 10px
+     1×  2px 4px
+     1×  2px 7px
+     1×  2px 9px
+     1×  3px 10px
+     1×  3px 6px
+     1×  3px 7px
+     1×  3px 8px
+     1×  40px 20px
+     1×  48px 20px
+     1×  48px 24px
+     1×  4px 0 12px
+     1×  4px 2px
+     1×  4px 4px 14px
+     1×  56px 0 40px
+     1×  5px 12px 5px 5px
+     1×  60px 20px
+     1×  64px 32px 32px
+     1×  6px
+     1×  6px 16px
+     1×  6px 20px 10px
+     1×  6px 8px
+     1×  7px 12px
+     1×  7px 14px
+     1×  7px 16px
+     1×  7px 4px
+     1×  7px 8px
+     1×  8px 0
+     1×  8px 12px
+     1×  8px 13px
+     1×  8px 13px 4px
+     1×  8px 16px
+     1×  8px 20px 4px
+     1×  9px 0
+     1×  9px 12px
+     1×  9px 14px
+
+## Padding (single-side `padding-top|right|bottom|left:`)
+(8 unique values, 14 occurrences)
+
+     4×  0
+     3×  8px
+     2×  10px
+     1×  12px
+     1×  24px
+     1×  2px
+     1×  36px
+     1×  90px
+
+## Margin (shorthand `margin:`)
+(24 unique values, 35 occurrences)
+
+     6×  0
+     3×  0 0 8px
+     3×  0 auto
+     2×  18px 0 8px
+     2×  8px 0
+     1×  0 -16px 5px
+     1×  0 0 12px
+     1×  0 0 28px
+     1×  0 4px
+     1×  0 auto 10px
+     1×  10px 16px 0
+     1×  12px 0
+     1×  12px 0 10px
+     1×  12px 16px 0
+     1×  12px auto 0
+     1×  14px 16px 0
+     1×  16px 16px 0
+     1×  18px 4px 8px
+     1×  20px -20px 16px
+     1×  20px 0 0
+     1×  4px 0 12px
+     1×  8px -20px 0
+     1×  8px 0 6px -16px
+     1×  8px 16px 0
+
+## Margin (single-side `margin-top|right|bottom|left:`)
+(19 unique values, 116 occurrences)
+
+    20×  8px
+    17×  4px
+    12×  12px
+    11×  2px
+    11×  6px
+     9×  10px
+     8×  16px
+     5×  1px
+     4×  5px
+     4×  auto
+     3×  0
+     3×  14px
+     2×  -16px
+     2×  3px
+     1×  -10px
+     1×  -2px
+     1×  -8px
+     1×  18px
+     1×  20px
+
+## Box Shadow
+(15 unique values, 19 occurrences)
+
+     3×  var(--shadow-sm)
+     2×  0 0 0 1.5px #3a6b3a
+     2×  0 4px 14px rgba(46, 125, 81, 0.4)
+     1×  -4px 0 24px rgba(0,0,0,0.18)
+     1×  0 0 0 1.5px rgba(0, 0, 0, 0.25), 0 3px 8px rgba(0, 0, 0, 0.30)
+     1×  0 0 0 1px rgba(0,0,0,0.06)
+     1×  0 0 0 3px rgba(74, 124, 95, 0.12)
+     1×  0 1px 3px rgba(0,0,0,0.2)
+     1×  0 1px 4px rgba(0, 0, 0, 0.12)
+     1×  0 2px 8px rgba(0, 0, 0, 0.05)
+     1×  0 2px 8px rgba(0, 0, 0, 0.12)
+     1×  0 2px 8px rgba(0, 0, 0, 0.25)
+     1×  0 4px 16px rgba(0,0,0,0.28)
+     1×  0 8px 24px rgba(0, 0, 0, 0.14)
+     1×  none
+
+## Z-Index
+(16 unique values, 23 occurrences)
+
+     3×  1
+     3×  2
+     2×  1000
+     2×  3
+     2×  50
+     1×  10
+     1×  1001
+     1×  1100
+     1×  1500
+     1×  1501
+     1×  200
+     1×  2000
+     1×  2001
+     1×  9
+     1×  99998
+     1×  99999

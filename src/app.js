@@ -39,6 +39,7 @@ const CARE_ICON = {
   prune:     '✂️',
   pest:      '🐛',
   rotate:    '🔄',
+  skipped:   '⏭',
 };
 
 const CUSTOM_ICONS = ['🌿', '💦', '🧴', '🌊', '✂️', '🔍', '🪴', '🐛', '🔄', '🌞', '🧪', '🌸', '🍃', '🌼', '🌡️', '🪥'];
@@ -753,6 +754,11 @@ async function markTaskDone(plantId, taskId) {
   const task = plant?.tasks.find(t => t.id === taskId);
   if (!task) return;
 
+  // Capture pre-mark-done schedule so we can prompt to reschedule if the
+  // completion is off the original due date. Skip one-off tasks entirely.
+  const preRecType = task.recurrenceType ?? 'interval';
+  const preDueDate = preRecType !== 'one-off' ? computeNextDue(task) : null;
+
   task.lastDone = todayStr();
   task.nextDueOverride = null; // clear any manual override when marking done
 
@@ -811,6 +817,15 @@ async function markTaskDone(plantId, taskId) {
   }).catch(() => {});
 
   loadActivityFeed().then(() => { if (state.view === 'home') renderHome(); });
+
+  if (preDueDate) {
+    const displacement = daysBetween(preDueDate, todayStr());
+    const every = task.frequencyDays;
+    const isExactIntervalMultiple = preRecType === 'interval' && every > 0 && displacement % every === 0;
+    if (Math.abs(displacement) >= 1 && !isExactIntervalMultiple) {
+      showReschedulePrompt(plantId, taskId, displacement, preDueDate);
+    }
+  }
   } finally {
     isSaving = false;
   }
@@ -853,6 +868,72 @@ async function reassignTask(plantId, taskId) {
     .update({ owner_id: member?.id ?? null })
     .eq('id', taskId)
     .then(({ error }) => { if (error) console.error('reassignTask error:', error); });
+}
+
+async function skipTask(plantId, taskId) {
+  if (isSaving) return;
+  isSaving = true;
+  try {
+    const plant = getPlant(plantId);
+    const task  = plant?.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    if ((task.recurrenceType ?? 'interval') === 'one-off') return;
+
+    const today = todayStr();
+    const every = task.frequencyDays;
+    if (!every || every < 1) return;
+
+    // Anchor = most recent due date ≤ today.
+    let anchor;
+    if (task.nextDueOverride) {
+      anchor = task.nextDueOverride;
+    } else if (!task.lastDone) {
+      anchor = today;
+    } else {
+      anchor = task.lastDone;
+      while (addDays(anchor, every) <= today) {
+        anchor = addDays(anchor, every);
+      }
+    }
+    const newOverride = addDays(anchor, every);
+
+    const cfg = getTaskConfig(task);
+    plant.careLog.unshift({
+      id: uid(),
+      date: today,
+      createdAt: new Date().toISOString(),
+      author: activeUser,
+      taskId: task.id,
+      taskName: cfg.name,
+      taskType: 'skipped',
+    });
+    plant.careLog = plant.careLog.slice(0, 50);
+
+    await updateTask(plantId, taskId, { nextDueOverride: newOverride });
+
+    await supabaseClient
+      .from('care_log')
+      .insert({
+        plant_id:            plantId,
+        task_id:             taskId,
+        household_member_id: currentMemberId,
+        task_name:           cfg.name,
+        task_type:           'skipped',
+        date:                today,
+      })
+      .then(({ error }) => {
+        if (error) { console.error('skipTask care_log insert error:', error); return; }
+        posthog.capture('task_skipped', {
+          plant_id:  plantId,
+          task_type: task.type,
+          task_name: task.name,
+        });
+      });
+
+    loadActivityFeed();
+  } finally {
+    isSaving = false;
+  }
 }
 
 async function updateTask(plantId, taskId, updates) {
@@ -1609,8 +1690,9 @@ function renderHomeDueToday() {
     const subtitleHtml = overdue
       ? `<span style="color:#c0392b;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${daysLate} day${daysLate !== 1 ? 's' : ''} late</span>`
       : `<span style="color:#b07a2a;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · due today</span>`;
+    const rowAction = overdue ? 'caring-overdue-row-tap' : 'caring-open-edit-task';
 
-    html += `<div class="activity-row home-due-today-row attention-row ${urgencyRowCls}" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
+    html += `<div class="activity-row home-due-today-row attention-row ${urgencyRowCls}" data-action="${rowAction}" data-plant="${plant.id}" data-task="${task.id}">
       ${plant.photoUrl
         ? plantIconImgHtml(plant.photoUrl, 26, '8px')
         : `<span style="width:26px;height:26px;border-radius:8px;background:#eef2ee;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>`}
@@ -1707,14 +1789,17 @@ function renderHomeActivityFeed() {
   for (const item of activityFeed.slice(0, 3)) {
     const time = formatActivityTime(item.sortKey);
     if (item.type === 'care') {
+      const isSkipped = item.taskType === 'skipped';
       const verb = CARE_VERB[item.taskType];
       const icon = CARE_ICON[item.taskType] ?? '🌿';
-      const text = verb
-        ? `${escapeHtml(item.member)} ${escapeHtml(verb)} ${escapeHtml(item.plantName)}`
-        : `${escapeHtml(item.member)} · ${escapeHtml(item.taskName)} — ${escapeHtml(item.plantName)}`;
+      const text = isSkipped
+        ? `${escapeHtml(item.member)} skipped ${escapeHtml(item.taskName)}`
+        : verb
+          ? `${escapeHtml(item.member)} ${escapeHtml(verb)} ${escapeHtml(item.plantName)}`
+          : `${escapeHtml(item.member)} · ${escapeHtml(item.taskName)} — ${escapeHtml(item.plantName)}`;
       html += `
-      <div class="activity-row activity-row--home">
-        <span class="activity-icon">${icon}</span>
+      <div class="activity-row activity-row--home${isSkipped ? ' activity-row-skipped' : ''}">
+        <span class="activity-icon${isSkipped ? ' activity-icon-skipped' : ''}">${icon}</span>
         <span class="activity-text">${text}</span>
         <span class="activity-time">${time}</span>
       </div>`;
@@ -2435,9 +2520,10 @@ function renderHouseholdActivity() {
       const ownerInitial = (item.member ?? '?')[0].toUpperCase();
 
       let titleText, subtitleText, taskIcon, photoThumbHtml = '';
+      const isSkipped = item.type === 'care' && item.taskType === 'skipped';
       if (item.type === 'care') {
         titleText    = item.taskName ?? 'Care';
-        subtitleText = plantName;
+        subtitleText = isSkipped ? `${plantName} · Skipped` : plantName;
         taskIcon     = CARE_ICON[item.taskType] ?? '✅';
       } else {
         titleText = 'Note added';
@@ -2450,15 +2536,15 @@ function renderHouseholdActivity() {
         }
       }
 
-      rowsHtml += `<div class="upcoming-row">
+      rowsHtml += `<div class="upcoming-row${isSkipped ? ' activity-row-skipped' : ''}">
         ${dateColHtml}
         <div class="upcoming-card">
           ${plantTileHtml}
           <span class="upcoming-card-divider"></span>
-          <span class="upcoming-card-icon">${taskIcon}</span>
+          <span class="upcoming-card-icon${isSkipped ? ' activity-icon-skipped' : ''}">${taskIcon}</span>
           <span class="home-due-today-info">
             <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(titleText)}</span>
-            <span class="home-due-today-plant">${escapeHtml(subtitleText)}</span>
+            <span class="home-due-today-plant${isSkipped ? ' activity-sub-skipped' : ''}">${escapeHtml(subtitleText)}</span>
           </span>
           ${photoThumbHtml}
           <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInitial)}</span>
@@ -2696,7 +2782,8 @@ function renderSummaryTab(plant) {
         const d           = daysUntilDue(task);
         const status      = d < 0 ? 'Overdue' : 'Due today';
         const metaText    = `${status} · ${recurrenceLabel(task)}`;
-        html += `<div class="attention-row" style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff8f0;border:0.5px solid #f0d8b0;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
+        const rowAction   = d < 0 ? 'caring-overdue-row-tap' : 'edit-task';
+        html += `<div class="attention-row" style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff8f0;border:0.5px solid #f0d8b0;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="${rowAction}" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
           <span style="width:36px;height:36px;background:#eef3eb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${cfg.icon}</span>
           <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;"></span>
           <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
@@ -2812,33 +2899,38 @@ function renderSummaryTab(plant) {
     for (const item of activityItems) {
       if (item.type === 'care') {
         const e           = item.data;
+        const isSkipped   = e.taskType === 'skipped';
         const matchedTask = plant.tasks.find(t => t.id === e.taskId);
         const cfgM        = matchedTask ? getTaskConfig(matchedTask) : null;
-        const icon        = cfgM?.icon ?? '✓';
-        const tType       = cfgM?.type ?? e.taskType;
+        const icon        = isSkipped ? '⏭' : (cfgM?.icon ?? '✓');
+        const tType       = isSkipped ? 'skipped' : (cfgM?.type ?? e.taskType);
         const relTime     = relativeDays(e.date) === 'today' ? 'Today'
                           : relativeDays(e.date) === '1 day ago' ? 'Yesterday'
                           : relativeDays(e.date);
         const absDate     = e.date ? formatDate(e.date) : '';
         const verb        = CARE_VERB[tType];
         const author      = e.author ?? 'Someone';
-        const primary     = verb
-          ? `${author} ${verb} ${plant.name}`
-          : `${author} · ${e.taskName ?? 'care'} — ${plant.name}`;
-        const isDoneToday = e.date === today;
-        const tileHtml    = isDoneToday
-          ? `<span style="width:40px;height:40px;background:#eaf3de;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${icon}</span>`
-          : activityTaskTileHtml(tType, icon);
+        const primary     = isSkipped
+          ? `${author} skipped ${e.taskName ?? 'task'}`
+          : verb
+            ? `${author} ${verb} ${plant.name}`
+            : `${author} · ${e.taskName ?? 'care'} — ${plant.name}`;
+        const isDoneToday = !isSkipped && e.date === today;
+        const tileHtml    = isSkipped
+          ? `<span class="activity-icon-skipped" style="width:40px;height:40px;background:#f4f6f2;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${icon}</span>`
+          : isDoneToday
+            ? `<span style="width:40px;height:40px;background:#eaf3de;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${icon}</span>`
+            : activityTaskTileHtml(tType, icon);
         const actionsHtml = isDoneToday
           ? `<button data-action="summary-carelog-add-note" data-plant="${escapeHtml(plant.id)}" style="width:30px;height:30px;border-radius:50%;border:0.5px solid #dde0d9;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;cursor:pointer;padding:0;" aria-label="Add note"><svg viewBox="0 0 16 16" fill="none" stroke="#8a9180" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg></button>
             <button data-action="summary-carelog-undo" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(e.taskId ?? '')}" data-entry="${escapeHtml(e.id ?? '')}" style="width:28px;height:28px;border-radius:50%;border:none;background:#3b6d11;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;cursor:pointer;padding:0;margin-left:6px;" aria-label="Undo">✓</button>`
           : '';
-        html += `<div style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="carelog-open-edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(e.taskId ?? '')}">
+        html += `<div class="${isSkipped ? 'activity-row-skipped ' : ''}" style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff;${isSkipped ? '' : 'border:0.5px solid #e8ede8;border-radius:12px;'}padding:10px 12px;cursor:pointer;" data-action="carelog-open-edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(e.taskId ?? '')}">
           ${tileHtml}
           <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;"></span>
           <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
             <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(primary)}</span>
-            <span style="font-size:11px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(relTime)} · ${escapeHtml(absDate)}</span>
+            <span class="${isSkipped ? 'activity-sub-skipped' : ''}" style="font-size:11px;${isSkipped ? '' : 'color:#8a8d86;'}overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(relTime)} · ${escapeHtml(absDate)}</span>
           </span>
           ${actionsHtml}
         </div>`;
@@ -3129,10 +3221,13 @@ function activityTaskTileHtml(taskType, icon) {
 }
 
 function renderCareLogNewRow(entry, plant) {
+  const isSkipped   = entry.taskType === 'skipped';
   const matchedTask = plant?.tasks?.find(t => t.id === entry.taskId);
   const cfg         = matchedTask ? getTaskConfig(matchedTask) : null;
-  const taskIcon    = cfg?.icon ?? (entry.taskType ? (CARE_ICON[entry.taskType] ?? '✅') : '✅');
-  const taskType    = cfg?.type ?? entry.taskType;
+  const taskIcon    = isSkipped
+    ? (CARE_ICON.skipped ?? '⏭')
+    : (cfg?.icon ?? (entry.taskType ? (CARE_ICON[entry.taskType] ?? '✅') : '✅'));
+  const taskType    = isSkipped ? 'skipped' : (cfg?.type ?? entry.taskType);
   const member      = membersCache.find(m => m.display_name === entry.author);
   const color       = member?.color ?? '#888';
   const initial     = (entry.author ?? '?')[0].toUpperCase();
@@ -3148,16 +3243,20 @@ function renderCareLogNewRow(entry, plant) {
     }
   }
 
-  return `<div class="carelog-new-row" data-action="carelog-open-edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(entry.taskId ?? '')}">
+  const iconTileHtml = isSkipped
+    ? `<span class="activity-icon-skipped" style="width:40px;height:40px;background:#f4f6f2;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${taskIcon}</span>`
+    : activityTaskTileHtml(taskType, taskIcon);
+
+  return `<div class="carelog-new-row${isSkipped ? ' activity-row-skipped' : ''}" data-action="carelog-open-edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(entry.taskId ?? '')}">
   <div class="carelog-new-date-col">
     <span class="carelog-new-date-dow">${dayAbbr}</span>
     <span class="carelog-new-date-num">${dayNum}</span>
   </div>
   <div class="carelog-new-card">
-    ${activityTaskTileHtml(taskType, taskIcon)}
+    ${iconTileHtml}
     <div class="carelog-new-info">
       <span class="carelog-new-name">${escapeHtml(entry.taskName ?? '')}</span>
-      <span class="carelog-new-time">—</span>
+      <span class="carelog-new-time${isSkipped ? ' activity-sub-skipped' : ''}">${isSkipped ? 'Skipped' : '—'}</span>
     </div>
     <div class="carelog-new-owner" style="background:${escapeHtml(color)};">${escapeHtml(initial)}</div>
   </div>
@@ -3429,7 +3528,10 @@ function renderTaskRow(plantId, task) {
       ? `<button class="task-row-check task-row-check--done" data-action="tasks-undo-done" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" aria-label="Undo">✓</button>`
       : `<button class="task-row-check" data-action="tasks-mark-done" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" aria-label="Mark done">✓</button>`;
 
-  return `<div class="task-row${isPaused ? ' task-row--paused' : ''}" data-action="edit-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}">
+  const _rowDays = (!isPaused && !doneToday) ? daysUntilDue(task) : Infinity;
+  const rowAction = (_rowDays === 0 || (_rowDays < 0 && _rowDays !== -Infinity)) ? 'caring-overdue-row-tap' : 'edit-task';
+
+  return `<div class="task-row${isPaused ? ' task-row--paused' : ''}" data-action="${rowAction}" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}">
   <span class="task-row-tile task-row-tile--${escapeHtml(cfg.type)}">${cfg.icon}</span>
   <span class="task-row-divider"></span>
   <div class="task-row-content">
@@ -3505,6 +3607,284 @@ function openSheet(contentHtml) {
   document.getElementById('sheet-content').innerHTML = contentHtml;
   document.getElementById('sheet').classList.add('active');
   document.getElementById('overlay').classList.add('active');
+}
+
+function openOverdueActionSheet(plantId, taskId) {
+  const plant = getPlant(plantId);
+  const task  = plant?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  const cfg     = getTaskConfig(task);
+  const isOneOff = (task.recurrenceType ?? 'interval') === 'one-off';
+
+  const skipBtnHtml = isOneOff ? '' : `
+    <button class="btn btn-ghost" data-action="caring-skip-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" style="width:100%;text-align:center;padding:14px;font-size:15px;">⏭ Skip this time</button>`;
+
+  state.sheetMode = 'overdue-action';
+  state.sheetData = { plantId, taskId };
+
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+      <span style="width:36px;height:36px;background:#eef3eb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${cfg.icon}</span>
+      <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+        <div style="font-size:15px;font-weight:600;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</div>
+        <div style="font-size:12px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)}</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button class="btn btn-primary" data-action="caring-action-mark-done" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" style="width:100%;text-align:center;padding:14px;font-size:15px;">✓ Mark done</button>
+      ${skipBtnHtml}
+      <button class="btn btn-ghost" data-action="caring-open-edit-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" style="width:100%;text-align:center;padding:14px;font-size:15px;">Edit task</button>
+      <button class="btn btn-ghost" data-action="close-sheet" style="width:100%;text-align:center;padding:14px;font-size:15px;margin-top:6px;">Cancel</button>
+    </div>
+  `);
+}
+
+// ============================================================
+// RESCHEDULE PROMPT (off-schedule mark-done)
+// ============================================================
+
+// Sunday of the week containing dateStr (Sun=0…Sat=6)
+function getSundayOfWeek(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() - d.getDay());
+  return d.toISOString().split('T')[0];
+}
+
+// Next n occurrence dates (strictly after today) on the sequence
+// anchorDate + interval, +2*interval, +3*interval, …
+function intervalOccurrencesAfterToday(anchorDate, intervalDays, n) {
+  const out = [];
+  const today = todayStr();
+  let cursor = addDays(anchorDate, intervalDays);
+  while (cursor <= today) cursor = addDays(cursor, intervalDays);
+  while (out.length < n) {
+    out.push(cursor);
+    cursor = addDays(cursor, intervalDays);
+  }
+  return out;
+}
+
+// Next n occurrence dates (strictly after today) of any of the given weekday numbers.
+function weekdayOccurrencesAfterToday(weekdays, n) {
+  if (!weekdays || weekdays.length === 0) return [];
+  const out = [];
+  let cursor = todayStr();
+  while (out.length < n) {
+    cursor = addDays(cursor, 1);
+    const dow = new Date(cursor + 'T12:00:00').getDay();
+    if (weekdays.includes(dow)) out.push(cursor);
+  }
+  return out;
+}
+
+function renderReschedCalendar(startSun, endDate, highlightSet, highlightBg, highlightFg) {
+  // Pad endDate up to its Saturday so the last row is complete.
+  const endSat = addDays(endDate, 6 - new Date(endDate + 'T12:00:00').getDay());
+  const headers = ['S','M','T','W','T','F','S']
+    .map(l => `<div style="font-size:10px;color:#8a8d86;text-align:center;padding:2px 0;font-weight:500;">${l}</div>`)
+    .join('');
+  let cells = '';
+  let cursor = startSun;
+  while (cursor <= endSat) {
+    const dObj = new Date(cursor + 'T12:00:00');
+    const day = dObj.getDate();
+    const hl  = highlightSet.has(cursor);
+    const cellStyle = hl
+      ? `background:${highlightBg};color:${highlightFg};font-weight:600;border-radius:6px;`
+      : `color:#bdbdbd;`;
+    cells += `<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:11px;${cellStyle}">${day}</div>`;
+    cursor = addDays(cursor, 1);
+  }
+  return `
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">${headers}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-top:2px;">${cells}</div>
+  `;
+}
+
+function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) {
+  const plant = getPlant(plantId);
+  const task  = plant?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  const cfg     = getTaskConfig(task);
+  const recType = task.recurrenceType ?? 'interval';
+  if (recType === 'one-off') return;
+
+  const isLate = displacement > 0;
+  const absDays = Math.abs(displacement);
+
+  // Compute Original and Modified occurrence dates.
+  let originalDates = [];
+  let modifiedDates = [];
+  let shiftedWeekdays = null;
+  let originalWeekdaysLabel = '';
+  let modifiedWeekdaysLabel = '';
+
+  if (recType === 'weekdays') {
+    const origWd = (task.weekdays ?? []).slice();
+    shiftedWeekdays = origWd.map(d => ((d + displacement) % 7 + 7) % 7);
+    const sortAndDedupe = arr => Array.from(new Set(arr)).sort((a, b) => a - b);
+    const origSorted = sortAndDedupe(origWd);
+    const modSorted  = sortAndDedupe(shiftedWeekdays);
+    shiftedWeekdays = modSorted;
+    const full = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    originalWeekdaysLabel = origSorted.map(d => full[d]).join(' & ');
+    modifiedWeekdaysLabel = modSorted.map(d => full[d]).join(' & ');
+    originalDates = weekdayOccurrencesAfterToday(origSorted, 3);
+    modifiedDates = weekdayOccurrencesAfterToday(modSorted, 3);
+  } else {
+    const interval = task.frequencyDays ?? 1;
+    originalDates = intervalOccurrencesAfterToday(mostRecentDueDate, interval, 3);
+    // Modified: shift each original date by displacement.
+    modifiedDates = originalDates.map(d => addDays(d, displacement));
+  }
+
+  const today = todayStr();
+  const modSet = new Set(modifiedDates);
+
+  // Keep-original future due set: future Original-schedule occurrences after today.
+  // For early case, most_recent_due is itself in the future and worth showing.
+  const keepFutureSet = new Set(originalDates);
+  if (mostRecentDueDate > today) keepFutureSet.add(mostRecentDueDate);
+
+  // Direction palette.
+  const headlineColor   = isLate ? '#a32d2d' : '#185fa5';
+  const todayCircleBg   = isLate ? '#fde8e8' : '#ddeefb';
+  const todayCircleEdge = isLate ? '#a32d2d' : '#185fa5';
+  const todayCircleFg   = isLate ? '#a32d2d' : '#185fa5';
+  const modifyCardBg    = isLate ? '#eef6e6' : '#edf3fb';
+  const modifyCardBd    = isLate ? '#c0dd97' : '#b5d4f4';
+  const modifyTitleFg   = isLate ? '#3b6d11' : '#185fa5';
+  const modifyPillBg    = isLate ? '#e5f2da' : '#ddeefb';
+  const modifyPillFg    = isLate ? '#3b6d11' : '#185fa5';
+  const modifyFutureBg  = isLate ? '#e5f2da' : '#ddeefb';
+  const modifyFutureFg  = isLate ? '#3b6d11' : '#185fa5';
+
+  const deltaSign = isLate ? '+' : '−';
+  const deltaText = `${deltaSign}${absDays} day${absDays !== 1 ? 's' : ''}`;
+
+  const taskLabelText = `${cfg.icon} ${cfg.name} · ${plant.name} · ${recurrenceLabel(task).toLowerCase()}`;
+  const headlineText  = `You are ${absDays} day${absDays !== 1 ? 's' : ''} ${isLate ? 'late' : 'early'}`;
+
+  const formatFullDate = (s) => new Date(s + 'T12:00:00')
+    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const todayLabel = formatFullDate(today);
+  const dueLabel   = formatFullDate(mostRecentDueDate);
+
+  // Calendar layout: 4 rows, week starts Monday.
+  // Keep card: anchored to missed due (late) or today (early).
+  // Modify card: anchored to today.
+  const WEEKS = 4;
+  const keepStartMonday   = getMondayOfWeek(isLate ? mostRecentDueDate : today);
+  const modifyStartMonday = getMondayOfWeek(today);
+
+  const cellBase = 'font-size:11px;text-align:center;padding:4px 2px;border-radius:6px;line-height:1.8;box-sizing:border-box;';
+  const dayHeaders = ['M','T','W','T','F','S','S']
+    .map(l => `<div style="font-size:9px;color:#cccccc;text-align:center;padding:2px 0;">${l}</div>`)
+    .join('');
+
+  const renderCalendar = ({ startMonday, firstVisible, todayCellHasBg, futureDueSet, futureDueBg, futureDueFg, showMissedDue }) => {
+    const endDate = addDays(startMonday, WEEKS * 7 - 1);
+    const startMonthLbl = new Date(startMonday + 'T12:00:00').toLocaleDateString('en-US', { month: 'short' });
+    const endMonthLbl   = new Date(endDate     + 'T12:00:00').toLocaleDateString('en-US', { month: 'short' });
+    const monthLabel    = startMonthLbl === endMonthLbl ? startMonthLbl : `${startMonthLbl} – ${endMonthLbl}`;
+
+    let cells = '';
+    let cursor = startMonday;
+    for (let i = 0; i < WEEKS * 7; i++) {
+      const day = new Date(cursor + 'T12:00:00').getDate();
+      const isToday      = cursor === today;
+      const isMissedDue  = showMissedDue && isLate && cursor === mostRecentDueDate;
+      const isFutureDue  = futureDueSet.has(cursor) && !isMissedDue && !isToday;
+      const isInvisible  = firstVisible && cursor < firstVisible;
+
+      if (isInvisible) {
+        cells += `<div style="${cellBase}visibility:hidden;">${day}</div>`;
+      } else if (isToday) {
+        const cellBg = todayCellHasBg ? `background:${todayCircleBg};` : '';
+        const circle = `<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:11px;font-weight:700;border:1.5px solid ${todayCircleEdge};background:${todayCircleBg};color:${todayCircleFg};">${day}</span>`;
+        cells += `<div style="${cellBase}${cellBg}padding:1px 2px;">${circle}</div>`;
+      } else if (isMissedDue) {
+        cells += `<div style="${cellBase}background:#e8e8e6;color:#999999;font-weight:700;">${day}</div>`;
+      } else if (isFutureDue) {
+        cells += `<div style="${cellBase}background:${futureDueBg};color:${futureDueFg};font-weight:700;">${day}</div>`;
+      } else {
+        cells += `<div style="${cellBase}color:#cccccc;">${day}</div>`;
+      }
+      cursor = addDays(cursor, 1);
+    }
+
+    return `
+      <div style="font-size:10px;color:#bbbbbb;text-align:center;margin-bottom:4px;">${escapeHtml(monthLabel)}</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;">${dayHeaders}</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;">${cells}</div>
+    `;
+  };
+
+  const keepCalendar = renderCalendar({
+    startMonday:     keepStartMonday,
+    firstVisible:    isLate ? mostRecentDueDate : today,
+    todayCellHasBg:  true,
+    futureDueSet:    keepFutureSet,
+    futureDueBg:     '#e8e8e6',
+    futureDueFg:     '#444444',
+    showMissedDue:   true,
+  });
+
+  const modifyCalendar = renderCalendar({
+    startMonday:     modifyStartMonday,
+    firstVisible:    null,
+    todayCellHasBg:  false,
+    futureDueSet:    modSet,
+    futureDueBg:     modifyFutureBg,
+    futureDueFg:     modifyFutureFg,
+    showMissedDue:   false,
+  });
+
+  const cardHtml = `
+    <div style="background:#ffffff;border-radius:20px;padding:24px 20px;max-width:390px;width:calc(100% - 32px);max-height:calc(100vh - 32px);overflow:hidden;box-sizing:border-box;">
+      <div style="font-size:11px;color:#aaaaaa;letter-spacing:0.07em;text-transform:uppercase;text-align:center;margin-bottom:14px;">${escapeHtml(taskLabelText)}</div>
+      <div style="font-size:26px;font-weight:500;color:${headlineColor};margin-bottom:8px;">${escapeHtml(headlineText)}</div>
+      <div style="font-size:13px;color:#999999;margin-bottom:3px;">Today is <span style="font-weight:500;color:#333333;">${escapeHtml(todayLabel)}</span></div>
+      <div style="font-size:13px;color:#999999;margin-bottom:3px;">Original due date was <span style="font-weight:500;color:#333333;">${escapeHtml(dueLabel)}</span></div>
+      <div style="height:1px;background:#eeeeee;margin:16px 0;"></div>
+      <div style="font-size:11px;color:#bbbbbb;text-align:center;font-weight:700;margin-bottom:12px;">Tap a card to select</div>
+      <div data-action="reschedule-keep-original" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:#f4f4f2;border:1.5px solid #e0e0da;border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div style="font-size:14px;font-weight:500;color:#444444;">Keep Original Schedule</div>
+        </div>
+        ${keepCalendar}
+      </div>
+      <div data-action="reschedule-modify" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:${modifyCardBg};border:1.5px solid ${modifyCardBd};border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div style="font-size:14px;font-weight:500;color:${modifyTitleFg};">Accept Modified Schedule</div>
+          <div style="background:${modifyPillBg};color:${modifyPillFg};font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;">${deltaText}</div>
+        </div>
+        ${modifyCalendar}
+      </div>
+    </div>`;
+
+  // Remove any existing overlay (in case of overlapping mark-dones).
+  closeReschedulePrompt();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'reschedule-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;overflow:hidden;';
+
+  // Stash recurrence shift data so the action handler can apply it without
+  // recomputing.
+  overlay.dataset.modifiedFirstDate = modifiedDates[0] ?? '';
+  if (recType === 'weekdays' && shiftedWeekdays) {
+    overlay.dataset.modifiedWeekdays = JSON.stringify(shiftedWeekdays);
+  }
+
+  overlay.innerHTML = cardHtml;
+  overlay.addEventListener('click', handleEvent);
+  document.body.appendChild(overlay);
+}
+
+function closeReschedulePrompt() {
+  const el = document.getElementById('reschedule-overlay');
+  if (el) el.remove();
 }
 
 function closeSheet() {
@@ -5427,6 +5807,71 @@ async function handleEvent(e) {
       break;
     }
 
+    case 'caring-overdue-row-tap':
+      openOverdueActionSheet(plantId, taskId);
+      break;
+
+    case 'caring-action-mark-done': {
+      const _caTask = getTask(plantId, taskId);
+      const _caName = getTaskConfig(_caTask)?.name ?? _caTask?.name ?? 'Task';
+      const _caPlantName = getPlant(plantId)?.name ?? '';
+      closeSheet();
+      markTaskDone(plantId, taskId);
+      renderApp();
+      showUndoDoneToast(plantId, taskId, _caName, _caPlantName);
+      break;
+    }
+
+    case 'caring-skip-task': {
+      closeSheet();
+      await skipTask(plantId, taskId);
+      renderApp();
+      break;
+    }
+
+    case 'reschedule-close':
+    case 'reschedule-keep-original': {
+      const direction = target.dataset.direction ?? null;
+      const daysOffset = Number(target.dataset.days ?? 0);
+      const recurrenceType = getTask(plantId, taskId)?.recurrenceType ?? 'interval';
+      closeReschedulePrompt();
+      if (action === 'reschedule-keep-original') {
+        posthog.capture('schedule_adjusted', {
+          choice: 'original',
+          direction,
+          days_offset: daysOffset,
+          recurrence_type: recurrenceType,
+        });
+      }
+      break;
+    }
+
+    case 'reschedule-modify': {
+      const overlay = document.getElementById('reschedule-overlay');
+      const newOverride = overlay?.dataset.modifiedFirstDate || null;
+      const shiftedWeekdaysRaw = overlay?.dataset.modifiedWeekdays;
+      const direction = target.dataset.direction ?? null;
+      const daysOffset = Number(target.dataset.days ?? 0);
+      const task = getTask(plantId, taskId);
+      const recurrenceType = task?.recurrenceType ?? 'interval';
+      if (task && newOverride) {
+        const updates = { nextDueOverride: newOverride };
+        if (recurrenceType === 'weekdays' && shiftedWeekdaysRaw) {
+          try { updates.weekdays = JSON.parse(shiftedWeekdaysRaw); } catch {}
+        }
+        await updateTask(plantId, taskId, updates);
+      }
+      closeReschedulePrompt();
+      posthog.capture('schedule_adjusted', {
+        choice: 'modified',
+        direction,
+        days_offset: daysOffset,
+        recurrence_type: recurrenceType,
+      });
+      renderApp();
+      break;
+    }
+
     case 'schedule-mark-done-with-note':
       markTaskDone(plantId, taskId);
       renderPostTaskNoteSheet(plantId, taskId);
@@ -6144,12 +6589,14 @@ async function handleEvent(e) {
     case 'dev-seed-heavy':     showDevToolsConfirm('heavy',     'Heavy usage');  break;
     case 'dev-seed-medium-v2': showDevToolsConfirm('medium-v2', 'Medium v2');    break;
     case 'dev-seed-heavy-v2':  showDevToolsConfirm('heavy-v2',  'Heavy v2');     break;
+    case 'dev-seed-heavy-v3':  showDevToolsConfirm('heavy-v3',  'Heavy v3');     break;
     case 'dev-tools-cancel': document.getElementById('dev-tools-body').innerHTML = `
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
       <button class="dev-tools-btn" data-action="dev-seed-medium">🌿 Medium usage</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy">🌳 Heavy usage</button>
       <button class="dev-tools-btn" data-action="dev-seed-medium-v2">🌿 Medium v2</button>
-      <button class="dev-tools-btn" data-action="dev-seed-heavy-v2">🌳 Heavy v2</button>`; break;
+      <button class="dev-tools-btn" data-action="dev-seed-heavy-v2">🌳 Heavy v2</button>
+      <button class="dev-tools-btn" data-action="dev-seed-heavy-v3">🌳 Heavy v3</button>`; break;
     case 'dev-tools-confirm': await runDevSeed(target.dataset.scenario); break;
   }
   } catch (err) {
@@ -6529,6 +6976,7 @@ function openDevToolsPanel() {
       <button class="dev-tools-btn" data-action="dev-seed-heavy">🌳 Heavy usage</button>
       <button class="dev-tools-btn" data-action="dev-seed-medium-v2">🌿 Medium v2</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy-v2">🌳 Heavy v2</button>
+      <button class="dev-tools-btn" data-action="dev-seed-heavy-v3">🌳 Heavy v3</button>
     </div>
     <button class="add-plant-back-link" data-action="close-sheet" style="margin-top:12px;">Cancel</button>
   `);
@@ -6553,6 +7001,7 @@ async function runDevSeed(scenario) {
     heavy:       'Heavy usage',
     'medium-v2': 'Medium v2',
     'heavy-v2':  'Heavy v2',
+    'heavy-v3':  'Heavy v3',
   };
   try {
     if (scenario === 'empty')      await seedEmpty();
@@ -6560,6 +7009,7 @@ async function runDevSeed(scenario) {
     if (scenario === 'heavy')      await seedHeavy();
     if (scenario === 'medium-v2')  await seedMediumV2();
     if (scenario === 'heavy-v2')   await seedHeavyV2();
+    if (scenario === 'heavy-v3')   await seedHeavyV3();
     closeSheet();
     await loadFromSupabase();
     navigateTo('home');
@@ -7062,6 +7512,169 @@ async function seedHeavyV2() {
     [{ daysAgo: 10, text: 'Growing faster than expected.' }],
     6
   );
+}
+
+async function seedHeavyV3() {
+  // Teardown — same sequence as seedHeavyV2 (children before parent).
+  if (householdId) {
+    const { data: allPlants } = await supabaseClient
+      .from('plants').select('id').eq('household_id', householdId);
+    const plantIds = (allPlants ?? []).map(r => r.id);
+    if (plantIds.length) {
+      await supabaseClient.from('plant_photos').delete().in('plant_id', plantIds);
+      await supabaseClient.from('care_log').delete().in('plant_id', plantIds);
+      await supabaseClient.from('notes').delete().in('plant_id', plantIds);
+      await supabaseClient.from('tasks').delete().in('plant_id', plantIds);
+      await supabaseClient.from('plants').delete().in('id', plantIds);
+    }
+  }
+
+  const today = todayStr();
+  const memberA = membersCache[0]?.id ?? null;
+  const memberB = (membersCache[1] ?? membersCache[0])?.id ?? null;
+
+  const insertPlant = async (name, emoji, sortOrder, daysAgo) => {
+    const { data } = await supabaseClient.from('plants').insert({
+      household_id:  householdId,
+      name,
+      emoji,
+      date_acquired: addDays(today, -daysAgo),
+      sort_order:    sortOrder,
+    }).select().single();
+    return data;
+  };
+
+  const insertTask = async (plantId, idx, def) => {
+    const { data } = await supabaseClient.from('tasks').insert({
+      plant_id:          plantId,
+      name:              def.name,
+      icon:              def.icon,
+      type:              def.type,
+      recurrence:        def.rec,
+      owner_id:          def.owner,
+      paused:            def.paused ?? false,
+      note:              '',
+      sort_order:        idx + 1,
+      last_done:         def.ld ?? null,
+      next_due_override: def.ndo ?? null,
+    }).select().single();
+    return data;
+  };
+
+  // 1. Mandarin Tree — overdue watering (non-multiple displacement; prompt fires)
+  const mandarin = await insertPlant('Mandarin Tree', '🍊', 1, 100);
+  await insertTask(mandarin.id, 0, {
+    name: 'Watering', icon: '💧', type: 'water',
+    rec: { type: 'interval', every: 7, unit: 'days', days: [] },
+    owner: memberA, ld: addDays(today, -10), ndo: null,
+  });
+  await insertTask(mandarin.id, 1, {
+    name: 'Fertilizing', icon: '🌿', type: 'fertilize',
+    rec: { type: 'interval', every: 5, unit: 'days', days: [] },
+    owner: memberB, ld: addDays(today, -5), ndo: null,
+  });
+
+  // 2. Pothos — overdue watering with exact-multiple displacement (prompt suppressed);
+  //    rotation done today (also produces a care_log entry below).
+  const pothos = await insertPlant('Pothos', '🪴', 2, 60);
+  await insertTask(pothos.id, 0, {
+    name: 'Watering', icon: '💧', type: 'water',
+    rec: { type: 'interval', every: 7, unit: 'days', days: [] },
+    owner: memberA, ld: addDays(today, -14), ndo: null,
+  });
+  const pothosRotation = await insertTask(pothos.id, 1, {
+    name: 'Rotation', icon: '🔄', type: 'rotate',
+    rec: { type: 'interval', every: 3, unit: 'days', days: [] },
+    owner: memberB, ld: today, ndo: null,
+  });
+
+  const rotTs = new Date(); rotTs.setHours(10, 0, 0, 0);
+  await supabaseClient.from('care_log').insert({
+    plant_id:            pothos.id,
+    task_id:             pothosRotation.id,
+    household_member_id: memberB,
+    task_name:           'Rotation',
+    task_type:           'rotate',
+    date:                today,
+    created_at:          rotTs.toISOString(),
+  });
+
+  // 3. Cactus — overdue weekdays-task (two weekdays excluding today and tomorrow,
+  //    so the task reliably looks "overdue" instead of conveniently due today);
+  //    paused fertilizing.
+  const cactus = await insertPlant('Cactus', '🌵', 3, 80);
+  const todayDow = new Date().getDay(); // 0=Sun … 6=Sat
+  const candidateDays = [1, 2, 3, 4, 5]; // Mon–Fri only
+  const safeDays = candidateDays.filter(
+    d => d !== todayDow && d !== (todayDow === 5 ? 1 : todayDow + 1)
+  );
+  const cactusWeekdays = [safeDays[0], safeDays[1]];
+  await insertTask(cactus.id, 0, {
+    name: 'Watering', icon: '💧', type: 'water',
+    rec: { type: 'weekdays', days: cactusWeekdays },
+    owner: memberA, ld: addDays(today, -12), ndo: null,
+  });
+  await insertTask(cactus.id, 1, {
+    name: 'Fertilizing', icon: '🌿', type: 'fertilize',
+    rec: { type: 'interval', every: 30, unit: 'days', days: [] },
+    owner: memberB, ld: addDays(today, -5), ndo: null, paused: true,
+  });
+
+  // 4. Bougainvillea — upcoming watering (mark-done-early test); pending one-off repot.
+  //    Photo set on the plant itself so it renders as the plant icon.
+  const { data: bougainvillea } = await supabaseClient.from('plants').insert({
+    household_id:  householdId,
+    name:          'Bougainvillea',
+    emoji:         '🌸',
+    date_acquired: addDays(today, -90),
+    sort_order:    4,
+    photo_url:     'https://kmkfywdzoitgdtbttxaa.supabase.co/storage/v1/object/public/plant-photos/test-assets/bugam-photo.jpeg',
+  }).select().single();
+  await insertTask(bougainvillea.id, 0, {
+    name: 'Watering', icon: '💧', type: 'water',
+    rec: { type: 'interval', every: 7, unit: 'days', days: [] },
+    owner: memberA, ld: addDays(today, -3), ndo: null,
+  });
+  await insertTask(bougainvillea.id, 1, {
+    name: 'Repot', icon: '🪴', type: 'repot',
+    rec: { type: 'one-off' },
+    owner: memberB, ld: null, ndo: addDays(today, 2),
+  });
+
+  // 5. Fern — due-today misting + 3 notes (last two with photos).
+  const fern = await insertPlant('Fern', '🌿', 5, 40);
+  await insertTask(fern.id, 0, {
+    name: 'Misting', icon: '💦', type: 'water',
+    rec: { type: 'interval', every: 2, unit: 'days', days: [] },
+    owner: memberA, ld: addDays(today, -2), ndo: null,
+  });
+
+  const FERN_PHOTO_BASE = 'https://kmkfywdzoitgdtbttxaa.supabase.co/storage/v1/object/public/plant-photos/test-assets';
+  const note1Ts = new Date(); note1Ts.setDate(note1Ts.getDate() - 5);
+  const note2Ts = new Date(); note2Ts.setDate(note2Ts.getDate() - 2);
+  const note3Ts = new Date();
+
+  await supabaseClient.from('notes').insert({
+    plant_id:            fern.id,
+    household_member_id: memberA,
+    note:                'New leaves coming in on the left side 🌱',
+    photo_url:           null,
+    created_at:          note1Ts.toISOString(),
+  });
+  await supabaseClient.from('notes').insert({
+    plant_id:            fern.id,
+    household_member_id: memberB,
+    note:                'Looking healthy after the last watering',
+    photo_url:           `${FERN_PHOTO_BASE}/Fiddle01.jpeg`,
+    created_at:          note2Ts.toISOString(),
+  });
+  await supabaseClient.from('notes').insert({
+    plant_id:            fern.id,
+    household_member_id: memberA,
+    note:                "New growth on the right too — it's spreading",
+    photo_url:           `${FERN_PHOTO_BASE}/Fiddle02.jpeg`,
+    created_at:          note3Ts.toISOString(),
+  });
 }
 
 // DEV TOOLS — handleEvent cases added inline in the switch statement

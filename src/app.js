@@ -2325,7 +2325,10 @@ function renderSchedule() {
               <span style="font-size:13px;font-weight:500;color:#1a1a1a;">${escapeHtml(cfg.name)}</span>
               <span class="home-due-today-plant">${escapeHtml(plant.name)}</span>
             </span>
-            <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInitial)}</span>
+            <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:4px;">${escapeHtml(ownerInitial)}</span>
+            <button class="attention-check-circle" data-action="home-mark-done" data-plant="${plant.id}" data-task="${task.id}" aria-label="Mark done">
+              <span class="attention-check-icon">✓</span>
+            </button>
           </div>
         </div>`;
       }
@@ -3002,15 +3005,6 @@ function renderTasksTab(plant) {
     return html;
   }
   const today = todayStr();
-  const doneTodayTasks = filtered.filter(t => !t.paused && t.lastDone === today);
-  doneTodayTasks.reverse();
-  doneTodayTasks.sort((a, b) => {
-    const aTime = plant.careLog.find(e => e.taskId === a.id && e.date === today)?.createdAt ?? '';
-    const bTime = plant.careLog.find(e => e.taskId === b.id && e.date === today)?.createdAt ?? '';
-    return bTime.localeCompare(aTime);
-  });
-  const doneTodayIds   = new Set(doneTodayTasks.map(t => t.id));
-  const pendingTasks   = filtered.filter(t => !doneTodayIds.has(t.id));
   const urgencyGroup = (t) => {
     if (t.paused) return 5;
     if (t.lastDone === today) return 6;
@@ -3021,7 +3015,7 @@ function renderTasksTab(plant) {
     if (d === 1) return 3;
     return 4;
   };
-  const sorted = [...pendingTasks].sort((a, b) => {
+  const sorted = [...filtered].sort((a, b) => {
     const ga = urgencyGroup(a);
     const gb = urgencyGroup(b);
     if (ga !== gb) return ga - gb;
@@ -3040,35 +3034,7 @@ function renderTasksTab(plant) {
     html += `</div>`;
   }
 
-  if (doneTodayTasks.length > 0) {
-    const headerPadding = sorted.length > 0 ? '16px 0 8px' : '0 0 8px';
-    html += `<div style="display:flex;align-items:center;gap:8px;padding:${headerPadding};">
-      <span style="width:3px;height:14px;background:#aab09f;border-radius:2px;flex-shrink:0;"></span>
-      <span style="font-size:11px;font-weight:500;color:#8a9180;text-transform:uppercase;letter-spacing:0.05em;">Done today</span>
-    </div>
-    <div class="task-row-list">`;
-    for (const task of doneTodayTasks) {
-      html += renderDoneTodayTaskRow(plant.id, task);
-    }
-    html += `</div>`;
-  }
-
   return html;
-}
-
-function renderDoneTodayTaskRow(plantId, task) {
-  const cfg      = getTaskConfig(task);
-  const subtitle = `${task.owner ?? ''} · today`;
-  return `<div class="task-row" data-action="edit-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}">
-  <span class="task-row-tile" style="background:#eaf3de;">${cfg.icon}</span>
-  <span class="task-row-divider"></span>
-  <div class="task-row-content">
-    <div class="task-row-name">${escapeHtml(cfg.name)}</div>
-    <div class="task-row-meta" style="color:#8a8d86;">${escapeHtml(subtitle)}</div>
-  </div>
-  <button data-action="add-note" data-plant="${escapeHtml(plantId)}" style="width:30px;height:30px;border-radius:50%;border:0.5px solid #dde0d9;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;cursor:pointer;padding:0;" aria-label="Add note"><svg viewBox="0 0 16 16" fill="none" stroke="#8a9180" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg></button>
-  <button data-action="tasks-undo-done" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" style="width:28px;height:28px;border-radius:50%;border:none;background:#3b6d11;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;cursor:pointer;padding:0;margin-left:6px;" aria-label="Undo">✓</button>
-</div>`;
 }
 
 function renderNotesTab(plant) {
@@ -3484,32 +3450,30 @@ function renderTaskRow(plantId, task) {
     recText = `Every ${n} day${n !== 1 ? 's' : ''}`;
   }
 
-  // Meta line: urgency text + color
-  let urgencyText, metaColor;
+  // Meta line: urgency text (neutral color regardless of due date)
+  let urgencyText;
   if (isPaused) {
     urgencyText = 'Paused';
-    metaColor   = '#8a8d86';
   } else if (doneToday) {
     urgencyText = '✓ done today';
-    metaColor   = '#3b6d11';
   } else {
     const days = daysUntilDue(task);
     if (recType === 'one-off') {
       if (days === Infinity) {
-        urgencyText = '✓ done';          metaColor = '#3b6d11';
+        urgencyText = '✓ done';
       } else {
         const nd = computeNextDue(task);
         const ds = nd ? new Date(nd + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
-        if (days > 1)      { urgencyText = `due ${ds}`;       metaColor = '#8a8d86'; }
-        else if (days === 1) { urgencyText = 'due tomorrow';  metaColor = '#8a5a0f'; }
-        else if (days === 0) { urgencyText = 'due today';     metaColor = '#8a5a0f'; }
-        else                 { urgencyText = 'overdue';       metaColor = '#8a5a0f'; }
+        if (days > 1)        urgencyText = `due ${ds}`;
+        else if (days === 1) urgencyText = 'due tomorrow';
+        else if (days === 0) urgencyText = 'due today';
+        else                 urgencyText = 'overdue';
       }
     } else {
-      if (days < 0)       { urgencyText = 'overdue';             metaColor = '#8a5a0f'; }
-      else if (days === 0){ urgencyText = 'due today';           metaColor = '#8a5a0f'; }
-      else if (days === 1){ urgencyText = 'due tomorrow';        metaColor = '#8a5a0f'; }
-      else                { urgencyText = `due in ${days} days`; metaColor = '#8a8d86'; }
+      if (days < 0)        urgencyText = 'overdue';
+      else if (days === 0) urgencyText = 'due today';
+      else if (days === 1) urgencyText = 'due tomorrow';
+      else                 urgencyText = `due in ${days} days`;
     }
   }
 
@@ -3518,28 +3482,23 @@ function renderTaskRow(plantId, task) {
   const ownerColor  = ownerMember?.color ?? '#888';
   const ownerInit   = (task.owner ?? '?')[0].toUpperCase();
 
-  // Right-edge button: pause-badge for paused tasks (resumes on tap), check for non-paused.
-  const checkHtml = isPaused
+  // Right-edge button: pause-badge for paused tasks (resumes on tap). No button otherwise.
+  const rightHtml = isPaused
     ? `<button class="task-row-check task-row-pause" data-action="resume-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" aria-label="Resume" style="background:#f0a500;border:none;border-radius:50%;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;gap:3px;flex-shrink:0;padding:0;cursor:pointer;">
         <span style="width:3px;height:10px;background:white;border-radius:1px;display:inline-block;"></span>
         <span style="width:3px;height:10px;background:white;border-radius:1px;display:inline-block;"></span>
       </button>`
-    : doneToday
-      ? `<button class="task-row-check task-row-check--done" data-action="tasks-undo-done" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" aria-label="Undo">✓</button>`
-      : `<button class="task-row-check" data-action="tasks-mark-done" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" aria-label="Mark done">✓</button>`;
+    : '';
 
-  const _rowDays = (!isPaused && !doneToday) ? daysUntilDue(task) : Infinity;
-  const rowAction = (_rowDays === 0 || (_rowDays < 0 && _rowDays !== -Infinity)) ? 'caring-overdue-row-tap' : 'edit-task';
-
-  return `<div class="task-row${isPaused ? ' task-row--paused' : ''}" data-action="${rowAction}" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}">
+  return `<div class="task-row${isPaused ? ' task-row--paused' : ''}" data-action="edit-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}">
   <span class="task-row-tile task-row-tile--${escapeHtml(cfg.type)}">${cfg.icon}</span>
   <span class="task-row-divider"></span>
   <div class="task-row-content">
     <div class="task-row-name">${escapeHtml(cfg.name)}</div>
-    <div class="task-row-meta" style="color:${metaColor};">${escapeHtml(recText)} &middot; ${escapeHtml(urgencyText)}</div>
+    <div class="task-row-meta" style="color:#8a8d86;">${escapeHtml(recText)} &middot; ${escapeHtml(urgencyText)}</div>
   </div>
   <div class="task-row-owner" style="background:${escapeHtml(ownerColor)};">${escapeHtml(ownerInit)}</div>
-  ${checkHtml}
+  ${rightHtml}
 </div>`;
 }
 
@@ -3848,16 +3807,20 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
       <div style="font-size:13px;color:#999999;margin-bottom:3px;">Original due date was <span style="font-weight:500;color:#333333;">${escapeHtml(dueLabel)}</span></div>
       <div style="height:1px;background:#eeeeee;margin:16px 0;"></div>
       <div style="font-size:11px;color:#bbbbbb;text-align:center;font-weight:700;margin-bottom:12px;">Tap a card to select</div>
-      <div data-action="reschedule-keep-original" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:#f4f4f2;border:1.5px solid #e0e0da;border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;">
+      <div data-action="reschedule-keep-original" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:#f4f4f2;border:1.5px solid #e0e0da;border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;box-shadow:inset 0 -3px 0 0 #d0d0d0;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
           <div style="font-size:14px;font-weight:500;color:#444444;">Keep Original Schedule</div>
+          <div style="font-size:20px;font-weight:300;color:#aaaaaa;line-height:1;">›</div>
         </div>
         ${keepCalendar}
       </div>
-      <div data-action="reschedule-modify" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:${modifyCardBg};border:1.5px solid ${modifyCardBd};border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;">
+      <div data-action="reschedule-modify" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:${modifyCardBg};border:1.5px solid ${modifyCardBd};border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;box-shadow:inset 0 -3px 0 0 ${isLate ? '#a8cc6a' : '#6aaee8'};">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
           <div style="font-size:14px;font-weight:500;color:${modifyTitleFg};">Accept Modified Schedule</div>
-          <div style="background:${modifyPillBg};color:${modifyPillFg};font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;">${deltaText}</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="background:${modifyPillBg};color:${modifyPillFg};font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;">${deltaText}</div>
+            <div style="font-size:20px;font-weight:300;color:#639922;line-height:1;">›</div>
+          </div>
         </div>
         ${modifyCalendar}
       </div>
@@ -5752,7 +5715,7 @@ async function handleEvent(e) {
       break;
 
     case 'home-mark-done': {
-      const _homeRow = target.closest('.attention-row');
+      const _homeRow = target.closest('.attention-row, .upcoming-row');
       if (!_homeRow || _homeRow.classList.contains('marking-done')) break;
       const _homeTask = getTask(plantId, taskId);
       const _homeName = getTaskConfig(_homeTask)?.name ?? _homeTask?.name ?? 'Task';

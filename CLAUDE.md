@@ -33,6 +33,7 @@ are pre-Vite remnants. If a brief says "edit `app.js`", confirm it means
   member record that owns tasks/notes/care_log entries)
 - `householdId` — current household
 - `membersCache` — list of `{id, display_name, color}` for the household
+- `userHouseholds` — list of `{id, name}` for all households the current user belongs to; populated at the top of `loadFromSupabase()`
 - `plants`, `notes`, `activityFeed` — denormalized in-memory copies
 
 All set by `loadFromSupabase()` (`:293`). Edge Functions and external clients
@@ -66,7 +67,7 @@ should query Supabase directly, not assume any of this state.
   - `care_log(id, plant_id, task_id, household_member_id, date, created_at, ...)`
   - `notes(id, plant_id, household_member_id, note, photo_url, deleted_at, created_at)`
   - `plant_photos(id, plant_id, note_id, storage_url, created_at)` — joins to `notes` via `note_id`
-- Soft deletes everywhere: queries always `.is('deleted_at', null)`.
+- Soft deletes everywhere: queries always `.is('deleted_at', null)`. **Exception:** the `household_members` query at the top of `loadFromSupabase()` intentionally omits this filter — RLS already scopes it to the current user's rows and the filter caused a 500. Do not add it back.
 - Tasks inherit household scoping via `plant_id` (no direct `household_id`
   column on tasks).
 

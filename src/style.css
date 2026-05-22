@@ -4104,6 +4104,19 @@ div + .section-header-bar {
   flex-shrink: 0;
 }
 
+.activity-row-skipped {
+  border-left: 3px solid #d97706;
+  border-radius: 0 12px 12px 0;
+}
+
+.activity-sub-skipped {
+  color: #b45309;
+}
+
+.activity-icon-skipped {
+  color: #b45309;
+}
+
 /* ===== Tab Empty State ===== */
 .tab-empty-state {
   padding: 48px 20px;
@@ -4550,6 +4563,14 @@ div + .section-header-bar {
   align-items: center;
   gap: 8px;
   min-height: 52px;
+  transition: opacity 0.28s ease, height 0.28s ease;
+}
+
+.upcoming-row.marking-done {
+  opacity: 0;
+  height: 0 !important;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .upcoming-date-col {

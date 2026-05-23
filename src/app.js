@@ -2489,7 +2489,7 @@ function renderManageHouseholds() {
   }
 }
 
-function renderHouseholdActivity() {
+function buildHouseholdActivityContent() {
   const activeMember = membersCache.find(m => m.display_name === activeUser);
   const userColor    = activeMember?.color ?? '#2e7d51';
   const initial      = (activeUser ?? '?')[0].toUpperCase();
@@ -2500,34 +2500,29 @@ function renderHouseholdActivity() {
   if (filtered.length === 0) {
     bodyHtml = `<div class="detail-empty" style="padding:48px 16px;text-align:center;color:#888;">No activity yet${activeFilter.length ? ' for selected users' : ''}.</div>`;
   } else {
-    let lastMon = null;
     let lastDate = null;
     let rowsHtml = '';
     for (const item of filtered) {
-      const dateStr  = item.sortKey ? item.sortKey.split('T')[0] : null;
-      const monthKey = dateStr ? dateStr.slice(0, 7) : null;
+      const dateStr = item.sortKey ? item.sortKey.split('T')[0] : null;
 
-      if (monthKey && monthKey !== lastMon) {
-        lastMon = monthKey;
-        lastDate = null;
-        const [y, m] = monthKey.split('-').map(Number);
-        const lbl = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        rowsHtml += `<div class="carelog-month-header">${lbl.toUpperCase()}</div>`;
-      }
-
-      let dayAbbr = '—', dayNum = '—';
+      let monAbbr = '—', dayNum = '—', dayAbbr = '';
       if (dateStr) {
         const d = new Date(dateStr + 'T12:00:00');
         if (!isNaN(d.getTime())) {
-          dayAbbr = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase().slice(0, 3);
+          monAbbr = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
           dayNum  = String(d.getDate());
+          dayAbbr = d.toLocaleDateString('en-US', { weekday: 'short' });
         }
       }
 
       const showDate = dateStr !== lastDate;
       lastDate = dateStr;
       const dateColHtml = showDate
-        ? `<div class="upcoming-date-col"><span class="upcoming-date-dow">${dayAbbr}</span><span class="upcoming-date-num">${dayNum}</span></div>`
+        ? `<div class="upcoming-date-col">
+             <span class="upcoming-date-mon">${escapeHtml(monAbbr)}</span>
+             <span class="upcoming-date-num">${escapeHtml(dayNum)}</span>
+             <span class="upcoming-date-dow">${escapeHtml(dayAbbr)}</span>
+           </div>`
         : `<div class="upcoming-date-col" aria-hidden="true"></div>`;
 
       const plant         = plants.find(p => p.id === item.plantId);
@@ -2575,22 +2570,42 @@ function renderHouseholdActivity() {
         </div>
       </div>`;
     }
-    bodyHtml = `<div class="upcoming-rows" style="padding:0 16px 80px;">${rowsHtml}</div>`;
+    bodyHtml = `<div class="upcoming-rows" style="padding:0 12px 80px;">${rowsHtml}</div>`;
   }
 
-  const html = `
-  <div class="app-header">
-    <button class="back-btn" data-action="go-home" aria-label="Back">&#8249;</button>
-    <div class="detail-header-title">
-      <span class="detail-header-name">Household activity</span>
-    </div>
+  return `
+  <div class="app-header app-header--household-activity">
+    <button class="back-btn" data-action="close-household-activity" aria-label="Back">&#8249;</button>
+    <span class="household-activity-title">Household activity</span>
     <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
   </div>
   ${renderUserFilterPills()}
   ${bodyHtml}`;
+}
 
-  document.getElementById('app').innerHTML = html;
-  window.scrollTo(0, 0);
+function openHouseholdActivity() {
+  if (document.getElementById('household-activity-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'household-activity-overlay';
+  overlay.className = 'household-activity-overlay';
+  overlay.innerHTML = buildHouseholdActivityContent();
+  overlay.addEventListener('click', handleEvent);
+  document.body.appendChild(overlay);
+  // Force the initial translateY(100%) to flush before transitioning to 0.
+  requestAnimationFrame(() => overlay.classList.add('open'));
+}
+
+function refreshHouseholdActivity() {
+  const overlay = document.getElementById('household-activity-overlay');
+  if (!overlay) return;
+  overlay.innerHTML = buildHouseholdActivityContent();
+}
+
+function closeHouseholdActivity() {
+  const overlay = document.getElementById('household-activity-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
 }
 
 async function handleManageHouseholdsSaveName() {
@@ -3047,7 +3062,7 @@ function renderTasksTab(plant) {
   });
   if (sorted.length > 0) {
     html += `<div style="display:flex;align-items:center;gap:8px;padding:0 0 8px;">
-      <span style="width:3px;height:14px;background:#aab09f;border-radius:2px;flex-shrink:0;"></span>
+      <span style="width:3px;height:14px;background:#2e7d32;border-radius:2px;flex-shrink:0;"></span>
       <span style="font-size:11px;font-weight:500;color:#8a9180;text-transform:uppercase;letter-spacing:0.05em;">Task list</span>
     </div>
     <div class="task-row-list">`;
@@ -5404,7 +5419,6 @@ function renderApp() {
   if (state.view === 'home') renderHome();
   else if (state.view === 'plant') renderPlantDetail(state.plantId);
   else if (state.view === 'manage-households') renderManageHouseholds();
-  else if (state.view === 'household-activity') renderHouseholdActivity();
 }
 
 function showOnboardingCompletionOverlay() {
@@ -5433,7 +5447,6 @@ function navigateTo(view, plantId = null) {
   if (view === 'home') renderHome();
   else if (view === 'plant') { plantDetailTab = 'summary'; renderPlantDetail(plantId); }
   else if (view === 'manage-households') renderManageHouseholds();
-  else if (view === 'household-activity') renderHouseholdActivity();
 }
 
 // ============================================================
@@ -5647,8 +5660,12 @@ async function handleEvent(e) {
       break;
 
     case 'open-household-activity':
-      navigateTo('household-activity');
+      openHouseholdActivity();
       posthog.capture('household_activity_viewed');
+      break;
+
+    case 'close-household-activity':
+      closeHouseholdActivity();
       break;
 
     case 'switch-tab': {
@@ -5874,6 +5891,7 @@ async function handleEvent(e) {
         ? activeFilter.filter(u => u !== user)
         : [...activeFilter, user];
       renderApp();
+      refreshHouseholdActivity();
       break;
     }
 

@@ -355,7 +355,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--text-muted);
-  padding: 14px 16px 6px;
+  padding: 16px 16px 8px;
 }
 
 .home-activity-feed {
@@ -400,8 +400,8 @@ body {
 .hero-card-top {
   display: flex;
   align-items: center;
-  gap: 11px;
-  margin-bottom: 10px;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 .hero-card-days {
   font-size: 32px;
@@ -487,7 +487,7 @@ body {
 .hero-card-prompt-sub {
   font-size: 10px;
   color: #9aaa94;
-  margin-top: 3px;
+  margin-top: 4px;
   line-height: 1.4;
 }
 .hero-card-prompt-chevron {
@@ -627,8 +627,8 @@ body {
 
 .plant-card-task-icons {
   display: flex;
-  gap: 6px;
-  margin-top: 6px;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .plant-card-task-icon {
@@ -666,9 +666,9 @@ body {
 .due-tasks-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .task-due-badge {
@@ -779,7 +779,7 @@ body {
 .fab-add-plant {
   position: fixed;
   bottom: 24px;
-  right: calc(50% - 240px + 20px);
+  right: calc(50% - 215px + 16px);
   background: var(--primary);
   color: white;
   border: none;
@@ -803,7 +803,7 @@ body {
 
 @media (max-width: 480px) {
   .fab-add-plant {
-    right: 20px;
+    right: 16px;
   }
 }
 
@@ -816,7 +816,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .section-title {
@@ -879,7 +879,7 @@ body {
 .task-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 8px 12px;
   background: #fff;
   border: 0.5px solid #dde6d8;
@@ -1018,7 +1018,7 @@ body {
 
 .task-body {
   flex: 1;
-  padding: 9px 12px;
+  padding: 8px 12px;
   min-width: 0;
 }
 
@@ -1086,12 +1086,12 @@ body {
 
 .task-actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .task-actions .btn {
-  padding: 6px 10px;
+  padding: 8px 12px;
   font-size: 12px;
 }
 
@@ -1226,8 +1226,8 @@ body {
 .care-log-entry {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1941,7 +1941,7 @@ body {
 
 /* ===== Schedule View ===== */
 .sched-toolbar {
-  padding: 14px 20px 8px;
+  padding: 16px 20px 8px;
 }
 
 .sched-toggle-label {
@@ -2005,7 +2005,7 @@ body {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-muted);
-  padding: 10px 16px 2px;
+  padding: 8px 16px 4px;
 }
 
 .sched-day-today {
@@ -2015,13 +2015,13 @@ body {
 .sched-day-today .sched-day-header {
   background: #e8f0e8;
   color: #1c4d1c;
-  padding: 13px 16px 5px;
+  padding: 12px 16px 4px;
 }
 
 .sched-empty {
   font-size: 13px;
   color: var(--text-muted);
-  padding: 2px 16px 10px;
+  padding: 4px 16px 8px;
 }
 
 .sched-task {
@@ -3603,6 +3603,51 @@ body.menu-open {
   opacity: 0.75;
 }
 
+/* ===== Household Activity overlay + header variant ===== */
+.household-activity-overlay {
+  position: fixed;
+  inset: 0;
+  max-width: 430px;
+  margin: 0 auto;
+  background: #f4f6f2;
+  z-index: 9999;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.household-activity-overlay.open {
+  transform: translateY(0);
+}
+
+.app-header.app-header--household-activity {
+  height: 48px;
+  padding: 0 16px;
+}
+
+.app-header--household-activity .household-activity-title {
+  flex: 1;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-header--household-activity .user-initial-circle {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+}
+
+.household-activity-overlay .user-filter-row {
+  padding-top: 0;
+}
+
 /* ===== Plant Detail Header (compact variant — matches home header) ===== */
 .app-header.app-header--plant-detail {
   height: 48px;
@@ -3719,7 +3764,7 @@ body.menu-open {
   letter-spacing: 1px;
   color: var(--text-muted);
   display: block;
-  margin: 18px 0 8px;
+  margin: 16px 0 8px;
 }
 
 .detail-section-label--overdue {
@@ -3730,7 +3775,7 @@ body.menu-open {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 18px 0 8px;
+  margin: 16px 0 8px;
 }
 
 .detail-section-row .detail-section-label {
@@ -3754,15 +3799,15 @@ body.menu-open {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   background: var(--card);
   border: 0.5px solid var(--border);
   border-radius: var(--radius-xs);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .card + .section-header-bar,
 div + .section-header-bar {
-  margin-top: 20px;
+  margin-top: 24px;
 }
 
 /* Inside schedule sections: flatten to a full-width header, no floating card look */
@@ -3774,7 +3819,7 @@ div + .section-header-bar {
   border-radius: 0;
   margin-bottom: 6px;
   margin-top: 0;
-  padding: 10px 16px 8px;
+  padding: 8px 16px 8px;
 }
 .section-header-bar-accent {
   width: 3px;
@@ -3815,15 +3860,15 @@ div + .section-header-bar {
   text-align: center;
 }
 .tasks-empty-icon { font-size: 36px; margin-bottom: 12px; }
-.tasks-empty-title { font-size: 15px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+.tasks-empty-title { font-size: 15px; font-weight: 500; color: var(--text); margin-bottom: 8px; }
 .tasks-empty-sub { font-size: 13px; color: var(--text-muted); }
 
 /* ===== User Filter Pills ===== */
 .user-filter-row {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   overflow-x: auto;
-  padding: 10px 0 10px 16px;
+  padding: 12px 0 12px 16px;
   margin-bottom: 4px;
   scrollbar-width: none;
   align-items: center;
@@ -3843,7 +3888,7 @@ div + .section-header-bar {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 12px;
+  padding: 4px 12px;
   border-radius: 20px;
   font-size: 13px;
   font-weight: 500;
@@ -3880,7 +3925,7 @@ div + .section-header-bar {
 }
 .carelog-filter-btn {
   font-size: 12px;
-  padding: 5px 12px;
+  padding: 4px 12px;
   border-radius: var(--border-radius-md);
   border: 0.5px solid var(--color-border-secondary);
   background: var(--color-bg-primary);
@@ -3901,7 +3946,7 @@ div + .section-header-bar {
   overflow: hidden;
 }
 .carelog-filter-group {
-  padding: 12px 14px;
+  padding: 12px 16px;
 }
 .carelog-filter-group-bordered {
   border-top: 0.5px solid var(--color-border-secondary);
@@ -3910,7 +3955,7 @@ div + .section-header-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .carelog-filter-group-icon {
   width: 22px;
@@ -3979,7 +4024,7 @@ div + .section-header-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   flex-wrap: wrap;
 }
 
@@ -4021,14 +4066,14 @@ div + .section-header-bar {
 .compact-task-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .compact-task-row {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  padding: 12px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -4082,8 +4127,8 @@ div + .section-header-bar {
 .activity-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
+  gap: 8px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -4155,7 +4200,7 @@ div + .section-header-bar {
 .detail-fab-stack {
   position: fixed;
   bottom: 24px;
-  right: calc(50% - 240px + 20px);
+  right: calc(50% - 215px + 16px);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -4165,7 +4210,7 @@ div + .section-header-bar {
 
 @media (max-width: 480px) {
   .detail-fab-stack {
-    right: 20px;
+    right: 16px;
   }
 }
 
@@ -4205,7 +4250,7 @@ div + .section-header-bar {
 .summary-fab {
   position: fixed;
   bottom: 20px;
-  right: calc(50% - 240px + 16px);
+  right: calc(50% - 215px + 16px);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -4360,7 +4405,7 @@ div + .section-header-bar {
 
 .carelog-seg-btn {
   flex: 1;
-  padding: 7px 8px;
+  padding: 8px;
   border: none;
   background: none;
   border-radius: 8px;
@@ -4395,8 +4440,8 @@ div + .section-header-bar {
 .carelog-upcoming-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px 12px;
+  gap: 8px;
+  padding: 12px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -4441,7 +4486,7 @@ div + .section-header-bar {
   font-size: 11px;
   color: var(--text-muted);
   font-style: italic;
-  margin-top: 3px;
+  margin-top: 4px;
 }
 
 .carelog-past-date {
@@ -4454,7 +4499,7 @@ div + .section-header-bar {
 .carelog-divider {
   height: 1px;
   background: var(--border);
-  margin: 20px 0 0;
+  margin: 24px 0 0;
 }
 
 /* ===== Care Log redesign — date-left layout ===== */
@@ -4463,7 +4508,7 @@ div + .section-header-bar {
   font-weight: 500;
   color: #888;
   letter-spacing: 0.05em;
-  margin: 8px 0 6px -16px;
+  margin: 8px 0 8px -16px;
   padding-left: 0;
 }
 
@@ -4581,7 +4626,7 @@ div + .section-header-bar {
 .carelog-new-row {
   display: flex;
   gap: 8px;
-  margin: 0 -16px 5px;
+  margin: 0 -16px 4px;
   min-height: 48px;
   align-items: center;
   cursor: pointer;
@@ -4617,7 +4662,7 @@ div + .section-header-bar {
   background: #fff;
   border-radius: 10px;
   border: 0.5px solid #dde6d8;
-  padding: 8px 10px;
+  padding: 8px 12px;
   min-height: 48px;
   display: flex;
   align-items: center;
@@ -4691,7 +4736,7 @@ div + .section-header-bar {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
-  padding: 10px 16px 4px;
+  padding: 8px 16px 4px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
@@ -4699,8 +4744,8 @@ div + .section-header-bar {
 .upcoming-clear-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 16px;
+  gap: 8px;
+  padding: 8px 16px;
 }
 
 .upcoming-day-label {
@@ -4774,7 +4819,7 @@ div + .section-header-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   background: #fff;
   border: 0.5px solid #dde6d8;
   border-radius: 10px;

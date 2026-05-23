@@ -1611,7 +1611,6 @@ function attachAddPlantStep3Listener() {
 // ============================================================
 
 const FEEDBACK_BUBBLE_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
-const PENCIL_EDIT_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`;
 
 function renderHeaderRight() {
   const activeMember = membersCache.find(m => m.display_name === activeUser);
@@ -1733,8 +1732,8 @@ function renderCaringDoneToday() {
   });
 
   let html = `<div class="home-section-header">
-    <div class="home-section-header-accent" style="background:#aab09f;"></div>
-    <span class="home-section-header-text" style="color:#8a9180;">Done today</span>
+    <div class="home-section-header-accent" style="background:#2e7d51;"></div>
+    <span class="home-section-header-text">Done today</span>
   </div>
   <div class="home-activity-feed"><div class="needs-attention-list">`;
 
@@ -1937,7 +1936,7 @@ function renderHome() {
             const isActive   = h.id === householdId;
             const showCheck  = isActive && userHouseholds.length > 1;
             const actionAttr = isActive ? '' : ` data-action="switch-household" data-household-id="${h.id}"`;
-            return `<button class="household-switcher-item"${actionAttr}>
+            return `<button class="household-switcher-item${isActive ? ' is-active' : ''}"${actionAttr}>
             <span class="household-switcher-item-name">${escapeHtml(h.name)}</span>
             ${showCheck ? '<span class="household-switcher-check">✓</span>' : ''}
           </button>`;
@@ -2361,7 +2360,7 @@ function renderPlantDetail(plantId) {
         : `<span class="detail-header-emoji-circle">${plant.emoji}</span>`}
       <div class="detail-header-name-row">
         <span class="detail-header-name">${escapeHtml(plant.name)}</span>
-        <button class="header-edit-pencil-btn" data-action="open-edit-plant" data-plant="${plant.id}" aria-label="Edit plant">${PENCIL_EDIT_SVG}</button>
+        <button class="header-edit-chevron-btn" data-action="open-edit-plant" data-plant="${plant.id}" aria-label="Edit plant">▾</button>
       </div>
     </div>
     <button class="header-feedback-btn" data-action="feedback" aria-label="Report a bug">${FEEDBACK_BUBBLE_SVG}</button>
@@ -3759,8 +3758,8 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
   const modifyFutureFg  = '#ffffff';
 
   const deltaText = isLate
-    ? `→ ${displacement} days later`
-    : `← ${Math.abs(displacement)} days earlier`;
+    ? `→ ${displacement} ${displacement === 1 ? 'day' : 'days'} later`
+    : `← ${Math.abs(displacement)} ${Math.abs(displacement) === 1 ? 'day' : 'days'} earlier`;
 
   const recurrenceSummary = recType === 'weekdays'
     ? originalWeekdaysLabel

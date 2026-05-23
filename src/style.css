@@ -555,6 +555,8 @@ body {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   border: 1px solid var(--border);
+  height: 72px;
+  overflow: hidden;
 }
 
 .plant-card:active {
@@ -628,7 +630,7 @@ body {
 .plant-card-task-icons {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 5px;
 }
 
 .plant-card-task-icon {
@@ -699,6 +701,7 @@ body {
   border-radius: 20px;
   background: var(--ok-bg);
   color: var(--ok);
+  border: none;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -729,7 +732,6 @@ body {
   border-radius: 20px;
   background: #fce8e8;
   color: #a93226;
-  border: 0.5px solid #e8a0a0;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -753,7 +755,7 @@ body {
   border-radius: 20px;
   background: #fdf3e8;
   color: #b07a2a;
-  border: 1px solid #f5d9a0;
+  border: none;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -3613,6 +3615,7 @@ body.menu-open {
   z-index: 9999;
   transform: translateY(100%);
   transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -5052,236 +5055,237 @@ div + .section-header-bar {
 /* ===== Full-screen photo overlay (Option C: photo + note context panel) ===== */
 .photo-fullscreen-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: #000;
-  z-index: 99998;
+  inset: 0;
+  background: #f4f6f2;
+  z-index: 9999;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-}
-
-.photo-fullscreen-photo-area {
-  flex: 0 0 60%;
-  max-height: 60vh;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #000;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.photo-fullscreen-photo-area > img {
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  display: block;
-  object-fit: contain;
-  cursor: zoom-in;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.photo-fullscreen-zoom-icon {
-  position: absolute;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
-  color: #fff;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-
-body.photo-overlay-open {
-  overflow: hidden;
-}
-
-.photo-fullscreen-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.18);
-  border: 1.5px solid rgba(255, 255, 255, 0.32);
-  color: #fff;
-  font-family: inherit;
-  font-size: 22px;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  z-index: 2;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.photo-fullscreen-close:active { opacity: 0.7; }
-
-.photo-fullscreen-context {
-  flex: 1 1 auto;
-  flex-shrink: 0;
-  background: #fff;
-  border-radius: 18px 18px 0 0;
-  padding: 16px;
-  margin-top: 8px;
-  position: relative;
-  z-index: 1;
   overflow-y: auto;
-  max-height: 40vh;
-  -webkit-overflow-scrolling: touch;
+  max-width: 430px;
+  margin: 0 auto;
 }
 
-.photo-fullscreen-meta {
+.photo-fullscreen-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: #ffffff;
+  border-bottom: 0.5px solid #e0e4dc;
+  flex-shrink: 0;
+}
+
+.photo-fullscreen-plant-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .photo-fullscreen-plant-tile {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border-radius: 8px;
-  background: #e8f0e4;
-  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: #eef2ea;
+  display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  line-height: 1;
+  font-size: 18px;
+  border: 1px solid #d8ddd4;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .photo-fullscreen-plant-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
   color: #1a2e1a;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.3;
 }
 
-.photo-fullscreen-date-badge {
+.photo-fullscreen-photo-count {
   font-size: 11px;
-  background: #f0f4f0;
-  color: #1a2e1a;
-  border-radius: 10px;
-  padding: 3px 8px;
-  flex-shrink: 0;
+  color: #6b7c6b;
 }
 
-.photo-fullscreen-avatar {
-  width: 24px;
-  height: 24px;
+.photo-fullscreen-close {
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  display: inline-flex;
+  background: #f0f0ee;
+  border: none;
+  font-size: 18px;
+  color: #666;
+  display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
   flex-shrink: 0;
+  font-family: inherit;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
-.photo-fullscreen-note-label {
-  margin-top: 12px;
-  margin-bottom: 4px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #8a9e8a;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+.photo-fullscreen-photo-card {
+  margin: 12px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #1e2a1e;
+  position: relative;
+  flex-shrink: 0;
+  height: 320px;
 }
 
-.photo-fullscreen-note-text {
-  font-size: 13px;
-  color: #1a2e1a;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+.photo-fullscreen-photo-card img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
 }
 
-.photo-fullscreen-arrow {
+.photo-fullscreen-prev,
+.photo-fullscreen-next {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
-  color: #fff;
-  font-family: inherit;
-  font-size: 20px;
-  line-height: 1;
+  background: rgba(0, 0, 0, 0.4);
+  border: none;
+  color: #ffffff;
+  font-size: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
   cursor: pointer;
+  font-family: inherit;
   padding: 0;
-  z-index: 2;
+  line-height: 1;
   -webkit-tap-highlight-color: transparent;
 }
-.photo-fullscreen-arrow-prev { left: 12px; }
-.photo-fullscreen-arrow-next { right: 12px; }
 
-.photo-fullscreen-count {
+.photo-fullscreen-prev { left: 12px; }
+.photo-fullscreen-next { right: 12px; }
+.photo-fullscreen-prev[hidden],
+.photo-fullscreen-next[hidden] { display: none; }
+
+.photo-fullscreen-zoom-icon {
   position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.75);
+  bottom: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
   background: rgba(0, 0, 0, 0.4);
-  padding: 3px 10px;
-  border-radius: 12px;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.photo-fullscreen-dots {
   display: flex;
-  gap: 4px;
   align-items: center;
   justify-content: center;
-  margin-top: 8px;
-}
-.photo-fullscreen-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #ddd;
-  flex-shrink: 0;
-}
-.photo-fullscreen-dot.active { background: #3a6b3a; }
-.photo-fullscreen-dot.origin {
-  width: 7px;
-  height: 7px;
-  box-shadow: 0 0 0 1.5px #3a6b3a;
-}
-.photo-fullscreen-dot.origin.active {
-  background: #3a6b3a;
-  box-shadow: 0 0 0 1.5px #3a6b3a;
+  font-size: 14px;
+  color: #fff;
+  cursor: pointer;
 }
 
-/* Zoom mode: full-bleed photo, hide context panel and zoom icon */
-.photo-fullscreen-overlay.is-zoomed .photo-fullscreen-context,
-.photo-fullscreen-overlay.is-zoomed .photo-fullscreen-zoom-icon {
-  display: none;
+.photo-fullscreen-thumbs {
+  display: flex;
+  gap: 7px;
+  padding: 0 12px;
+  flex-shrink: 0;
+  overflow-x: auto;
 }
-.photo-fullscreen-overlay.is-zoomed .photo-fullscreen-photo-area {
-  overflow: visible;
+
+.photo-fullscreen-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 9px;
+  object-fit: cover;
+  flex-shrink: 0;
+  cursor: pointer;
+  border: 0.5px solid #d8ddd4;
+}
+
+.photo-fullscreen-thumb.active {
+  border: 2.5px solid #4a8c3f;
+}
+
+.photo-fullscreen-meta-card {
+  margin: 10px 12px 20px;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 14px;
+  border: 0.5px solid #e0e4dc;
+}
+
+.photo-fullscreen-note-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4a5e4a;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.photo-fullscreen-note-text {
+  font-size: 14px;
+  color: #2a2a2a;
+  line-height: 1.5;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.photo-fullscreen-meta-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.photo-fullscreen-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.photo-fullscreen-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.photo-fullscreen-member-name {
+  font-size: 12px;
+  color: #6b7c6b;
+}
+
+.photo-fullscreen-date-badge {
+  font-size: 11px;
+  color: #aaa;
+}
+
+body.photo-overlay-open {
+  overflow: hidden;
+}
+
+/* Bare-image mode (no resolved note) — preserves original full-bleed black behavior */
+.photo-fullscreen-overlay.is-zoomed {
+  max-width: none;
+  margin: 0;
+  background: #000;
+}
+.photo-fullscreen-overlay.is-zoomed .photo-fullscreen-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1.5px solid rgba(255, 255, 255, 0.32);
+  color: #fff;
+  z-index: 2;
 }
 .photo-fullscreen-overlay.is-zoomed .photo-fullscreen-photo-area > img {
   position: fixed;
@@ -5291,16 +5295,6 @@ body.photo-overlay-open {
   height: 100%;
   object-fit: contain;
   z-index: 1;
-  cursor: zoom-out;
-}
-.photo-fullscreen-overlay.is-zoomed .photo-fullscreen-arrow {
-  position: fixed;
-  top: 50%;
-  z-index: 3;
-}
-.photo-fullscreen-overlay.is-zoomed .photo-fullscreen-count {
-  position: fixed;
-  z-index: 3;
 }
 
 /* ===== Photo slideshow overlay ===== */

@@ -2068,7 +2068,7 @@ function renderHome() {
           : `<span class="plant-card-emoji">${plant.emoji}</span>`}
         <div class="plant-card-meta">
           <div class="plant-card-name">${escapeHtml(plant.name)}</div>
-          ${lastCareLabel(plant)}
+          ${overdueTasks.length === 0 && dueTodayTasks.length === 0 ? lastCareLabel(plant) : ''}
           ${taskIconsHtml}
         </div>
         <div class="plant-card-right">
@@ -2251,8 +2251,8 @@ function renderSchedule() {
   if (totalTasks === 0) {
     return `<div style="text-align:center;padding:48px 24px 32px;">
   <div style="font-size:32px;margin-bottom:12px;">✅</div>
-  <div style="font-size:15px;font-weight:600;color:#3a6b3a;margin-bottom:8px;">No care records yet.</div>
-  <div style="font-size:13px;color:#888;line-height:1.5;">Completed and upcoming tasks will appear here.</div>
+  <div style="font-size:15px;font-weight:600;color:#3a6b3a;margin-bottom:8px;">Where care happens</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;">Overdue and upcoming tasks will appear here.</div>
 </div>`;
   }
 
@@ -2279,6 +2279,7 @@ function renderSchedule() {
     for (const plant of plants) {
       for (const task of plant.tasks) {
         if (task.paused) continue;
+        if (task.lastDone === todayStr()) continue;
         if (!matchesFilter(task.owner)) continue;
         if (taskOccursOnDate(task, dateStr)) dayTasks.push({ plant, task });
       }
@@ -2551,7 +2552,7 @@ function buildHouseholdActivityContent() {
         subtitleText = noteText ? `${plantName} · ${truncated}` : plantName;
         taskIcon     = '💬';
         if (item.photoUrl) {
-          photoThumbHtml = `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`;
+          photoThumbHtml = `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" data-note-id="${escapeHtml(item.id)}" data-plant-id="${escapeHtml(item.plantId)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`;
         }
       }
 
@@ -2848,6 +2849,7 @@ function renderSummaryTab(plant) {
   const allOccs      = [];
   for (const task of plant.tasks) {
     if (task.paused) continue;
+    if (task.lastDone === todayStr()) continue;
     if (!matchesFilter(task.owner)) continue;
     const rt    = task.recurrenceType ?? 'interval';
     const first = computeNextDue(task);
@@ -3132,7 +3134,7 @@ function renderNotesTab(plant) {
       : '';
 
     const photoThumbHtml = note.photoUrl
-      ? `<span class="care-log-thumb"><img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`
+      ? `<span class="care-log-thumb"><img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" data-note-id="${escapeHtml(note.id)}" data-plant-id="${escapeHtml(note.plantId)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`
       : '';
 
     html += `
@@ -3188,7 +3190,7 @@ function renderCareLogTab(plant) {
   if (unified.length === 0) {
     html += `<div style="text-align:center;padding:40px 24px 24px;">
   <div style="font-size:32px;margin-bottom:12px;">📖</div>
-  <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">No care history yet</div>
+  <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">Your plant's care history</div>
   <div style="font-size:13px;color:#888;line-height:1.5;">Your completed tasks and notes will appear here.</div>
 </div>`;
     return html;
@@ -3288,7 +3290,7 @@ function renderCareLogNoteRow(note) {
   const preview = note.note.length > 30 ? note.note.slice(0, 30) + '…' : note.note;
 
   const photoThumbHtml = note.photoUrl
-    ? `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`
+    ? `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" data-note-id="${escapeHtml(note.id)}" data-plant-id="${escapeHtml(note.plantId)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`
     : '';
 
   return `<div class="carelog-new-row" data-action="carelog-open-edit-note" data-plant="${escapeHtml(note.plantId)}" data-note="${escapeHtml(note.id)}">
@@ -3744,28 +3746,28 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
   if (mostRecentDueDate > today) keepFutureSet.add(mostRecentDueDate);
 
   // Direction palette.
-  const headlineColor   = isLate ? '#a32d2d' : '#185fa5';
-  const todayCircleBg   = isLate ? '#fde8e8' : '#ddeefb';
-  const todayCircleEdge = isLate ? '#a32d2d' : '#185fa5';
-  const todayCircleFg   = isLate ? '#a32d2d' : '#185fa5';
-  const modifyCardBg    = isLate ? '#eef6e6' : '#edf3fb';
-  const modifyCardBd    = isLate ? '#c0dd97' : '#b5d4f4';
-  const modifyTitleFg   = isLate ? '#3b6d11' : '#185fa5';
-  const modifyPillBg    = isLate ? '#e5f2da' : '#ddeefb';
-  const modifyPillFg    = isLate ? '#3b6d11' : '#185fa5';
-  const modifyFutureBg  = isLate ? '#e5f2da' : '#ddeefb';
-  const modifyFutureFg  = isLate ? '#3b6d11' : '#185fa5';
+  const headlineColor   = isLate ? '#a32d2d' : '#2e6b28';
+  const todayCircleBg   = isLate ? '#fde8e8' : '#e8f5e9';
+  const todayCircleEdge = isLate ? '#a32d2d' : '#2e6b28';
+  const todayCircleFg   = isLate ? '#a32d2d' : '#2e6b28';
+  const modifyCardBg    = '#f0f7ec';
+  const modifyCardBd    = '#4a8c3f';
+  const modifyTitleFg   = '#2e6b28';
+  const modifyPillBg    = '#c8e6c9';
+  const modifyPillFg    = '#1b5e20';
+  const modifyFutureBg  = '#4a8c3f';
+  const modifyFutureFg  = '#ffffff';
 
-  const deltaSign = isLate ? '+' : '−';
-  const deltaText = `${deltaSign}${absDays} day${absDays !== 1 ? 's' : ''}`;
+  const deltaText = isLate
+    ? `→ ${displacement} days later`
+    : `← ${Math.abs(displacement)} days earlier`;
 
-  const taskLabelText = `${cfg.icon} ${cfg.name} · ${plant.name} · ${recurrenceLabel(task).toLowerCase()}`;
-  const headlineText  = `You are ${absDays} day${absDays !== 1 ? 's' : ''} ${isLate ? 'late' : 'early'}`;
+  const recurrenceSummary = recType === 'weekdays'
+    ? originalWeekdaysLabel
+    : `Every ${task.frequencyDays ?? 1} days`;
 
   const formatFullDate = (s) => new Date(s + 'T12:00:00')
     .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  const todayLabel = formatFullDate(today);
-  const dueLabel   = formatFullDate(mostRecentDueDate);
 
   // Calendar layout: 4 rows, week starts Monday.
   // Keep card: anchored to missed due (late) or today (early).
@@ -3839,28 +3841,40 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
 
   const cardHtml = `
     <div style="background:#ffffff;border-radius:20px;padding:24px 20px;max-width:390px;width:calc(100% - 32px);max-height:calc(100vh - 32px);overflow:hidden;box-sizing:border-box;">
-      <div style="font-size:11px;color:#aaaaaa;letter-spacing:0.07em;text-transform:uppercase;text-align:center;margin-bottom:14px;">${escapeHtml(taskLabelText)}</div>
-      <div style="font-size:26px;font-weight:500;color:${headlineColor};margin-bottom:8px;">${escapeHtml(headlineText)}</div>
-      <div style="font-size:13px;color:#999999;margin-bottom:3px;">Today is <span style="font-weight:500;color:#333333;">${escapeHtml(todayLabel)}</span></div>
-      <div style="font-size:13px;color:#999999;margin-bottom:3px;">Original due date was <span style="font-weight:500;color:#333333;">${escapeHtml(dueLabel)}</span></div>
-      <div style="height:1px;background:#eeeeee;margin:16px 0;"></div>
-      <div style="font-size:11px;color:#bbbbbb;text-align:center;font-weight:700;margin-bottom:12px;">Tap a card to select</div>
-      <div data-action="reschedule-keep-original" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:#f4f4f2;border:1.5px solid #e0e0da;border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;box-shadow:inset 0 -3px 0 0 #d0d0d0;">
+      <div style="display:flex;align-items:center;gap:12px;padding:12px;background:#f7f8f6;border-radius:12px;margin-bottom:16px;">
+        <div style="width:44px;height:44px;border-radius:10px;background:${isLate ? '#fce8e8' : '#e8f5e9'};display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">${cfg.icon}</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:#1a2e1a;margin:0 0 2px;">${escapeHtml(cfg.name)} · ${escapeHtml(plant.name)}</div>
+          <div style="font-size:12px;color:#6b7c6b;">${escapeHtml(recurrenceSummary)} · due ${formatDateShort(mostRecentDueDate)}</div>
+        </div>
+      </div>
+      <div style="font-size:18px;font-weight:600;color:${headlineColor};text-align:center;margin-bottom:4px;">${isLate ? `Running ${absDays} days late` : `${absDays} days early`}</div>
+      <div style="font-size:12px;color:#888;text-align:center;margin-bottom:16px;">Today is ${formatFullDate(today)}</div>
+      <div data-action="reschedule-keep-original" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:#f7f8f6;border:1px solid #d8ddd4;border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-          <div style="font-size:14px;font-weight:500;color:#444444;">Keep Original Schedule</div>
+          <div style="font-size:14px;font-weight:600;color:#4a5e4a;">Keep Original Schedule</div>
           <div style="font-size:20px;font-weight:300;color:#aaaaaa;line-height:1;">›</div>
         </div>
         ${keepCalendar}
+        <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+          ${isLate ? `<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:2px;background:#fce8e8;border:1px solid #f09595;"></div>Missed</div>` : ''}
+          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:50%;border:1.5px solid ${todayCircleEdge};"></div>Today</div>
+          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:2px;background:#d8ddd4;"></div>Next occurrences</div>
+        </div>
       </div>
-      <div data-action="reschedule-modify" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:${modifyCardBg};border:1.5px solid ${modifyCardBd};border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;box-shadow:inset 0 -3px 0 0 ${isLate ? '#a8cc6a' : '#6aaee8'};">
+      <div data-action="reschedule-modify" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:${modifyCardBg};border:2px solid #4a8c3f;border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-          <div style="font-size:14px;font-weight:500;color:${modifyTitleFg};">Accept Modified Schedule</div>
+          <div style="font-size:14px;font-weight:700;color:${modifyTitleFg};">Accept Modified Schedule</div>
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="background:${modifyPillBg};color:${modifyPillFg};font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;">${deltaText}</div>
-            <div style="font-size:20px;font-weight:300;color:#639922;line-height:1;">›</div>
+            <div style="font-size:20px;font-weight:300;color:#2e6b28;line-height:1;">›</div>
           </div>
         </div>
         ${modifyCalendar}
+        <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:50%;border:1.5px solid ${todayCircleEdge};"></div>Today</div>
+          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:2px;background:#4a8c3f;"></div>Next occurrences</div>
+        </div>
       </div>
     </div>`;
 
@@ -4530,7 +4544,7 @@ function openSlideshow(plantId, originPhotoId) {
     document.removeEventListener('keydown', onKey);
     if (originPhotoId) {
       const originNote = sequence.find(n => n.id === originPhotoId);
-      if (originNote?.photoUrl) openPhotoFullscreen(originNote.photoUrl);
+      if (originNote?.photoUrl) openPhotoFullscreen(originNote.photoUrl, originNote.id, originNote.plantId);
     }
   };
 
@@ -4575,12 +4589,14 @@ function openSlideshow(plantId, originPhotoId) {
   renderCurrent();
 }
 
-function openPhotoFullscreen(url, noteId = null, plantId = null) {
+function openPhotoFullscreen(url, noteId = null, plantId = null, bare = false) {
   if (!url) return;
 
-  let matchingNote = noteId
-    ? notes.find(n => n.id === noteId)
-    : notes.find(n => n.photoUrl === url);
+  let matchingNote = bare
+    ? null
+    : noteId
+      ? notes.find(n => n.id === noteId)
+      : notes.find(n => n.photoUrl === url);
   const resolvedPlantId = plantId ?? matchingNote?.plantId ?? null;
 
   const photoSequence = resolvedPlantId
@@ -4595,75 +4611,86 @@ function openPhotoFullscreen(url, noteId = null, plantId = null) {
     const idx = photoSequence.findIndex(n => n.id === matchingNote.id);
     if (idx >= 0) currentIndex = idx;
   }
-  const originIndex = currentIndex;
-  const hasMultiple = photoSequence.length > 1;
 
-  const arrowsHtml = hasMultiple ? `
-      <button type="button" class="photo-fullscreen-arrow photo-fullscreen-arrow-prev" aria-label="Previous">&#8249;</button>
-      <button type="button" class="photo-fullscreen-arrow photo-fullscreen-arrow-next" aria-label="Next">&#8250;</button>` : '';
-  const countHtml = hasMultiple ? `<div class="photo-fullscreen-count"></div>` : '';
-  const dotsHtml  = hasMultiple ? `<div class="photo-fullscreen-dots"></div>` : '';
+  // Bare-image mode (no note resolved) — preserved untouched.
+  if (!matchingNote) {
+    const div = document.createElement('div');
+    div.className = 'photo-fullscreen-overlay is-zoomed';
+    div.innerHTML = `
+      <button type="button" class="photo-fullscreen-close" aria-label="Close">&times;</button>
+      <div class="photo-fullscreen-photo-area">
+        <img src="${escapeHtml(url)}" alt="" />
+      </div>
+    `;
+    const close = () => {
+      div.remove();
+      document.body.classList.remove('photo-overlay-open');
+      document.removeEventListener('keydown', onKey);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+    };
+    div.querySelector('.photo-fullscreen-close')?.addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(div);
+    document.body.classList.add('photo-overlay-open');
+    return;
+  }
 
-  const contextPanelHtml = matchingNote ? `
-      <div class="photo-fullscreen-context">
-        <div class="photo-fullscreen-meta">
-          <span class="photo-fullscreen-plant-tile"></span>
-          <span class="photo-fullscreen-plant-name"></span>
-          <span class="photo-fullscreen-date-badge"></span>
-          <span class="photo-fullscreen-avatar"></span>
-        </div>
-        <div class="photo-fullscreen-note-label">NOTE</div>
-        <div class="photo-fullscreen-note-text"></div>
-        ${dotsHtml}
-      </div>` : '';
+  // Note-context mode — redesigned layout (Brief #218).
+  const currentPlant = plants.find(p => p.id === matchingNote.plantId);
+  const photoCount = photoSequence.length;
+
+  const plantTileInner = currentPlant?.photoUrl
+    ? `<img src="${escapeHtml(currentPlant.photoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" />`
+    : escapeHtml(currentPlant?.emoji ?? '🪴');
+
+  const thumbsHtml = photoSequence.map(n =>
+    `<img class="photo-fullscreen-thumb" src="${escapeHtml(n.photoUrl)}" alt="" />`
+  ).join('');
 
   const div = document.createElement('div');
   div.className = 'photo-fullscreen-overlay';
-  if (!matchingNote) div.classList.add('is-zoomed');
   div.innerHTML = `
-    <button type="button" class="photo-fullscreen-close" aria-label="Close">&times;</button>
-    <div class="photo-fullscreen-photo-area">
-      <img src="${escapeHtml(url)}" alt="" />
-      ${arrowsHtml}
-      ${countHtml}
-      ${matchingNote ? `<div class="photo-fullscreen-zoom-icon">⤢</div>` : ''}
+    <div class="photo-fullscreen-header">
+      <div class="photo-fullscreen-plant-chip">
+        <span class="photo-fullscreen-plant-tile">${plantTileInner}</span>
+        <div>
+          <div class="photo-fullscreen-plant-name">${escapeHtml(currentPlant?.name ?? '')}</div>
+          <div class="photo-fullscreen-photo-count">${photoCount} ${photoCount === 1 ? 'photo' : 'photos'}</div>
+        </div>
+      </div>
+      <button type="button" class="photo-fullscreen-close" aria-label="Close">&times;</button>
     </div>
-    ${contextPanelHtml}
+    <div class="photo-fullscreen-photo-card">
+      <img src="${escapeHtml(url)}" alt="" />
+      <button type="button" class="photo-fullscreen-prev" aria-label="Previous">&#8249;</button>
+      <button type="button" class="photo-fullscreen-next" aria-label="Next">&#8250;</button>
+      <div class="photo-fullscreen-zoom-icon">⤢</div>
+    </div>
+    <div class="photo-fullscreen-thumbs">${thumbsHtml}</div>
+    <div class="photo-fullscreen-meta-card">
+      <div class="photo-fullscreen-note-label">NOTE</div>
+      <div class="photo-fullscreen-note-text"></div>
+      <div class="photo-fullscreen-meta-footer">
+        <div class="photo-fullscreen-avatar-row">
+          <span class="photo-fullscreen-avatar"></span>
+          <span class="photo-fullscreen-member-name"></span>
+        </div>
+        <span class="photo-fullscreen-date-badge"></span>
+      </div>
+    </div>
   `;
 
-  const photoArea  = div.querySelector('.photo-fullscreen-photo-area');
-  const imgEl      = photoArea?.querySelector('img');
-  const iconEl     = photoArea?.querySelector('.photo-fullscreen-zoom-icon');
-  const prevBtn    = div.querySelector('.photo-fullscreen-arrow-prev');
-  const nextBtn    = div.querySelector('.photo-fullscreen-arrow-next');
-  const countEl    = div.querySelector('.photo-fullscreen-count');
-  const dotsWrap   = div.querySelector('.photo-fullscreen-dots');
-  const tileEl     = div.querySelector('.photo-fullscreen-plant-tile');
-  const nameEl     = div.querySelector('.photo-fullscreen-plant-name');
-  const dateEl     = div.querySelector('.photo-fullscreen-date-badge');
-  const avatarEl   = div.querySelector('.photo-fullscreen-avatar');
+  const photoCard  = div.querySelector('.photo-fullscreen-photo-card');
+  const imgEl      = photoCard?.querySelector('img');
+  const prevBtn    = div.querySelector('.photo-fullscreen-prev');
+  const nextBtn    = div.querySelector('.photo-fullscreen-next');
+  const thumbEls   = Array.from(div.querySelectorAll('.photo-fullscreen-thumb'));
   const noteTextEl = div.querySelector('.photo-fullscreen-note-text');
-
-  const positionZoomIcon = () => {
-    if (!imgEl || !photoArea || !iconEl) return;
-    const areaW = photoArea.clientWidth;
-    const areaH = photoArea.clientHeight;
-    if (!imgEl.naturalWidth || !imgEl.naturalHeight || !areaW || !areaH) return;
-    const imgRatio  = imgEl.naturalWidth / imgEl.naturalHeight;
-    const areaRatio = areaW / areaH;
-    let renderedW, renderedH;
-    if (imgRatio > areaRatio) {
-      renderedW = areaW;
-      renderedH = areaW / imgRatio;
-    } else {
-      renderedH = areaH;
-      renderedW = areaH * imgRatio;
-    }
-    const offsetX = (areaW - renderedW) / 2;
-    const offsetY = (areaH - renderedH) / 2;
-    iconEl.style.right  = (areaW - offsetX - renderedW + 10) + 'px';
-    iconEl.style.bottom = (areaH - offsetY - renderedH + 10) + 'px';
-  };
+  const avatarEl   = div.querySelector('.photo-fullscreen-avatar');
+  const memberEl   = div.querySelector('.photo-fullscreen-member-name');
+  const dateEl     = div.querySelector('.photo-fullscreen-date-badge');
 
   const renderCurrent = () => {
     const note = photoSequence[currentIndex] ?? matchingNote;
@@ -4671,47 +4698,29 @@ function openPhotoFullscreen(url, noteId = null, plantId = null) {
 
     if (imgEl) imgEl.src = note.photoUrl;
 
-    if (countEl) countEl.textContent = `${currentIndex + 1} of ${photoSequence.length}`;
-
-    const currentPlant = plants.find(p => p.id === note.plantId);
-    if (tileEl) {
-      tileEl.innerHTML = currentPlant?.photoUrl
-        ? `<img src="${escapeHtml(currentPlant.photoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" />`
-        : escapeHtml(currentPlant?.emoji ?? '🪴');
+    if (noteTextEl) {
+      const text = (note.note ?? '').trim();
+      noteTextEl.textContent = text || 'No note added.';
     }
-    if (nameEl) nameEl.textContent = currentPlant?.name ?? '';
+
+    const member = membersCache.find(m => m.id === note.memberId);
+    if (avatarEl) {
+      avatarEl.style.background = member?.color ?? '#888';
+      avatarEl.textContent = (member?.display_name ?? note.author ?? '?')[0].toUpperCase();
+    }
+    if (memberEl) {
+      memberEl.textContent = member?.display_name ?? note.author ?? '';
+    }
     if (dateEl) {
       dateEl.textContent = note.createdAt
         ? new Date(note.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
         : '';
     }
-    if (avatarEl) {
-      const member = membersCache.find(m => m.id === note.memberId);
-      avatarEl.style.background = member?.color ?? '#888';
-      avatarEl.textContent = (member?.display_name ?? note.author ?? '?')[0].toUpperCase();
-    }
-    if (noteTextEl) {
-      const text = (note.note ?? '').trim();
-      if (text) {
-        noteTextEl.textContent = text;
-        noteTextEl.classList.remove('photo-fullscreen-note-text--empty');
-      } else {
-        noteTextEl.textContent = 'No note added.';
-        noteTextEl.classList.add('photo-fullscreen-note-text--empty');
-      }
-    }
 
-    if (dotsWrap) {
-      dotsWrap.innerHTML = photoSequence.map((_, i) => {
-        const cls = ['photo-fullscreen-dot'];
-        if (i === currentIndex) cls.push('active');
-        if (i === originIndex) cls.push('origin');
-        return `<span class="${cls.join(' ')}"></span>`;
-      }).join('');
-    }
-
-    if (prevBtn) prevBtn.style.display = currentIndex === 0 ? 'none' : '';
-    if (nextBtn) nextBtn.style.display = currentIndex === photoSequence.length - 1 ? 'none' : '';
+    thumbEls.forEach((el, i) => el.classList.toggle('active', i === currentIndex));
+    thumbEls[currentIndex]?.scrollIntoView({ inline: 'center', behavior: 'smooth', block: 'nearest' });
+    if (prevBtn) prevBtn.hidden = currentIndex === 0;
+    if (nextBtn) nextBtn.hidden = currentIndex === photoSequence.length - 1;
   };
 
   const close = () => {
@@ -4723,12 +4732,6 @@ function openPhotoFullscreen(url, noteId = null, plantId = null) {
     if (e.key === 'Escape') { e.preventDefault(); close(); }
   };
   div.querySelector('.photo-fullscreen-close')?.addEventListener('click', close);
-
-  if (matchingNote) {
-    imgEl?.addEventListener('click', () => { div.classList.toggle('is-zoomed'); });
-    if (imgEl?.complete && imgEl.naturalWidth > 0) positionZoomIcon();
-    imgEl?.addEventListener('load', positionZoomIcon);
-  }
 
   prevBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -4745,11 +4748,24 @@ function openPhotoFullscreen(url, noteId = null, plantId = null) {
     }
   });
 
+  thumbEls.forEach((el, i) => {
+    el.addEventListener('click', () => {
+      currentIndex = i;
+      renderCurrent();
+    });
+  });
+
+  const zoomIconEl = div.querySelector('.photo-fullscreen-zoom-icon');
+  zoomIconEl?.addEventListener('click', () => {
+    const currentUrl = photoSequence[currentIndex]?.photoUrl ?? url;
+    openPhotoFullscreen(currentUrl, null, null, true);
+  });
+
   document.addEventListener('keydown', onKey);
   document.body.appendChild(div);
   document.body.classList.add('photo-overlay-open');
 
-  if (matchingNote) renderCurrent();
+  renderCurrent();
 }
 
 function renderPhotoCapSheet(plantId) {
@@ -6500,7 +6516,7 @@ async function handleEvent(e) {
       break;
 
     case 'add-note-view-photo':
-      openPhotoFullscreen(target.dataset.url);
+      openPhotoFullscreen(target.dataset.url, target.dataset.noteId, target.dataset.plantId);
       break;
 
     case 'open-slideshow': {
@@ -6614,9 +6630,11 @@ async function handleEvent(e) {
     // DEV TOOLS — remove before public launch
     case 'dev-seed-empty':     showDevToolsConfirm('empty',     'Empty state');  break;
     case 'dev-seed-heavy-v3':  showDevToolsConfirm('heavy-v3',  'Heavy v3');     break;
+    case 'dev-seed-heavy-v4':  showDevToolsConfirm('heavy-v4',  'Heavy v4');     break;
     case 'dev-tools-cancel': document.getElementById('dev-tools-body').innerHTML = `
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
-      <button class="dev-tools-btn" data-action="dev-seed-heavy-v3">🌳 Heavy v3</button>`; break;
+      <button class="dev-tools-btn" data-action="dev-seed-heavy-v3">🌳 Heavy v3</button>
+      <button class="dev-tools-btn" data-action="dev-seed-heavy-v4">🌲 Heavy v4</button>`; break;
     case 'dev-tools-confirm': {
       if (target.disabled) break;
       target.disabled = true;
@@ -7004,6 +7022,7 @@ function openDevToolsPanel() {
     <div id="dev-tools-body">
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy-v3">🌳 Heavy v3</button>
+      <button class="dev-tools-btn" data-action="dev-seed-heavy-v4">🌲 Heavy v4</button>
     </div>
     <button class="add-plant-back-link" data-action="close-sheet" style="margin-top:12px;">Cancel</button>
   `);
@@ -7025,10 +7044,12 @@ async function runDevSeed(scenario) {
   const labels = {
     empty:      'Empty state',
     'heavy-v3': 'Heavy v3',
+    'heavy-v4': 'Heavy v4',
   };
   try {
     if (scenario === 'empty')    await seedEmpty({ resetOnboarding: true });
     if (scenario === 'heavy-v3') await seedHeavyV3();
+    if (scenario === 'heavy-v4') await seedHeavyV4();
     closeSheet();
     await loadFromSupabase();
     navigateTo('home');
@@ -7265,6 +7286,367 @@ async function seedHeavyV3() {
     created_at:          note3Ts.toISOString(),
   });
 }
+
+async function seedHeavyV4() {
+
+  // Teardown — same sequence as seedHeavyV3
+  if (householdId) {
+    const { data: allPlants } = await supabaseClient
+      .from('plants').select('id').eq('household_id', householdId);
+    const plantIds = (allPlants ?? []).map(r => r.id);
+    if (plantIds.length) {
+      await supabaseClient.from('plant_photos').delete().in('plant_id', plantIds);
+      await supabaseClient.from('care_log').delete().in('plant_id', plantIds);
+      await supabaseClient.from('notes').delete().in('plant_id', plantIds);
+      await supabaseClient.from('tasks').delete().in('plant_id', plantIds);
+      await supabaseClient.from('plants').delete().in('id', plantIds);
+    }
+  }
+
+  const today = todayStr();
+  const memberA = membersCache[0]?.id ?? null;
+  const memberB = (membersCache[1] ?? membersCache[0])?.id ?? null;
+
+  const PHOTO_BASE = 'https://kmkfywdzoitgdtbttxaa.supabase.co/storage/v1/object/public/plant-photos/test-assets';
+
+  const insertPlant = async (name, emoji, sortOrder, daysAgo, photoUrl = null) => {
+    const payload = {
+      household_id:  householdId,
+      name,
+      emoji,
+      date_acquired: addDays(today, -daysAgo),
+      sort_order:    sortOrder,
+    };
+    if (photoUrl) payload.photo_url = photoUrl;
+    const { data } = await supabaseClient.from('plants').insert(payload).select().single();
+    return data;
+  };
+
+  const insertTask = async (plantId, idx, def) => {
+    const { data } = await supabaseClient.from('tasks').insert({
+      plant_id:          plantId,
+      name:              def.name,
+      icon:              def.icon,
+      type:              def.type,
+      recurrence:        def.rec,
+      owner_id:          def.owner,
+      paused:            def.paused ?? false,
+      note:              '',
+      sort_order:        idx + 1,
+      last_done:         def.ld ?? null,
+      next_due_override: def.ndo ?? null,
+    }).select().single();
+    return data;
+  };
+
+  const logCare = async (plantId, taskId, memberId, taskName, taskType, daysAgo, hourOfDay = 10) => {
+    const ts = new Date();
+    ts.setDate(ts.getDate() - daysAgo);
+    ts.setHours(hourOfDay, 0, 0, 0);
+    await supabaseClient.from('care_log').insert({
+      plant_id:            plantId,
+      task_id:             taskId,
+      household_member_id: memberId,
+      task_name:           taskName,
+      task_type:           taskType,
+      date:                addDays(today, -daysAgo),
+      created_at:          ts.toISOString(),
+    });
+  };
+
+  const insertNote = async (plantId, memberId, noteText, photoUrl, daysAgo, hourOfDay = 11) => {
+    const ts = new Date();
+    ts.setDate(ts.getDate() - daysAgo);
+    ts.setHours(hourOfDay, 0, 0, 0);
+    await supabaseClient.from('notes').insert({
+      plant_id:            plantId,
+      household_member_id: memberId,
+      note:                noteText,
+      photo_url:           photoUrl ?? null,
+      created_at:          ts.toISOString(),
+    });
+  };
+
+  const todayDow = new Date().getDay();
+  const tomorrowDow = todayDow === 6 ? 1 : todayDow + 1;
+  const safeDays = [1, 2, 3, 4, 5].filter(d => d !== todayDow && d !== tomorrowDow);
+
+  // 1. MANDARIN TREE — attention plant
+  const mandarin = await insertPlant('Mandarin Tree', '🍊', 1, 180);
+  // 5 overdue
+  const manWater = await insertTask(mandarin.id, 0, {
+    name: 'Watering', icon: '💧', type: 'water',
+    rec: { type: 'interval', every: 7, unit: 'days', days: [] },
+    owner: memberA, ld: addDays(today, -10),
+  });
+  const manFert = await insertTask(mandarin.id, 1, {
+    name: 'Fertilizing', icon: '🌿', type: 'fertilize',
+    rec: { type: 'interval', every: 14, unit: 'days', days: [] },
+    owner: memberB, ld: addDays(today, -16),
+  });
+  const manPruning = await insertTask(mandarin.id, 2, {
+    name: 'Pruning', icon: '✂️', type: 'prune',
+    rec: { type: 'interval', every: 30, unit: 'days', days: [] },
+    owner: memberA, ld: addDays(today, -32),
+  });
+  const manCheck = await insertTask(mandarin.id, 3, {
+    name: 'Check leaves', icon: '🔍', type: 'check',
+    rec: { type: 'weekdays', days: safeDays },
+    owner: memberB, ld: addDays(today, -8),
+  });
+  const manMisting = await insertTask(mandarin.id, 4, {
+    name: 'Misting', icon: '💦', type: 'water',
+    rec: { type: 'interval', every: 3, unit: 'days', days: [] },
+    owner: memberA, ld: addDays(today, -5),
+  });
+
+  // 5 due today
+  const manRotation = await insertTask(mandarin.id, 5, {
+    name: 'Rotation', icon: '🔄', type: 'rotate',
+    rec: { type: 'interval', every: 5, unit: 'days', days: [] },
+    owner: memberB, ld: addDays(today, -5),
+  });
+  const manRepot = await insertTask(mandarin.id, 6, {
+    name: 'Repot', icon: '🪴', type: 'repot',
+    rec: { type: 'one-off' },
+    owner: memberA, ld: null, ndo: today,
+  });
+  const manSoilCheck = await insertTask(mandarin.id, 7, {
+    name: 'Soil check', icon: '🔍', type: 'check',
+    rec: { type: 'weekdays', days: safeDays },
+    owner: memberB, ld: addDays(today, -7),
+  });
+  const manDeepWater = await insertTask(mandarin.id, 8, {
+    name: 'Deep watering', icon: '💧', type: 'water',
+    rec: { type: 'interval', every: 10, unit: 'days', days: [] },
+    owner: memberA, ld: addDays(today, -10),
+  });
+  const manHumidity = await insertTask(mandarin.id, 9, {
+    name: 'Humidity check', icon: '🌡️', type: 'check',
+    rec: { type: 'interval', every: 2, unit: 'days', days: [] },
+    owner: memberB, ld: addDays(today, -2),
+  });
+
+  await logCare(mandarin.id, manWater.id,     memberA, 'Watering',       'water',     10);
+  await logCare(mandarin.id, manFert.id,      memberB, 'Fertilizing',    'fertilize', 16);
+  await logCare(mandarin.id, manPruning.id,   memberA, 'Pruning',        'prune',     32);
+  await logCare(mandarin.id, manCheck.id,     memberB, 'Check leaves',   'check',      8);
+  await logCare(mandarin.id, manMisting.id,   memberA, 'Misting',        'water',      5);
+  await logCare(mandarin.id, manRotation.id,  memberB, 'Rotation',       'rotate',     5);
+  await logCare(mandarin.id, manSoilCheck.id, memberB, 'Soil check',     'check',      7);
+  await logCare(mandarin.id, manDeepWater.id, memberA, 'Deep watering',  'water',     10);
+  await logCare(mandarin.id, manHumidity.id,  memberB, 'Humidity check', 'check',      2);
+  await insertNote(mandarin.id, memberA, 'First fruits forming on the lower branches 🍊', `${PHOTO_BASE}/bugam-photo.jpeg`, 78);
+  await insertNote(mandarin.id, memberB, 'Some yellowing on older leaves — might be overwatering', null, 65);
+  await insertNote(mandarin.id, memberA, 'Yellowing resolved, new growth looking healthy', `${PHOTO_BASE}/Fiddle01.jpeg`, 52);
+  await insertNote(mandarin.id, memberB, 'Moved closer to the window for more light', null, 38);
+  await insertNote(mandarin.id, memberA, 'Tiny new fruits visible on two branches!', `${PHOTO_BASE}/Fiddle02.jpeg`, 24);
+  await insertNote(mandarin.id, memberB, 'Noticed some scale insects on the stem — treated with neem oil', null, 12);
+  await insertNote(mandarin.id, memberA, 'Recovery looking good after neem treatment', `${PHOTO_BASE}/bugam-photo.jpeg`, 3);
+
+  // 2. POTHOS — attention plant
+  const pothos = await insertPlant('Pothos', '🪴', 2, 150);
+  const potWater = await insertTask(pothos.id, 0, {
+    name: 'Watering', icon: '💧', type: 'water',
+    rec: { type: 'interval', every: 7, unit: 'days', days: [] },
+    owner: memberA, ld: addDays(today, -14),
+  });
+  const potRotation = await insertTask(pothos.id, 1, {
+    name: 'Rotation', icon: '🔄', type: 'rotate',
+    rec: { type: 'interval', every: 3, unit: 'days', days: [] },
+    owner: memberB, ld: addDays(today, -3),
+  });
+  const potCheck = await insertTask(pothos.id, 2, {
+    name: 'Check soil', icon: '🔍', type: 'check',
+    rec: { type: 'weekdays', days: [safeDays[1], safeDays[3]] },
+    owner: memberA, ld: addDays(today, -4),
+  });
+  await insertTask(pothos.id, 3, {
+    name: 'Fertilizing', icon: '🌿', type: 'fertilize',
+    rec: { type: 'interval', every: 21, unit: 'days', days: [] },
+    owner: memberB, ld: addDays(today, -10), paused: true,
+  });
+  const potRepot = await insertTask(pothos.id, 4, {
+    name: 'Repot', icon: '🪴', type: 'repot',
+    rec: { type: 'one-off' },
+    owner: memberA, ld: addDays(today, -60),
+  });
+  await logCare(pothos.id, potRotation.id, memberB, 'Rotation', 'rotate', 0, 10);
+  await logCare(pothos.id, potWater.id,    memberA, 'Watering', 'water', 14);
+  await logCare(pothos.id, potWater.id,    memberA, 'Watering', 'water', 21);
+  await logCare(pothos.id, potWater.id,    memberB, 'Watering', 'water', 28);
+  await logCare(pothos.id, potWater.id,    memberA, 'Watering', 'water', 35);
+  await logCare(pothos.id, potWater.id,    memberA, 'Watering', 'water', 42);
+  await logCare(pothos.id, potWater.id,    memberA, 'Watering', 'water', 49);
+  await logCare(pothos.id, potWater.id,    memberB, 'Watering', 'water', 56);
+  await logCare(pothos.id, potWater.id,    memberA, 'Watering', 'water', 63);
+  await logCare(pothos.id, potWater.id,    memberA, 'Watering', 'water', 70);
+  await logCare(pothos.id, potWater.id,    memberB, 'Watering', 'water', 77);
+  await logCare(pothos.id, potRotation.id, memberB, 'Rotation', 'rotate', 3);
+  await logCare(pothos.id, potRotation.id, memberA, 'Rotation', 'rotate', 6);
+  await logCare(pothos.id, potRotation.id, memberB, 'Rotation', 'rotate', 9);
+  await logCare(pothos.id, potRotation.id, memberB, 'Rotation', 'rotate', 12);
+  await logCare(pothos.id, potCheck.id,    memberA, 'Check soil', 'check', 4);
+  await logCare(pothos.id, potCheck.id,    memberA, 'Check soil', 'check', 11);
+  await logCare(pothos.id, potCheck.id,    memberB, 'Check soil', 'check', 18);
+  await logCare(pothos.id, potRepot.id,    memberA, 'Repot', 'repot', 60);
+  await insertNote(pothos.id, memberB, 'Repotted into a bigger pot — roots were totally bound 🪴', `${PHOTO_BASE}/bugam-photo.jpeg`, 60);
+  await insertNote(pothos.id, memberA, 'New growth after repot, three new leaves in a week', null, 50);
+  await insertNote(pothos.id, memberB, 'Trailing vines getting long — might need a trim soon', `${PHOTO_BASE}/Fiddle01.jpeg`, 35);
+  await insertNote(pothos.id, memberA, 'Soil still moist, skipping watering today', null, 20);
+  await insertNote(pothos.id, memberB, 'Two leaves yellowing at the base — normal aging', null, 8);
+  await insertNote(pothos.id, memberA, 'Looking lush after move to brighter spot', `${PHOTO_BASE}/Fiddle02.jpeg`, 2);
+
+  // 3. FERN — attention plant
+  const fern = await insertPlant('Fern', '🌿', 3, 120);
+  const fernMisting = await insertTask(fern.id, 0, {
+    name: 'Misting', icon: '💦', type: 'water',
+    rec: { type: 'interval', every: 2, unit: 'days', days: [] },
+    owner: memberA, ld: addDays(today, -5),
+  });
+  const fernWater = await insertTask(fern.id, 1, {
+    name: 'Watering', icon: '💧', type: 'water',
+    rec: { type: 'interval', every: 7, unit: 'days', days: [] },
+    owner: memberB, ld: addDays(today, -7),
+  });
+  const fernCheck = await insertTask(fern.id, 2, {
+    name: 'Check humidity', icon: '🔍', type: 'check',
+    rec: { type: 'weekdays', days: [safeDays[0], safeDays[2], safeDays[4]] },
+    owner: memberA, ld: addDays(today, -3),
+  });
+  await insertTask(fern.id, 3, {
+    name: 'Fertilizing', icon: '🌿', type: 'fertilize',
+    rec: { type: 'interval', every: 30, unit: 'days', days: [] },
+    owner: memberB, ld: addDays(today, -15), paused: true,
+  });
+  const fernHumidity = await insertTask(fern.id, 4, {
+    name: 'Humidity check', icon: '🌡️', type: 'check',
+    rec: { type: 'one-off' },
+    owner: memberA, ld: addDays(today, -30),
+  });
+  await logCare(fern.id, fernMisting.id,  memberA, 'Misting', 'water', 5);
+  await logCare(fern.id, fernMisting.id,  memberA, 'Misting', 'water', 7);
+  await logCare(fern.id, fernMisting.id,  memberA, 'Misting', 'water', 9);
+  await logCare(fern.id, fernMisting.id,  memberB, 'Misting', 'water', 11);
+  await logCare(fern.id, fernMisting.id,  memberA, 'Misting', 'water', 15);
+  await logCare(fern.id, fernMisting.id,  memberA, 'Misting', 'water', 20);
+  await logCare(fern.id, fernMisting.id,  memberB, 'Misting', 'water', 25);
+  await logCare(fern.id, fernMisting.id,  memberA, 'Misting', 'water', 30);
+  await logCare(fern.id, fernMisting.id,  memberA, 'Misting', 'water', 40);
+  await logCare(fern.id, fernMisting.id,  memberB, 'Misting', 'water', 50);
+  await logCare(fern.id, fernMisting.id,  memberA, 'Misting', 'water', 60);
+  await logCare(fern.id, fernWater.id,    memberB, 'Watering', 'water', 7);
+  await logCare(fern.id, fernWater.id,    memberB, 'Watering', 'water', 14);
+  await logCare(fern.id, fernWater.id,    memberA, 'Watering', 'water', 21);
+  await logCare(fern.id, fernWater.id,    memberB, 'Watering', 'water', 28);
+  await logCare(fern.id, fernWater.id,    memberA, 'Watering', 'water', 42);
+  await logCare(fern.id, fernWater.id,    memberB, 'Watering', 'water', 56);
+  await logCare(fern.id, fernCheck.id,    memberA, 'Check humidity', 'check', 3);
+  await logCare(fern.id, fernCheck.id,    memberA, 'Check humidity', 'check', 10);
+  await logCare(fern.id, fernCheck.id,    memberB, 'Check humidity', 'check', 17);
+  await logCare(fern.id, fernHumidity.id, memberA, 'Humidity check', 'check', 30);
+  await insertNote(fern.id, memberA, 'Moved to the bathroom — humidity is perfect in there', `${PHOTO_BASE}/bugam-photo.jpeg`, 85);
+  await insertNote(fern.id, memberB, 'Tips going brown — air is too dry. Moving it back', null, 70);
+  await insertNote(fern.id, memberA, 'Misting daily for a week seems to have helped a lot', null, 55);
+  await insertNote(fern.id, memberB, 'New leaves uncurling beautifully 🌿', `${PHOTO_BASE}/Fiddle01.jpeg`, 40);
+  await insertNote(fern.id, memberA, 'Still growing steadily — one new frond this week', null, 25);
+  await insertNote(fern.id, memberB, 'Looking really full now compared to when we got it', `${PHOTO_BASE}/Fiddle02.jpeg`, 10);
+  await insertNote(fern.id, memberA, 'Brown tips back — might need to increase misting again', null, 2);
+
+  // 4. BOUGAINVILLEA — healthy plant
+  const { data: bougainvillea } = await supabaseClient.from('plants').insert({
+    household_id:  householdId,
+    name:          'Bougainvillea',
+    emoji:         '🌸',
+    date_acquired: addDays(today, -200),
+    sort_order:    4,
+    photo_url:     `${PHOTO_BASE}/bugam-photo.jpeg`,
+  }).select().single();
+  const bouWater = await insertTask(bougainvillea.id, 0, {
+    name: 'Watering', icon: '💧', type: 'water',
+    rec: { type: 'interval', every: 7, unit: 'days', days: [] },
+    owner: memberA, ld: addDays(today, -3),
+  });
+  const bouFert = await insertTask(bougainvillea.id, 1, {
+    name: 'Fertilizing', icon: '🌿', type: 'fertilize',
+    rec: { type: 'interval', every: 21, unit: 'days', days: [] },
+    owner: memberB, ld: addDays(today, -5),
+  });
+  const bouCheck = await insertTask(bougainvillea.id, 2, {
+    name: 'Check flowers', icon: '🔍', type: 'check',
+    rec: { type: 'weekdays', days: [safeDays[1], safeDays[3]] },
+    owner: memberA, ld: addDays(today, -2),
+  });
+  await insertTask(bougainvillea.id, 3, {
+    name: 'Repot', icon: '🪴', type: 'repot',
+    rec: { type: 'one-off' },
+    owner: memberB, ld: null, ndo: addDays(today, 5),
+  });
+  await logCare(bougainvillea.id, bouWater.id,  memberA, 'Watering', 'water', 3);
+  await logCare(bougainvillea.id, bouWater.id,  memberA, 'Watering', 'water', 10);
+  await logCare(bougainvillea.id, bouWater.id,  memberB, 'Watering', 'water', 17);
+  await logCare(bougainvillea.id, bouWater.id,  memberA, 'Watering', 'water', 24);
+  await logCare(bougainvillea.id, bouWater.id,  memberA, 'Watering', 'water', 31);
+  await logCare(bougainvillea.id, bouWater.id,  memberB, 'Watering', 'water', 38);
+  await logCare(bougainvillea.id, bouWater.id,  memberA, 'Watering', 'water', 45);
+  await logCare(bougainvillea.id, bouWater.id,  memberA, 'Watering', 'water', 52);
+  await logCare(bougainvillea.id, bouWater.id,  memberB, 'Watering', 'water', 59);
+  await logCare(bougainvillea.id, bouWater.id,  memberA, 'Watering', 'water', 66);
+  await logCare(bougainvillea.id, bouWater.id,  memberA, 'Watering', 'water', 73);
+  await logCare(bougainvillea.id, bouWater.id,  memberB, 'Watering', 'water', 80);
+  await logCare(bougainvillea.id, bouFert.id,   memberB, 'Fertilizing', 'fertilize', 5);
+  await logCare(bougainvillea.id, bouFert.id,   memberB, 'Fertilizing', 'fertilize', 26);
+  await logCare(bougainvillea.id, bouFert.id,   memberA, 'Fertilizing', 'fertilize', 47);
+  await logCare(bougainvillea.id, bouFert.id,   memberB, 'Fertilizing', 'fertilize', 68);
+  await logCare(bougainvillea.id, bouCheck.id,  memberA, 'Check flowers', 'check', 2);
+  await logCare(bougainvillea.id, bouCheck.id,  memberB, 'Check flowers', 'check', 9);
+  await logCare(bougainvillea.id, bouCheck.id,  memberA, 'Check flowers', 'check', 16);
+  await logCare(bougainvillea.id, bouCheck.id,  memberB, 'Check flowers', 'check', 30);
+  await insertNote(bougainvillea.id, memberA, 'Blooming heavily this season — absolutely stunning 🌸', `${PHOTO_BASE}/bugam-photo.jpeg`, 75);
+  await insertNote(bougainvillea.id, memberB, 'Pruned back the longest stems after flowering', null, 60);
+  await insertNote(bougainvillea.id, memberA, 'New pink bracts forming on all the pruned stems', `${PHOTO_BASE}/Fiddle01.jpeg`, 45);
+  await insertNote(bougainvillea.id, memberB, 'Moving to a sunnier spot for the summer', null, 28);
+  await insertNote(bougainvillea.id, memberA, 'Second bloom cycle starting — three new clusters', `${PHOTO_BASE}/Fiddle02.jpeg`, 12);
+  await insertNote(bougainvillea.id, memberB, 'Root-bound in current pot — scheduled repot for next week', null, 3);
+
+  // 5. CACTUS — healthy plant
+  const cactus = await insertPlant('Cactus', '🌵', 5, 240);
+  const cactusWeekdays = [safeDays[0], safeDays[1]];
+  const cacWater = await insertTask(cactus.id, 0, {
+    name: 'Watering', icon: '💧', type: 'water',
+    rec: { type: 'weekdays', days: cactusWeekdays },
+    owner: memberA, ld: addDays(today, -2),
+  });
+  const cacFert = await insertTask(cactus.id, 1, {
+    name: 'Fertilizing', icon: '🌿', type: 'fertilize',
+    rec: { type: 'interval', every: 30, unit: 'days', days: [] },
+    owner: memberB, ld: addDays(today, -5),
+  });
+  const cacHealth = await insertTask(cactus.id, 2, {
+    name: 'Health check', icon: '🔍', type: 'check',
+    rec: { type: 'one-off' },
+    owner: memberA, ld: addDays(today, -30),
+  });
+  await logCare(cactus.id, cacWater.id,  memberA, 'Watering', 'water', 2);
+  await logCare(cactus.id, cacWater.id,  memberA, 'Watering', 'water', 9);
+  await logCare(cactus.id, cacWater.id,  memberB, 'Watering', 'water', 16);
+  await logCare(cactus.id, cacWater.id,  memberA, 'Watering', 'water', 23);
+  await logCare(cactus.id, cacWater.id,  memberA, 'Watering', 'water', 30);
+  await logCare(cactus.id, cacWater.id,  memberA, 'Watering', 'water', 44);
+  await logCare(cactus.id, cacWater.id,  memberB, 'Watering', 'water', 58);
+  await logCare(cactus.id, cacWater.id,  memberA, 'Watering', 'water', 72);
+  await logCare(cactus.id, cacFert.id,   memberB, 'Fertilizing', 'fertilize', 5);
+  await logCare(cactus.id, cacFert.id,   memberB, 'Fertilizing', 'fertilize', 35);
+  await logCare(cactus.id, cacFert.id,   memberA, 'Fertilizing', 'fertilize', 65);
+  await logCare(cactus.id, cacHealth.id, memberA, 'Health check', 'check', 30);
+  await insertNote(cactus.id, memberA, 'Tiny new growth on the top — first sign of life in months 🌵', null, 80);
+  await insertNote(cactus.id, memberB, 'Spine color looks slightly off — keeping an eye on it', null, 65);
+  await insertNote(cactus.id, memberA, 'All good — spine color normal, just a lighting issue', `${PHOTO_BASE}/bugam-photo.jpeg`, 50);
+  await insertNote(cactus.id, memberB, 'Growing visibly taller, maybe 2cm since we got it', null, 30);
+  await insertNote(cactus.id, memberA, 'Still going strong with minimal care 💪', `${PHOTO_BASE}/Fiddle01.jpeg`, 15);
+  await insertNote(cactus.id, memberB, 'Considering moving it to the windowsill for more sun', null, 4);
+
+} // end seedHeavyV4
 
 // DEV TOOLS — handleEvent cases added inline in the switch statement
 

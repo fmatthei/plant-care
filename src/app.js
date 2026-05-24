@@ -1820,12 +1820,7 @@ function renderHomeActivityFeed() {
   return html;
 }
 
-function shouldShowPushBanner() {
-  if (shouldShowOnboardingBanner()) return false;
-  if (!('Notification' in window)) return false;
-  if (Notification.permission === 'denied') return false;
-  return !localStorage.getItem(`push_accepted_${activeUser}`);
-}
+
 
 // ============================================================
 // ONBOARDING
@@ -1959,13 +1954,6 @@ function renderHome() {
 
     if (getOnboardingStep() === 3) html += renderOnboardingInlineTaskCard();
 
-    if (shouldShowPushBanner()) {
-      html += `
-    <div class="push-banner">
-      <span class="push-banner-text">Enable notifications to stay in sync with your household</span>
-      <button class="push-banner-btn" data-action="enable-notifications">Enable</button>
-    </div>`;
-    }
 
     html += renderHomeActivityFeed();
 
@@ -2121,16 +2109,18 @@ function renderCoachMark() {
   darkEl.style.width    = appRect.width + 'px';
   darkEl.style.height   = appRect.height + 'px';
   darkEl.style.background = 'rgba(0,0,0,0.55)';
-  darkEl.style.zIndex   = '20';
+  darkEl.style.zIndex   = '100';
 
   // Layer 2 — coach block
   const blockEl = document.createElement('div');
   blockEl.id = 'coachmark-block';
   blockEl.style.position  = 'fixed';
-  blockEl.style.top       = (appRect.top + 68) + 'px';
+  const tabBar = document.querySelector('.tab-bar');
+  const anchorBottom = tabBar ? tabBar.getBoundingClientRect().bottom : 92;
+  blockEl.style.top       = (anchorBottom + 6) + 'px';
   blockEl.style.left      = (appRect.left + 10) + 'px';
   blockEl.style.width     = (appRect.width - 20) + 'px';
-  blockEl.style.zIndex    = '25';
+  blockEl.style.zIndex    = '101';
   blockEl.style.display   = 'flex';
   blockEl.style.flexDirection = 'column';
   blockEl.style.gap       = '14px';
@@ -2181,20 +2171,19 @@ function renderCoachMark() {
       if (Notification.permission === 'granted') showToast('Notifications enabled');
       if (currentMemberId) localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
       dismissCoachMark();
-      renderHome();
+      showCaringTabCoachMark();
     });
 
     document.getElementById('coachmark-no-thanks').addEventListener('click', () => {
       if (currentMemberId) localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
+      if (activeUser) localStorage.setItem(`push_accepted_${activeUser}`, '1');
       dismissCoachMark();
-      showToast('You can enable notifications any time from the menu', { duration: 3500 });
-      renderHome();
+      showCaringTabCoachMark();
     });
   }
 
   document.getElementById('coachmark-got-it').addEventListener('click', () => {
-    dismissCoachMark();
-    showCaringTabCoachMark();
+    showNotifStep();
   });
 }
 
@@ -2204,36 +2193,28 @@ function showCaringTabCoachMark() {
   overlayEl.id = 'caring-cm-overlay';
   overlayEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:1000;background:rgba(0,0,0,0.55);';
 
-  // Spotlight ring — tightly wraps the Caring tab button
   const caringBtn = [...document.querySelectorAll('.tab-btn')].find(el => el.textContent.includes('Caring'));
-  const spotEl = document.createElement('div');
-  spotEl.id = 'caring-cm-spot';
-  spotEl.style.cssText = 'position:fixed;z-index:1002;width:72px;height:48px;border-radius:10px;border:2px solid #fff;pointer-events:none;';
-  if (caringBtn) {
-    const r = caringBtn.getBoundingClientRect();
-    spotEl.style.top  = r.top + 'px';
-    spotEl.style.left = (r.left + r.width / 2 - 36) + 'px';
-  }
 
   // Bubble — just below the tab bar, centered horizontally
   const tabBar   = document.querySelector('.tab-bar');
   const tabBottom = tabBar ? tabBar.getBoundingClientRect().bottom : 110;
   const bubbleEl = document.createElement('div');
   bubbleEl.id = 'caring-cm-bubble';
+  const bubbleLeft = (window.innerWidth - 220) / 2;
+  const caringCenter = caringBtn ? caringBtn.getBoundingClientRect().left + caringBtn.getBoundingClientRect().width / 2 : window.innerWidth / 2;
+  const arrowLeft = Math.min(Math.max(caringCenter - bubbleLeft - 12, 16), 204);
   bubbleEl.style.cssText = `position:fixed;z-index:1002;width:220px;left:50%;transform:translateX(-50%);top:${tabBottom + 8}px;background:#fff;border-radius:12px;padding:14px;box-sizing:border-box;`;
   bubbleEl.innerHTML = `
-    <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:8px solid #fff;"></div>
+    <div style="position:absolute;top:-8px;left:${arrowLeft}px;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:8px solid #fff;"></div>
     <div style="font-size:15px;font-weight:500;color:#1a2e1a;margin-bottom:6px;">Your daily tasks live here</div>
     <div style="font-size:13px;color:#666;line-height:1.5;margin-bottom:12px;">See what needs attention today and what's coming up this week.</div>
     <button id="caring-cm-got-it" style="width:100%;padding:12px;background:#3a6b3a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;">Got it</button>`;
 
   document.body.appendChild(overlayEl);
-  document.body.appendChild(spotEl);
   document.body.appendChild(bubbleEl);
 
   document.getElementById('caring-cm-got-it').addEventListener('click', () => {
     overlayEl.remove();
-    spotEl.remove();
     bubbleEl.remove();
     if (currentMemberId) localStorage.setItem(`onboarding_session6_done_${currentMemberId}`, '1');
   });

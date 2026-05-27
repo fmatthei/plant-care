@@ -2546,7 +2546,7 @@ function buildHouseholdActivityContent() {
         subtitleText = noteText ? `${plantName} · ${truncated}` : plantName;
         taskIcon     = '💬';
         if (item.photoUrl) {
-          photoThumbHtml = `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" data-note-id="${escapeHtml(item.id)}" data-plant-id="${escapeHtml(item.plantId)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`;
+          photoThumbHtml = `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" data-note-id="${escapeHtml(item.id)}" data-plant-id="${escapeHtml(item.plantId)}" style="width:36px;height:36px;border-radius:8px;border:1.5px solid #7a907f;" /></span>`;
         }
       }
 
@@ -3128,7 +3128,7 @@ function renderNotesTab(plant) {
       : '';
 
     const photoThumbHtml = note.photoUrl
-      ? `<span class="care-log-thumb"><img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" data-note-id="${escapeHtml(note.id)}" data-plant-id="${escapeHtml(note.plantId)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`
+      ? `<span class="care-log-thumb"><img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" data-note-id="${escapeHtml(note.id)}" data-plant-id="${escapeHtml(note.plantId)}" style="width:36px;height:36px;border-radius:8px;border:1.5px solid #7a907f;" /></span>`
       : '';
 
     html += `
@@ -3284,7 +3284,7 @@ function renderCareLogNoteRow(note) {
   const preview = note.note.length > 30 ? note.note.slice(0, 30) + '…' : note.note;
 
   const photoThumbHtml = note.photoUrl
-    ? `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" data-note-id="${escapeHtml(note.id)}" data-plant-id="${escapeHtml(note.plantId)}" style="width:36px;height:36px;border-radius:7px;border:1.5px solid #c8c8c8;" /></span>`
+    ? `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" data-note-id="${escapeHtml(note.id)}" data-plant-id="${escapeHtml(note.plantId)}" style="width:36px;height:36px;border-radius:8px;border:1.5px solid #7a907f;" /></span>`
     : '';
 
   return `<div class="carelog-new-row" data-action="carelog-open-edit-note" data-plant="${escapeHtml(note.plantId)}" data-note="${escapeHtml(note.id)}">
@@ -4394,7 +4394,7 @@ function renderAddNoteCoachTip(lastPhoto) {
       : '';
     thumbHtml = `
       <div class="add-note-coach-last">
-        <img class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #c8c8c8;" />
+        <img class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
         <div class="add-note-coach-last-label">Last photo${dateLabel ? ' · ' + escapeHtml(dateLabel) : ''}</div>
       </div>`;
   }
@@ -4799,7 +4799,7 @@ async function renderManagePhotosSheet(plantId) {
       : '';
     return `
       <div class="manage-photos-row" data-photo-id="${escapeHtml(p.id)}">
-        <img class="manage-photos-thumb" src="${escapeHtml(p.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(p.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #c8c8c8;" />
+        <img class="manage-photos-thumb" src="${escapeHtml(p.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(p.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
         <div class="manage-photos-date">${escapeHtml(date)}</div>
         <button class="manage-photos-delete" data-action="manage-photos-delete" data-photo-id="${escapeHtml(p.id)}" data-plant="${escapeHtml(plantId)}" data-note-id="${escapeHtml(p.note_id ?? '')}" data-url="${escapeHtml(p.storage_url ?? '')}">Delete</button>
       </div>`;
@@ -4814,7 +4814,7 @@ function renderEditNotePhotoSection(note, lastPhoto, photoMeta) {
       : '';
     return `
       <div style="display:flex;align-items:center;gap:12px;padding:8px;background:#fff;border:1px solid #e4e9e0;border-radius:10px;">
-        <img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #c8c8c8;" />
+        <img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
         <div style="flex:1;font-size:13px;color:#1a2e1f;">${escapeHtml(dateLabel)}</div>
         <button class="manage-photos-delete" data-action="edit-note-delete-photo">Delete</button>
       </div>`;
@@ -4831,7 +4831,7 @@ function renderEditNotePhotoSection(note, lastPhoto, photoMeta) {
           <div class="add-note-coach-body" style="color:#2a5a8a;">Same angle helps track progress!</div>
         </div>
         <div class="add-note-coach-last">
-          <img class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #c8c8c8;" />
+          <img class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
           <div class="add-note-coach-last-label" style="color:#5a82aa;">Last photo${dateLabel ? ' · ' + escapeHtml(dateLabel) : ''}</div>
         </div>
       </div>`;

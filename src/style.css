@@ -4534,25 +4534,6 @@ div + .section-header-bar {
   border: 2px solid rgba(255, 255, 255, 0.9) !important;
   box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.25), 0 3px 8px rgba(0, 0, 0, 0.30);
 }
-.care-log-thumb::after {
-  content: '';
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #3a6b3a;
-  border: 1.5px solid #ffffff;
-  pointer-events: none;
-}
-
-/* #181 — shrink Notes tab + Care Log note-row photo thumbs from 36 to 28 (overrides inline width/height) */
-.care-log-thumb > .notes-tab-thumb,
-.care-log-thumb > .carelog-note-thumb {
-  width: 28px !important;
-  height: 28px !important;
-}
 
 /* Home feed — fixed right-column slots */
 .activity-home-thumb-slot {
@@ -4586,7 +4567,8 @@ div + .section-header-bar {
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  border: 1.5px solid #7a907f;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.25), 0 3px 8px rgba(0, 0, 0, 0.30);
   object-fit: cover;
   flex-shrink: 0;
   cursor: zoom-in;
@@ -4909,8 +4891,8 @@ div + .section-header-bar {
 .add-note-photo-thumb {
   width: 56px;
   height: 56px;
-  border-radius: 6px;
-  border: 1.5px solid #c8d4c0;
+  border-radius: 8px;
+  border: 1.5px solid #7a907f;
   object-fit: cover;
   flex-shrink: 0;
 }

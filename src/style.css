@@ -2162,46 +2162,50 @@ body {
 .onboarding-complete-overlay {
   position: fixed;
   inset: 0;
-  background: #3a6b3a;
+  background: rgba(244, 246, 242, 0.92);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
 }
 
-.onboarding-complete-body {
+.onboarding-complete-card {
+  background: #fff;
+  border-radius: 20px;
+  border: 1px solid #d4e6d8;
+  padding: 28px 24px 20px;
+  max-width: 280px;
+  width: 100%;
+  text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 32px 24px;
-  max-width: 320px;
-  width: 100%;
 }
 
 .onboarding-complete-heading {
-  font-size: 24px;
-  font-weight: 500;
-  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a2e1f;
   margin: 0 0 8px;
-  text-align: center;
 }
 
 .onboarding-complete-sub {
-  font-size: 14px;
-  color: rgba(255,255,255,0.8);
+  font-size: 12px;
+  color: #6b8c72;
   text-align: center;
-  margin: 0 0 28px;
+  margin: 0 0 20px;
   line-height: 1.5;
 }
 
 .onboarding-complete-btn {
-  background: #fff;
-  color: #3a6b3a;
+  background: #3a6b4a;
+  color: #fff;
   border: none;
   border-radius: 10px;
-  padding: 12px 24px;
-  font-size: 14px;
+  padding: 12px 0;
+  font-size: 13px;
   font-weight: 500;
+  width: 100%;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -3627,7 +3631,7 @@ body.menu-open {
 }
 
 .household-activity-overlay .user-filter-row {
-  padding-top: 0;
+  padding-top: 12px;
 }
 
 /* ===== Plant Detail Header (compact variant — matches home header) ===== */
@@ -4119,7 +4123,7 @@ div + .section-header-bar {
 }
 
 .activity-row--home {
-  height: 40px;
+  height: 44px;
   align-items: center;
   overflow: hidden;
 }
@@ -4550,23 +4554,39 @@ div + .section-header-bar {
   height: 28px !important;
 }
 
-/* #181b — My Plants Recent Activity photo thumb: 24px visual, full-row-height tap target */
-.activity-row--home .care-log-thumb {
-  align-self: stretch;
+/* Home feed — fixed right-column slots */
+.activity-home-thumb-slot {
+  width: 36px;
+  flex-shrink: 0;
+}
+.activity-home-thumb-slot--photo {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.activity-row--home .care-log-thumb > img {
-  width: 24px;
-  height: 24px;
+.activity-row--home .activity-time {
+  width: 52px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.activity-thumb-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  background: #3a6b4a;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  z-index: 1;
 }
 
 .activity-thumb-inline {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  border: 1.5px solid #c8c8c8;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1.5px solid #7a907f;
   object-fit: cover;
   flex-shrink: 0;
   cursor: zoom-in;

@@ -495,7 +495,7 @@ async function loadActivityFeed() {
       .limit(20),
     supabaseClient
       .from('notes')
-      .select('plant_id, note, household_member_id, created_at, photo_url')
+      .select('id, plant_id, note, household_member_id, created_at, photo_url')
       .in('plant_id', plantIds)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -515,6 +515,7 @@ async function loadActivityFeed() {
   const noteItems = (noteRows ?? []).map(r => ({
     type:      'note',
     sortKey:   r.created_at,
+    noteId:    r.id,
     plantId:   r.plant_id,
     plantName: plantMap[r.plant_id]?.name ?? '',
     note:      r.note,
@@ -1785,6 +1786,9 @@ function renderHomeActivityFeed() {
   </div>
   <div class="home-activity-feed"><div class="activity-list">`;
 
+  const seenRaw = currentMemberId ? localStorage.getItem(`seen_photos_${currentMemberId}`) : null;
+  const seenPhotos = seenRaw ? JSON.parse(seenRaw) : [];
+
   for (const item of activityFeed.slice(0, 3)) {
     const time = formatActivityTime(item.sortKey);
     if (item.type === 'care') {
@@ -1800,17 +1804,23 @@ function renderHomeActivityFeed() {
       <div class="activity-row activity-row--home${isSkipped ? ' activity-row-skipped' : ''}">
         <span class="activity-icon${isSkipped ? ' activity-icon-skipped' : ''}">${icon}</span>
         <span class="activity-text">${text}</span>
+        <span class="activity-home-thumb-slot"></span>
         <span class="activity-time">${time}</span>
       </div>`;
     } else {
-      const thumbHtml = item.photoUrl
-        ? `<span class="care-log-thumb"><img class="activity-thumb-inline" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" /></span>`
-        : '';
+      let thumbSlot;
+      if (item.photoUrl) {
+        const seen = item.noteId && seenPhotos.includes(item.noteId);
+        const dotHtml = seen ? '' : '<span class="activity-thumb-dot"></span>';
+        thumbSlot = `<span class="activity-home-thumb-slot activity-home-thumb-slot--photo">${dotHtml}<img class="activity-thumb-inline" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" data-note-id="${escapeHtml(item.noteId ?? '')}" data-plant-id="${escapeHtml(item.plantId ?? '')}" /></span>`;
+      } else {
+        thumbSlot = '<span class="activity-home-thumb-slot"></span>';
+      }
       html += `
       <div class="activity-row activity-row--home">
         <span class="activity-icon">💬</span>
-        <span class="activity-text">${escapeHtml(item.member)} · <span class="activity-note-preview">${escapeHtml(item.note)}</span> — ${escapeHtml(item.plantName)}</span>
-        ${thumbHtml}
+        <span class="activity-text">${escapeHtml(item.member)} on ${escapeHtml(item.plantName)} · <span class="activity-note-preview">${escapeHtml(item.note)}</span></span>
+        ${thumbSlot}
         <span class="activity-time">${time}</span>
       </div>`;
     }
@@ -1966,6 +1976,10 @@ function renderHome() {
     </div>`;
     }
 
+    html += `<div class="home-section-header">
+      <div class="home-section-header-accent" style="background:var(--primary);"></div>
+      <span class="home-section-header-text">My plants</span>
+    </div>`;
     html += '<div class="plants-list">';
 
     // Smart sort: overdue plants first (most overdue at top), then due-today
@@ -5418,21 +5432,22 @@ function renderApp() {
 }
 
 function showOnboardingCompletionOverlay() {
-  document.getElementById('app').innerHTML = `
-    <div class="onboarding-complete-overlay" id="onboarding-complete-overlay">
-      <div class="onboarding-complete-body">
-        <div style="font-size:64px;line-height:1;margin-bottom:20px;">🌱</div>
-        <h2 class="onboarding-complete-heading">You're all set!</h2>
-        <p class="onboarding-complete-sub">Your first care action is logged. Here's what happens next.</p>
-        <button class="onboarding-complete-btn" data-action="onboarding-complete-dismiss">Show me →</button>
-      </div>
+  navigateTo('home');
+  const overlay = document.createElement('div');
+  overlay.className = 'onboarding-complete-overlay';
+  overlay.id = 'onboarding-complete-overlay';
+  overlay.innerHTML = `
+    <div class="onboarding-complete-card">
+      <div style="font-size:36px;line-height:1;margin-bottom:12px;">🌱</div>
+      <h2 class="onboarding-complete-heading">You're all set!</h2>
+      <p class="onboarding-complete-sub">Your first care action is logged. Your household is ready to go.</p>
+      <button class="onboarding-complete-btn" data-action="onboarding-complete-dismiss">Show me around →</button>
     </div>`;
-  document.getElementById('onboarding-complete-overlay').addEventListener('click', e => {
-    if (e.target.dataset.action === 'onboarding-complete-dismiss') {
-      document.querySelector('.onboarding-complete-overlay')?.remove();
-      if (currentMemberId) localStorage.setItem(`onboarding_show_coachmark_${currentMemberId}`, 'true');
-      navigateTo('home');
-    }
+  document.body.appendChild(overlay);
+  overlay.querySelector('[data-action="onboarding-complete-dismiss"]').addEventListener('click', () => {
+    overlay.remove();
+    if (currentMemberId) localStorage.setItem(`onboarding_show_coachmark_${currentMemberId}`, 'true');
+    navigateTo('home');
   });
 }
 
@@ -6495,9 +6510,21 @@ async function handleEvent(e) {
       refreshAddNotePhotoArea();
       break;
 
-    case 'add-note-view-photo':
-      openPhotoFullscreen(target.dataset.url, target.dataset.noteId, target.dataset.plantId);
+    case 'add-note-view-photo': {
+      const _noteId = target.dataset.noteId;
+      openPhotoFullscreen(target.dataset.url, _noteId, target.dataset.plantId);
+      if (_noteId && currentMemberId) {
+        const _key = `seen_photos_${currentMemberId}`;
+        const _seen = JSON.parse(localStorage.getItem(_key) ?? '[]');
+        if (!_seen.includes(_noteId)) {
+          _seen.push(_noteId);
+          localStorage.setItem(_key, JSON.stringify(_seen));
+        }
+        const _dot = target.closest('.activity-home-thumb-slot--photo')?.querySelector('.activity-thumb-dot');
+        if (_dot) _dot.remove();
+      }
       break;
+    }
 
     case 'open-slideshow': {
       const pid = target.dataset.plant;
@@ -7265,6 +7292,7 @@ async function seedHeavyV3() {
     photo_url:           `${FERN_PHOTO_BASE}/Fiddle02.jpeg`,
     created_at:          note3Ts.toISOString(),
   });
+  setOnboardingStep(4);
 }
 
 async function seedHeavyV4() {
@@ -7625,7 +7653,7 @@ async function seedHeavyV4() {
   await insertNote(cactus.id, memberB, 'Growing visibly taller, maybe 2cm since we got it', null, 30);
   await insertNote(cactus.id, memberA, 'Still going strong with minimal care 💪', `${PHOTO_BASE}/Fiddle01.jpeg`, 15);
   await insertNote(cactus.id, memberB, 'Considering moving it to the windowsill for more sun', null, 4);
-
+  setOnboardingStep(4);
 } // end seedHeavyV4
 
 // DEV TOOLS — handleEvent cases added inline in the switch statement

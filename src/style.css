@@ -838,7 +838,7 @@ body {
 .task-row-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   padding: 0 0 80px;
 }
 
@@ -4500,6 +4500,9 @@ div + .section-header-bar {
 
 /* Notes tab redesign */
 .notes-tab-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   overflow-y: hidden;
 }
 
@@ -4610,7 +4613,7 @@ div + .section-header-bar {
 .carelog-new-row {
   display: flex;
   gap: 8px;
-  margin: 0 -16px 4px;
+  margin: 0 -16px 6px;
   min-height: 48px;
   align-items: center;
   cursor: pointer;

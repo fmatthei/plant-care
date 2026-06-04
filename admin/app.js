@@ -175,13 +175,12 @@ function renderHouseholds() {
            <button class="btn btn-sm btn-danger" data-action="hh-delete" data-id="${esc(h.id)}">Delete</button>`;
       return `<tr>
         <td>${nameCell}</td>
-        <td class="mono">${esc(h.id)}</td>
         <td>${esc(formatDate(h.created_at))}</td>
         <td class="actions">${actions}</td>
       </tr>`;
     }).join('');
     tableHtml = `<table>
-      <thead><tr><th>Name</th><th class="mono">ID</th><th>Created</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Name</th><th>Created</th><th>Actions</th></tr></thead>
       <tbody>${body}</tbody>
     </table>`;
   }
@@ -219,7 +218,12 @@ function renderMemberRow(m, h) {
   if (ui.memberEditId === m.id) {
     return `<tr>
       <td><input id="mem-edit-name" type="text" value="${esc(m.display_name || '')}"></td>
-      <td><input id="mem-edit-color" type="text" value="${esc(m.color || '')}" placeholder="#rrggbb" class="color-input"></td>
+      <td>
+        <span class="color-field">
+          <input type="color" id="mem-edit-color" value="${esc(m.color || defaultMemberColor(h.id))}" oninput="document.getElementById('mem-edit-color-hex').textContent = this.value">
+          <span id="mem-edit-color-hex" class="color-hex">${esc(m.color || defaultMemberColor(h.id))}</span>
+        </span>
+      </td>
       <td>${roleSelect('mem-edit-role', m.role)}</td>
       <td class="actions">
         <button class="btn btn-sm" data-action="mem-edit-confirm" data-id="${esc(m.id)}">Confirm</button>
@@ -258,10 +262,21 @@ function renderAddMemberForm(h) {
     `<option value="${esc(u.user_id)}">${esc(u.display_name || '(no name)')} — ${esc(u.user_id)}</option>`
   ).join('');
   return `<div class="inline-form">
-    <select id="mem-add-user"><option value="">Select user…</option>${userOpts}</select>
-    <input id="mem-add-name" type="text" placeholder="Display name">
-    <input id="mem-add-color" type="text" value="${defaultMemberColor(h.id)}" placeholder="#rrggbb" class="color-input">
-    ${roleSelect('mem-add-role', 'member')}
+    <label class="field"><span>User</span>
+      <select id="mem-add-user"><option value="">Select user…</option>${userOpts}</select>
+    </label>
+    <label class="field"><span>Display name</span>
+      <input id="mem-add-name" type="text" placeholder="Display name">
+    </label>
+    <label class="field"><span>Color</span>
+      <span class="color-field">
+        <input type="color" id="mem-add-color" value="${defaultMemberColor(h.id)}" oninput="document.getElementById('mem-add-color-hex').textContent = this.value">
+        <span id="mem-add-color-hex" class="color-hex">${defaultMemberColor(h.id)}</span>
+      </span>
+    </label>
+    <label class="field"><span>Role</span>
+      ${roleSelect('mem-add-role', 'member')}
+    </label>
     <button class="btn btn-sm" data-action="mem-add-submit" data-hh="${esc(h.id)}">Add</button>
     <button class="btn btn-sm btn-secondary" data-action="mem-add-cancel">Cancel</button>
   </div>`;

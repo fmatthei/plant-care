@@ -124,6 +124,35 @@ td select {
 }
 .color-input { width: 100px; }
 
+.field { display: flex; flex-direction: column; }
+
+/* Native color picker + live hex readout (Add/Edit member forms) */
+.color-field { display: flex; align-items: center; gap: 10px; }
+/* #users-section prefix lifts specificity above the mobile
+   `#users-section td input { flex:1 }` rule so the picker keeps its 52px. */
+#users-section .color-field input[type="color"] {
+  width: 52px;
+  height: 44px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid #e3e6e3;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.color-field .color-hex {
+  font-family: ui-monospace, monospace;
+  font-size: 14px;
+  color: #374151;
+  background: #f9fafb;
+  border: 1px solid #e3e6e3;
+  border-radius: 8px;
+  padding: 12px;
+  flex: 1;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
 td.actions { white-space: nowrap; }
 td.actions .btn { margin-right: 4px; }
 
@@ -154,3 +183,98 @@ td.actions .btn { margin-right: 4px; }
 .swatch-cell { display: flex; align-items: center; gap: 0; }
 .muted { color: #999; }
 .empty { color: #999; font-style: italic; padding: 8px 0; }
+
+/* ---- Mobile: stacked cards below 600px ---- */
+@media (max-width: 600px) {
+  #app { padding: 16px; }
+
+  /* Larger tap targets */
+  .btn,
+  .inline-form input,
+  .inline-form select,
+  td input,
+  td select { min-height: 44px; }
+  .btn-sm { padding: 9px 12px; font-size: 14px; }
+
+  /* Primary action buttons go full-width */
+  .section-toolbar .btn,
+  .hh-block-head > .btn { display: block; width: 100%; }
+
+  /* Tables render as stacked cards — one card per row */
+  #households-section thead,
+  #users-section thead { display: none; }
+
+  #households-section table,
+  #households-section tbody,
+  #households-section tr,
+  #households-section td,
+  #users-section table,
+  #users-section tbody,
+  #users-section tr,
+  #users-section td { display: block; }
+
+  #households-section tr,
+  #users-section tr {
+    border: 1px solid #e2e2e2;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  #households-section td,
+  #users-section td {
+    border-bottom: none;
+    padding: 4px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* Row's primary name as a heading */
+  #households-section td:first-child,
+  #users-section td:first-child {
+    font-size: 16px;
+    font-weight: 600;
+    padding-bottom: 8px;
+  }
+
+  /* Inline edit controls share their row with the label */
+  #households-section td input,
+  #users-section td input,
+  #users-section td select { flex: 1; min-width: 0; }
+
+  /* Label/value rows — tables live in distinct sections, so column order is fixed */
+  #households-section td:nth-child(2)::before { content: "Created"; }
+  #users-section td:nth-child(2)::before { content: "Color"; }
+  #users-section td:nth-child(3)::before { content: "Role"; }
+  #households-section td::before,
+  #users-section td::before { font-weight: 600; color: #555; }
+
+  /* Color swatch row keeps label + swatch + value left-aligned */
+  #users-section td.swatch-cell { justify-content: flex-start; gap: 8px; }
+
+  /* Action buttons stack full-width below the card body */
+  #households-section td.actions,
+  #users-section td.actions {
+    display: block;
+    padding-top: 8px;
+    white-space: normal;
+  }
+  td.actions .btn {
+    display: block;
+    width: 100%;
+    margin: 0 0 8px;
+  }
+  td.actions .btn:last-child { margin-bottom: 0; }
+
+  /* Inline forms (new household, add/edit member) stack vertically */
+  .inline-form {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .inline-form input,
+  .inline-form select,
+  .inline-form .btn { width: 100%; }
+}

@@ -575,18 +575,28 @@ function addDays(dateStr, n) {
 }
 
 // Returns the nearest upcoming date (today or future) matching one of the given weekday numbers (0=Sun)
-function nextWeekdayOccurrence(days, skipToday = false) {
-  if (!days || days.length === 0) return todayStr();
-  const todayDow = new Date(todayStr() + 'T12:00:00').getDay();
+function nextWeekdayOccurrence(days, skipToday = false, anchor = todayStr()) {
+  if (!days || days.length === 0) return anchor;
+  const anchorDow = new Date(anchor + 'T12:00:00').getDay();
   for (let d = skipToday ? 1 : 0; d <= 7; d++) {
-    if (days.includes((todayDow + d) % 7)) return addDays(todayStr(), d);
+    if (days.includes((anchorDow + d) % 7)) return addDays(anchor, d);
   }
-  return todayStr();
+  return anchor;
 }
 
 // Computes the next due date for a task (ignoring pause state)
 function computeNextDue(task) {
-  if (task.nextDueOverride) return task.nextDueOverride;
+  if (task.nextDueOverride) {
+    const recType = task.recurrenceType ?? 'interval';
+    if (recType === 'weekdays') {
+      const days = task.weekdays ?? [];
+      if (days.includes(new Date(task.nextDueOverride + 'T12:00:00').getDay())) {
+        return task.nextDueOverride;
+      }
+      return nextWeekdayOccurrence(days, false, task.nextDueOverride);
+    }
+    return task.nextDueOverride;
+  }
   const recType = task.recurrenceType ?? 'interval';
   if (recType === 'one-off') {
     // null = complete (never show as due); todayStr() = pending (always due until done)
@@ -2273,7 +2283,7 @@ function renderSchedule() {
     for (const plant of plants) {
       for (const task of plant.tasks) {
         if (task.paused) continue;
-        if (task.lastDone === todayStr()) continue;
+        if (task.lastDone === todayStr() && computeNextDue(task) === todayStr()) continue;
         if (!matchesFilter(task.owner)) continue;
         if (taskOccursOnDate(task, dateStr)) dayTasks.push({ plant, task });
       }
@@ -4091,9 +4101,9 @@ function renderEditTaskSheet(plantId, taskId) {
   state.sheetData = { plantId, taskId };
   sheetEntryTab = plantDetailTab;
 
-  const weekdayBtns = WEEKDAY_NAMES.map((name, i) => {
-    const sel = (task.weekdays ?? []).includes(i) ? 'selected' : '';
-    return `<button class="weekday-btn ${sel}" data-action="sheet-toggle-weekday" data-day="${i}">${name}</button>`;
+  const weekdayBtns = [1, 2, 3, 4, 5, 6, 0].map((d) => {
+    const sel = (task.weekdays ?? []).includes(d) ? 'selected' : '';
+    return `<button class="weekday-btn ${sel}" data-action="sheet-toggle-weekday" data-day="${d}">${WEEKDAY_NAMES[d]}</button>`;
   }).join('');
 
   const isCustom    = !TASK_CONFIG[task.id];
@@ -4128,8 +4138,9 @@ function renderEditTaskSheet(plantId, taskId) {
       <div class="owner-pill-group" style="flex:1;display:flex;gap:6px;flex-wrap:wrap;margin:0;">${renderOwnerPills(task.owner)}</div>
     </div>
 
-    <div style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
-      <label class="form-label" id="task-due-label" style="${rowLabelStyle}">${isRepeating ? 'First due date' : 'Due date'}</label>
+    <div id="task-due-home"></div>
+    <div id="task-due-field" style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
+      <label class="form-label" id="task-due-label" style="${rowLabelStyle}">Due date</label>
       ${renderDateSelectHtml('task-override', overrideDate, curYear, curYear + 2)}
     </div>
 
@@ -4186,6 +4197,7 @@ function renderEditTaskSheet(plantId, taskId) {
   attachFutureDateSelectListeners('task-override');
   attachRecurrenceSummaryListeners('task-override');
   applyCompactDateSelectStyles('task-override');
+  relocateTaskDueField(isRepeating);
 }
 
 function renderAddTaskStep1(plantId) {
@@ -4236,8 +4248,8 @@ function renderAddTaskStep2(plantId, typeKey) {
   state.sheetMode = 'add-task-step2';
   state.sheetData = { plantId, typeKey };
 
-  const weekdayBtns = WEEKDAY_NAMES.map((name, i) =>
-    `<button class="weekday-btn" data-action="sheet-toggle-weekday" data-day="${i}">${name}</button>`
+  const weekdayBtns = [1, 2, 3, 4, 5, 6, 0].map((d) =>
+    `<button class="weekday-btn" data-action="sheet-toggle-weekday" data-day="${d}">${WEEKDAY_NAMES[d]}</button>`
   ).join('');
 
   const ownerPillsHtml = renderOwnerPills(defaultOwner);
@@ -4281,7 +4293,8 @@ function renderAddTaskStep2(plantId, typeKey) {
       <div class="owner-pill-group" style="flex:1;display:flex;gap:6px;flex-wrap:wrap;margin:0;">${ownerPillsHtml}</div>
     </div>
 
-    <div style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
+    <div id="task-due-home"></div>
+    <div id="task-due-field" style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
       <label class="form-label" id="task-due-label" style="${rowLabelStyle}">Due date</label>
       ${renderDateSelectHtml('task-due-oneoff', todayVal, curYear, curYear + 2)}
     </div>
@@ -4325,6 +4338,7 @@ function renderAddTaskStep2(plantId, typeKey) {
   attachFutureDateSelectListeners('task-due-oneoff');
   attachRecurrenceSummaryListeners('task-due-oneoff');
   applyCompactDateSelectStyles('task-due-oneoff');
+  relocateTaskDueField(false);
 }
 
 function renderPostTaskNoteSheet(plantId, taskId) {
@@ -6368,6 +6382,7 @@ async function handleEvent(e) {
       if (container) container.className = `recurrence-${rtype}`;
       document.querySelectorAll('#sheet .recurrence-option').forEach(o => o.classList.remove('selected'));
       target.classList.add('selected');
+      updateTaskDueLabel();
       updateRecurrenceSummary();
       break;
     }
@@ -6393,7 +6408,6 @@ async function handleEvent(e) {
       const toggleRow = document.getElementById('repeating-toggle-row');
       const block     = document.getElementById('task-recurrence-block');
       const container = document.getElementById('recurrence-container');
-      const label     = document.getElementById('task-due-label');
       const pauseRow  = document.getElementById('pause-toggle-row');
 
       if (willTurnOn) {
@@ -6405,15 +6419,14 @@ async function handleEvent(e) {
             o.classList.toggle('selected', o.dataset.rtype === 'interval');
           });
         }
-        if (label)    label.textContent = 'First due date';
         if (pauseRow) pauseRow.style.display = '';
       } else {
         toggleRow?.classList.remove('task-toggle-row--expanded');
         if (block)     block.style.display = 'none';
         if (container) container.className = 'recurrence-one-off';
-        if (label)     label.textContent = 'Due date';
         if (pauseRow)  pauseRow.style.display = 'none';
       }
+      relocateTaskDueField(willTurnOn);
       updateRecurrenceSummary();
       break;
     }
@@ -6886,6 +6899,39 @@ function attachFutureDateSelectListeners(prefix) {
 }
 
 // Rebuilds the Edit/Add Task recurrence summary line from current DOM state.
+// Sets the "Due date" label on the shared task-due field according to current
+// recurrence state: one-off → "Due date", interval → "First due date",
+// weekdays → "Start from".
+function updateTaskDueLabel() {
+  const label = document.getElementById('task-due-label');
+  if (!label) return;
+  const toggleBtn = document.getElementById('repeating-toggle');
+  const isOn = toggleBtn?.getAttribute('aria-checked') === 'true';
+  if (!isOn) { label.textContent = 'Due date'; return; }
+  const container = document.getElementById('recurrence-container');
+  const rtype = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
+  label.textContent = rtype === 'weekdays' ? 'Start from' : 'First due date';
+}
+
+// Moves the shared task-due field: outside the recurrence block when one-off,
+// inside it (below the visible section, above the summary) when repeating.
+function relocateTaskDueField(isRepeating) {
+  const field = document.getElementById('task-due-field');
+  if (!field) return;
+  const OUT_STYLE = 'padding:10px 16px;border-bottom:0.5px solid #f0f0ee;';
+  const IN_STYLE  = 'border-top:1px solid #d8ddd3;margin-top:8px;padding-top:8px;';
+  if (isRepeating) {
+    const summary = document.getElementById('recurrence-summary');
+    if (summary) summary.parentNode.insertBefore(field, summary);
+    field.setAttribute('style', IN_STYLE);
+  } else {
+    const home = document.getElementById('task-due-home');
+    if (home) home.parentNode.insertBefore(field, home.nextSibling);
+    field.setAttribute('style', OUT_STYLE);
+  }
+  updateTaskDueLabel();
+}
+
 function updateRecurrenceSummary() {
   const el = document.getElementById('recurrence-summary');
   if (!el) return;
@@ -6902,12 +6948,15 @@ function updateRecurrenceSummary() {
 
   const container = document.getElementById('recurrence-container');
   const rtype = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
+  const fmtDow = (d) => new Date(d + 'T12:00:00')
+    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
-  let tail = '';
   if (rtype === 'interval') {
     const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
     if (!freq || freq < 1) { el.style.display = 'none'; return; }
-    tail = `recurs every ${freq} day${freq === 1 ? '' : 's'}`;
+    const tail = `recurs every ${freq} day${freq === 1 ? '' : 's'}`;
+    const verb = el.dataset.started === 'true' ? 'Started' : 'Starts';
+    el.textContent = `${verb} ${fmtDow(firstDue)} · ${tail}`;
   } else {
     const selected = Array.from(document.querySelectorAll('#sheet .weekday-btn.selected'))
       .map(b => parseInt(b.dataset.day))
@@ -6915,13 +6964,12 @@ function updateRecurrenceSummary() {
       .sort((a, b) => a - b);
     if (selected.length === 0) { el.style.display = 'none'; return; }
     const SHORT_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    tail = `recurs every ${selected.map(d => SHORT_DOW[d]).join(', ')}`;
+    const tail = `recurs every ${selected.map(d => SHORT_DOW[d]).join(', ')}`;
+    // Resolve the first actual occurrence: first selected weekday on/after the
+    // entered date (mirrors computeNextDue's weekday-override snapping, #236).
+    const resolved = computeNextDue({ recurrenceType: 'weekdays', weekdays: selected, nextDueOverride: firstDue });
+    el.textContent = `First occurrence: ${fmtDow(resolved)} · ${tail}`;
   }
-
-  const startLabel = new Date(firstDue + 'T12:00:00')
-    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  const verb = el.dataset.started === 'true' ? 'Started' : 'Starts';
-  el.textContent = `${verb} ${startLabel} · ${tail}`;
   el.style.display = '';
 }
 

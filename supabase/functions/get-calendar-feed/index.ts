@@ -22,17 +22,27 @@ function daysBetween(a: string, b: string): number {
   );
 }
 
-function nextWeekdayOccurrence(days: number[], skipToday = false): string {
-  if (!days || days.length === 0) return todayStr();
-  const todayDow = new Date(todayStr() + 'T12:00:00').getDay();
+function nextWeekdayOccurrence(days: number[], skipToday = false, anchor = todayStr()): string {
+  if (!days || days.length === 0) return anchor;
+  const anchorDow = new Date(anchor + 'T12:00:00').getDay();
   for (let d = skipToday ? 1 : 0; d <= 7; d++) {
-    if (days.includes((todayDow + d) % 7)) return addDays(todayStr(), d);
+    if (days.includes((anchorDow + d) % 7)) return addDays(anchor, d);
   }
-  return todayStr();
+  return anchor;
 }
 
 function computeNextDue(task: any): string | null {
-  if (task.next_due_override) return task.next_due_override;
+  if (task.next_due_override) {
+    const recType = task.recurrence?.type ?? 'interval';
+    if (recType === 'weekdays') {
+      const days = task.recurrence?.days ?? [];
+      if (days.includes(new Date(task.next_due_override + 'T12:00:00').getDay())) {
+        return task.next_due_override;
+      }
+      return nextWeekdayOccurrence(days, false, task.next_due_override);
+    }
+    return task.next_due_override;
+  }
   const recType = task.recurrence?.type ?? 'interval';
   if (recType === 'one-off') {
     return task.last_done ? null : todayStr();

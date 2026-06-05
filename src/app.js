@@ -17,6 +17,11 @@ const TASK_CONFIG = {
 
 const WEEKDAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
+// Canonical display order is Monday-first, Sunday last (matches the weekday
+// selector's [1,2,3,4,5,6,0]). JS getDay() uses 0=Sun, so Sunday sorts to 7.
+// Display-only; never mutate/persist task.weekdays with this.
+const compareWeekdaysMonFirst = (a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b);
+
 const VAPID_PUBLIC_KEY = 'BLVM0ZnxinWDENKHaZ5QslyAmUJNjf-9w4q3Sxc0mFuVKS19lVLePh39yuaZIc_a_PX5PPnIECGUFeQl2XkOpWQ';
 
 const CARE_VERB = {
@@ -676,7 +681,7 @@ function recurrenceLabel(task) {
   const recType = task.recurrenceType ?? 'interval';
   if (recType === 'one-off') return 'One-off';
   if (recType === 'weekdays') {
-    const days = (task.weekdays ?? []).slice().sort((a, b) => a - b);
+    const days = (task.weekdays ?? []).slice().sort(compareWeekdaysMonFirst);
     if (days.length === 0) return 'No days set';
     return days.map(d => WEEKDAY_NAMES[d]).join(', ');
   }
@@ -891,6 +896,40 @@ async function skipTask(plantId, taskId) {
     if ((task.recurrenceType ?? 'interval') === 'one-off') return;
 
     const today = todayStr();
+
+    // Weekday tasks have no frequencyDays — skip to the next selected weekday
+    // strictly after today. Mirrors the interval pattern below.
+    if ((task.recurrenceType ?? task.recurrence?.type) === 'weekdays') {
+      const newOverride = nextWeekdayOccurrence(task.weekdays, true);
+      const cfg = getTaskConfig(task);
+      plant.careLog.unshift({
+        id: uid(),
+        date: today,
+        createdAt: new Date().toISOString(),
+        author: activeUser,
+        taskId: task.id,
+        taskName: cfg.name,
+        taskType: 'skipped',
+      });
+      plant.careLog = plant.careLog.slice(0, 50);
+
+      await updateTask(plantId, taskId, { nextDueOverride: newOverride });
+
+      await supabaseClient
+        .from('care_log')
+        .insert({
+          plant_id:            plantId,
+          task_id:             taskId,
+          household_member_id: currentMemberId,
+          task_name:           cfg.name,
+          task_type:           'skipped',
+          date:                today,
+        });
+
+      await loadActivityFeed();
+      return;
+    }
+
     const every = task.frequencyDays;
     if (!every || every < 1) return;
 
@@ -1986,10 +2025,12 @@ function renderHome() {
     </div>`;
     }
 
-    html += `<div class="home-section-header">
+    if (plants.length > 0) {
+      html += `<div class="home-section-header">
       <div class="home-section-header-accent" style="background:var(--primary);"></div>
       <span class="home-section-header-text">My plants</span>
     </div>`;
+    }
     html += '<div class="plants-list">';
 
     // Smart sort: overdue plants first (most overdue at top), then due-today
@@ -2398,7 +2439,7 @@ function renderPlantDetail(plantId) {
     && (getOnboardingStep() === 2 || getOnboardingStep() === 3);
   const showNote = plantDetailTab === 'summary' || plantDetailTab === 'notes' || plantDetailTab === 'carelog';
   const showTask = !isOnboardingTasksView && (plantDetailTab === 'summary' || plantDetailTab === 'tasks' || plantDetailTab === 'carelog');
-  if (plantDetailTab === 'summary') {
+  if (plantDetailTab === 'summary' || plantDetailTab === 'carelog') {
     html += `
       <div class="summary-fab" id="summary-fab">
         <div class="summary-fab-scrim" data-action="summary-fab-collapse"></div>
@@ -2704,7 +2745,7 @@ function renderSummaryTab(plant) {
     const rt = task.recurrenceType ?? 'interval';
     if (rt === 'one-off') return 'One-off';
     if (rt === 'weekdays') {
-      const dInts = (task.weekdays ?? []).slice().sort((a, b) => a - b);
+      const dInts = (task.weekdays ?? []).slice().sort(compareWeekdaysMonFirst);
       const abbrev = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       return dInts.length > 0 ? `Every ${dInts.map(d => abbrev[d]).join(', ')}` : 'Days of week';
     }
@@ -2853,7 +2894,7 @@ function renderSummaryTab(plant) {
   const allOccs      = [];
   for (const task of plant.tasks) {
     if (task.paused) continue;
-    if (task.lastDone === todayStr()) continue;
+    if (task.lastDone === todayStr() && computeNextDue(task) === todayStr()) continue;
     if (!matchesFilter(task.owner)) continue;
     const rt    = task.recurrenceType ?? 'interval';
     const first = computeNextDue(task);
@@ -3486,7 +3527,7 @@ function renderTaskRow(plantId, task) {
   if (recType === 'one-off') {
     recText = 'One-off';
   } else if (recType === 'weekdays') {
-    const dInts  = (task.weekdays ?? []).slice().sort((a, b) => a - b);
+    const dInts  = (task.weekdays ?? []).slice().sort(compareWeekdaysMonFirst);
     const abbrev = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     recText = dInts.length > 0 ? `Every ${dInts.map(d => abbrev[d]).join(', ')}` : 'Days of week';
   } else {
@@ -3653,29 +3694,29 @@ function getSundayOfWeek(dateStr) {
   return d.toISOString().split('T')[0];
 }
 
-// Next n occurrence dates (strictly after today) on the sequence
+// Occurrence dates (strictly after today, through gridEnd) on the sequence
 // anchorDate + interval, +2*interval, +3*interval, …
-function intervalOccurrencesAfterToday(anchorDate, intervalDays, n) {
+function intervalOccurrencesAfterToday(anchorDate, intervalDays, gridEnd) {
   const out = [];
   const today = todayStr();
   let cursor = addDays(anchorDate, intervalDays);
   while (cursor <= today) cursor = addDays(cursor, intervalDays);
-  while (out.length < n) {
+  while (cursor <= gridEnd) {
     out.push(cursor);
     cursor = addDays(cursor, intervalDays);
   }
   return out;
 }
 
-// Next n occurrence dates (strictly after today) of any of the given weekday numbers.
-function weekdayOccurrencesAfterToday(weekdays, n) {
+// Occurrence dates (strictly after today, through gridEnd) of any of the given weekday numbers.
+function weekdayOccurrencesAfterToday(weekdays, gridEnd) {
   if (!weekdays || weekdays.length === 0) return [];
   const out = [];
-  let cursor = todayStr();
-  while (out.length < n) {
-    cursor = addDays(cursor, 1);
+  let cursor = addDays(todayStr(), 1);
+  while (cursor <= gridEnd) {
     const dow = new Date(cursor + 'T12:00:00').getDay();
     if (weekdays.includes(dow)) out.push(cursor);
+    cursor = addDays(cursor, 1);
   }
   return out;
 }
@@ -3722,6 +3763,9 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
   let originalWeekdaysLabel = '';
   let modifiedWeekdaysLabel = '';
 
+  // Highlight every future occurrence that lands within the 28-day calendar grid.
+  const gridEnd = addDays(getMondayOfWeek(todayStr()), 27);
+
   if (recType === 'weekdays') {
     const origWd = (task.weekdays ?? []).slice();
     shiftedWeekdays = origWd.map(d => ((d + displacement) % 7 + 7) % 7);
@@ -3730,13 +3774,13 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
     const modSorted  = sortAndDedupe(shiftedWeekdays);
     shiftedWeekdays = modSorted;
     const full = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    originalWeekdaysLabel = origSorted.map(d => full[d]).join(' & ');
-    modifiedWeekdaysLabel = modSorted.map(d => full[d]).join(' & ');
-    originalDates = weekdayOccurrencesAfterToday(origSorted, 3);
-    modifiedDates = weekdayOccurrencesAfterToday(modSorted, 3);
+    originalWeekdaysLabel = origSorted.slice().sort(compareWeekdaysMonFirst).map(d => full[d]).join(' & ');
+    modifiedWeekdaysLabel = modSorted.slice().sort(compareWeekdaysMonFirst).map(d => full[d]).join(' & ');
+    originalDates = weekdayOccurrencesAfterToday(origSorted, gridEnd);
+    modifiedDates = weekdayOccurrencesAfterToday(modSorted, gridEnd);
   } else {
     const interval = task.frequencyDays ?? 1;
-    originalDates = intervalOccurrencesAfterToday(mostRecentDueDate, interval, 3);
+    originalDates = intervalOccurrencesAfterToday(mostRecentDueDate, interval, gridEnd);
     // Modified: shift each original date by displacement.
     modifiedDates = originalDates.map(d => addDays(d, displacement));
   }
@@ -6961,7 +7005,7 @@ function updateRecurrenceSummary() {
     const selected = Array.from(document.querySelectorAll('#sheet .weekday-btn.selected'))
       .map(b => parseInt(b.dataset.day))
       .filter(n => !Number.isNaN(n))
-      .sort((a, b) => a - b);
+      .sort(compareWeekdaysMonFirst);
     if (selected.length === 0) { el.style.display = 'none'; return; }
     const SHORT_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const tail = `recurs every ${selected.map(d => SHORT_DOW[d]).join(', ')}`;
@@ -7567,7 +7611,7 @@ async function seedHeavyV4() {
   });
   const fernCheck = await insertTask(fern.id, 2, {
     name: 'Check humidity', icon: '🔍', type: 'check',
-    rec: { type: 'weekdays', days: [safeDays[0], safeDays[2], safeDays[4]] },
+    rec: { type: 'weekdays', days: [safeDays[0], safeDays[2]] },
     owner: memberA, ld: addDays(today, -3),
   });
   await insertTask(fern.id, 3, {
@@ -7579,6 +7623,16 @@ async function seedHeavyV4() {
     name: 'Humidity check', icon: '🌡️', type: 'check',
     rec: { type: 'one-off' },
     owner: memberA, ld: addDays(today, -30),
+  });
+  // Overdue weekday task — ndo = most recent past Mon or Wed strictly before today
+  let fernWdDue = addDays(today, -1);
+  while (![1, 3].includes(new Date(fernWdDue + 'T12:00:00').getDay())) {
+    fernWdDue = addDays(fernWdDue, -1);
+  }
+  await insertTask(fern.id, 5, {
+    name: 'Weekday Watering', icon: '💧', type: 'water',
+    rec: { type: 'weekdays', days: [1, 3] },
+    owner: memberA, ld: addDays(today, -5), ndo: fernWdDue,
   });
   await logCare(fern.id, fernMisting.id,  memberA, 'Misting', 'water', 5);
   await logCare(fern.id, fernMisting.id,  memberA, 'Misting', 'water', 7);
@@ -7637,6 +7691,16 @@ async function seedHeavyV4() {
     name: 'Repot', icon: '🪴', type: 'repot',
     rec: { type: 'one-off' },
     owner: memberB, ld: null, ndo: addDays(today, 5),
+  });
+  // Upcoming weekday task — ndo = nearest future Wed or Fri strictly after today
+  let bouWdDue = addDays(today, 1);
+  while (![3, 5].includes(new Date(bouWdDue + 'T12:00:00').getDay())) {
+    bouWdDue = addDays(bouWdDue, 1);
+  }
+  await insertTask(bougainvillea.id, 4, {
+    name: 'Weekday Misting', icon: '💧', type: 'water',
+    rec: { type: 'weekdays', days: [3, 5] },
+    owner: memberB, ld: addDays(today, -2), ndo: bouWdDue,
   });
   await logCare(bougainvillea.id, bouWater.id,  memberA, 'Watering', 'water', 3);
   await logCare(bougainvillea.id, bouWater.id,  memberA, 'Watering', 'water', 10);

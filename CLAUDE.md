@@ -50,9 +50,17 @@ should query Supabase directly, not assume any of this state.
   the prime meridian).
 - Single source of truth for next-due: `computeNextDue(task)` at `:539`.
   Branches on `recurrenceType`: `'interval'` | `'weekdays'` | `'one-off'`.
-  `task.next_due_override` always wins.
+  `task.next_due_override` wins for interval and one-off tasks (returned directly).
+  For weekday tasks, the override is treated as a start boundary — `computeNextDue()`
+  snaps it to the first selected weekday on or after that date. The override date
+  itself is only returned if it is one of the selected weekdays.
 - A TypeScript port of this function lives in
   `supabase/functions/get-calendar-feed/index.ts` and must stay in sync.
+  ⚠️ Any brief that touches `computeNextDue()` or `nextWeekdayOccurrence()` in
+  `src/app.js` must explicitly instruct Claude Code to apply the identical change
+  to the Edge Function. The two files use different property shapes
+  (`task.nextDueOverride` vs `task.next_due_override`, `task.weekdays` vs
+  `task.recurrence?.days`) but the logic must mirror exactly.
 
 ## Supabase
 

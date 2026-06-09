@@ -388,35 +388,56 @@ async function loadFromSupabase() {
     ownerMap[m.id] = m.display_name;
   }
 
-  // 4. Fetch tasks, care log, and notes for all plants in parallel
+  // 4. Fetch tasks, care log, notes, and activity-feed rows for all plants in
+  //    one batch. Tasks and care_log use a single `.in('plant_id', plantIds)`
+  //    query each (matching the notes pattern) instead of one query per plant.
+  //    loadActivityFeed()'s two queries are folded into this same Promise.all —
+  //    they only depend on plantIds + membersCache, both ready here.
   const plantIds = plantRows.map(p => p.id);
-  const [taskResults, careLogResults, { data: noteRows, error: notesError }] = await Promise.all([
-    Promise.all(
-      plantRows.map(p =>
-        supabaseClient
-          .from('tasks')
-          .select('*')
-          .eq('plant_id', p.id)
-          .is('deleted_at', null)
-      )
-    ),
-    Promise.all(
-      plantRows.map(p =>
-        supabaseClient
-          .from('care_log')
-          .select('*')
-          .eq('plant_id', p.id)
-          .order('date', { ascending: false })
-          .limit(50)
-      )
-    ),
+  const [
+    { data: taskRows },
+    { data: careRows },
+    { data: noteRows, error: notesError },
+    { data: feedCareRows },
+    { data: feedNoteRows },
+  ] = await Promise.all([
+    supabaseClient
+      .from('tasks')
+      .select('*')
+      .in('plant_id', plantIds)
+      .is('deleted_at', null),
+    supabaseClient
+      .from('care_log')
+      .select('*')
+      .in('plant_id', plantIds)
+      .order('date', { ascending: false }),
     supabaseClient
       .from('notes')
       .select('*')
       .in('plant_id', plantIds)
       .is('deleted_at', null)
       .order('created_at', { ascending: false }),
+    supabaseClient
+      .from('care_log')
+      .select('plant_id, task_name, task_type, household_member_id, created_at')
+      .in('plant_id', plantIds)
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabaseClient
+      .from('notes')
+      .select('id, plant_id, note, household_member_id, created_at, photo_url')
+      .in('plant_id', plantIds)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(20),
   ]);
+
+  // Group the flat task/care_log result sets by plant_id. Global ordering from
+  // the queries (care_log by date desc) is preserved within each plant group.
+  const tasksByPlant = {};
+  for (const t of (taskRows ?? [])) (tasksByPlant[t.plant_id] ??= []).push(t);
+  const careLogByPlant = {};
+  for (const r of (careRows ?? [])) (careLogByPlant[r.plant_id] ??= []).push(r);
 
   if (notesError) console.error('loadFromSupabase: notes fetch error:', notesError);
   notes = (noteRows ?? []).map(r => ({
@@ -430,8 +451,8 @@ async function loadFromSupabase() {
     photoUrl:  r.photo_url ?? null,
   }));
 
-  plants = plantRows.map((plantRow, i) => {
-    const taskRows = taskResults[i].data ?? [];
+  plants = plantRows.map((plantRow) => {
+    const taskRows = tasksByPlant[plantRow.id] ?? [];
     const tasks = taskRows.map(t => ({
       id:              t.id,
       recurrenceType:  t.recurrence?.type,
@@ -450,7 +471,7 @@ async function loadFromSupabase() {
       ...(t.custom_icon ? { customIcon: t.custom_icon } : {}),
     }));
 
-    const careLogRows = careLogResults[i].data ?? [];
+    const careLogRows = careLogByPlant[plantRow.id] ?? [];
     const careLog = careLogRows.map(r => ({
       id:        r.id,
       date:      r.date,
@@ -472,7 +493,10 @@ async function loadFromSupabase() {
     };
   });
 
-  await loadActivityFeed();
+  // Build the activity feed from the rows already fetched in the batch above —
+  // no extra round trip. plantMap/ownerMap are now ready (plants just built).
+  const plantMap = Object.fromEntries(plants.map(p => [p.id, p]));
+  activityFeed = buildActivityFeed(feedCareRows, feedNoteRows, plantMap, ownerMap);
 
   const currentMember = membersCache.find(m => m.id === currentMemberId);
   if (currentUserId && currentMemberId && householdId && currentMember && householdName) {
@@ -507,6 +531,12 @@ async function loadActivityFeed() {
       .limit(20),
   ]);
 
+  activityFeed = buildActivityFeed(careRows, noteRows, plantMap, ownerMap);
+}
+
+// Shared by loadActivityFeed() and the batched load in loadFromSupabase().
+// Merges care_log + note rows into the sorted, capped activity feed.
+function buildActivityFeed(careRows, noteRows, plantMap, ownerMap) {
   const careItems = (careRows ?? []).map(r => ({
     type:      'care',
     sortKey:   r.created_at,
@@ -528,7 +558,7 @@ async function loadActivityFeed() {
     photoUrl:  r.photo_url ?? null,
   }));
 
-  activityFeed = [...careItems, ...noteItems]
+  return [...careItems, ...noteItems]
     .sort((a, b) => (b.sortKey ?? '').localeCompare(a.sortKey ?? ''))
     .slice(0, 15);
 }
@@ -1168,7 +1198,7 @@ const PLANT_PHOTOS_BUCKET = 'plant-photos';
 const PHOTO_CAP_PER_PLANT = 5;
 
 function plantIconImgHtml(photoUrl, sizePx, radiusCss) {
-  return `<img src="${escapeHtml(photoUrl)}" alt="" style="width:${sizePx}px;height:${sizePx}px;object-fit:cover;border-radius:${radiusCss};border:1.5px solid #c8c8c8;box-sizing:border-box;display:inline-block;vertical-align:middle;flex-shrink:0;" />`;
+  return `<img loading="lazy" src="${escapeHtml(photoUrl)}" alt="" style="width:${sizePx}px;height:${sizePx}px;object-fit:cover;border-radius:${radiusCss};border:1.5px solid #c8c8c8;box-sizing:border-box;display:inline-block;vertical-align:middle;flex-shrink:0;" />`;
 }
 
 async function compressImage(file, maxDim = 1200, quality = 0.8) {
@@ -1451,7 +1481,7 @@ function renderAddPlantStep1Html(activeTab, selectedEmoji, pendingPhoto) {
 
   const photoRowHtml = hasPhoto ? `
     <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #e5e5e5;border-radius:10px;margin-top:12px;">
-      <img src="${escapeHtml(pendingPhoto.previewUrl)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:1.5px solid #c8c8c8;flex-shrink:0;" />
+      <img loading="lazy" src="${escapeHtml(pendingPhoto.previewUrl)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:1.5px solid #c8c8c8;flex-shrink:0;" />
       <div style="flex:1;min-width:0;">
         <div style="font-weight:600;font-size:15px;">Photo added</div>
         <div style="color:#6b7280;font-size:13px;margin-top:2px;">This will be used as your plant icon</div>
@@ -1861,7 +1891,7 @@ function renderHomeActivityFeed() {
       if (item.photoUrl) {
         const seen = item.noteId && seenPhotos.includes(item.noteId);
         const dotHtml = seen ? '' : '<span class="activity-thumb-dot"></span>';
-        thumbSlot = `<span class="activity-home-thumb-slot activity-home-thumb-slot--photo">${dotHtml}<img class="activity-thumb-inline" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" data-note-id="${escapeHtml(item.noteId ?? '')}" data-plant-id="${escapeHtml(item.plantId ?? '')}" /></span>`;
+        thumbSlot = `<span class="activity-home-thumb-slot activity-home-thumb-slot--photo">${dotHtml}<img loading="lazy" class="activity-thumb-inline" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" data-note-id="${escapeHtml(item.noteId ?? '')}" data-plant-id="${escapeHtml(item.plantId ?? '')}" /></span>`;
       } else {
         thumbSlot = '<span class="activity-home-thumb-slot"></span>';
       }
@@ -2597,7 +2627,7 @@ function buildHouseholdActivityContent() {
         subtitleText = noteText ? `${plantName} · ${truncated}` : plantName;
         taskIcon     = '💬';
         if (item.photoUrl) {
-          photoThumbHtml = `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" data-note-id="${escapeHtml(item.id)}" data-plant-id="${escapeHtml(item.plantId)}" style="width:36px;height:36px;border-radius:8px;border:1.5px solid #7a907f;" /></span>`;
+          photoThumbHtml = `<span class="care-log-thumb"><img loading="lazy" class="carelog-note-thumb" src="${escapeHtml(item.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(item.photoUrl)}" data-note-id="${escapeHtml(item.id)}" data-plant-id="${escapeHtml(item.plantId)}" style="width:36px;height:36px;border-radius:8px;border:1.5px solid #7a907f;" /></span>`;
         }
       }
 
@@ -3036,7 +3066,7 @@ function renderSummaryTab(plant) {
           : '';
         const bodyHtml = `<span style="font-size:13px;color:#4a4a4a;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px;">${escapeHtml(n.note ?? '')}</span>`;
         const thumbHtml = n.photoUrl
-          ? `<span class="care-log-thumb"><img class="activity-thumb-inline" src="${escapeHtml(n.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(n.photoUrl)}" /></span>`
+          ? `<span class="care-log-thumb"><img loading="lazy" class="activity-thumb-inline" src="${escapeHtml(n.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(n.photoUrl)}" /></span>`
           : '';
         html += `<div style="margin:0 0 8px;display:flex;align-items:flex-start;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;${isOwn ? 'cursor:pointer;' : ''}" ${rowAction}>
           <span style="width:36px;height:36px;background:#e8f0fb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">💬</span>
@@ -3179,7 +3209,7 @@ function renderNotesTab(plant) {
       : '';
 
     const photoThumbHtml = note.photoUrl
-      ? `<span class="care-log-thumb"><img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" data-note-id="${escapeHtml(note.id)}" data-plant-id="${escapeHtml(note.plantId)}" style="width:36px;height:36px;border-radius:8px;border:1.5px solid #7a907f;" /></span>`
+      ? `<span class="care-log-thumb"><img loading="lazy" class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" data-note-id="${escapeHtml(note.id)}" data-plant-id="${escapeHtml(note.plantId)}" style="width:36px;height:36px;border-radius:8px;border:1.5px solid #7a907f;" /></span>`
       : '';
 
     html += `
@@ -3335,7 +3365,7 @@ function renderCareLogNoteRow(note) {
   const preview = note.note.length > 30 ? note.note.slice(0, 30) + '…' : note.note;
 
   const photoThumbHtml = note.photoUrl
-    ? `<span class="care-log-thumb"><img class="carelog-note-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" data-note-id="${escapeHtml(note.id)}" data-plant-id="${escapeHtml(note.plantId)}" style="width:36px;height:36px;border-radius:8px;border:1.5px solid #7a907f;" /></span>`
+    ? `<span class="care-log-thumb"><img loading="lazy" class="carelog-note-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" data-note-id="${escapeHtml(note.id)}" data-plant-id="${escapeHtml(note.plantId)}" style="width:36px;height:36px;border-radius:8px;border:1.5px solid #7a907f;" /></span>`
     : '';
 
   return `<div class="carelog-new-row" data-action="carelog-open-edit-note" data-plant="${escapeHtml(note.plantId)}" data-note="${escapeHtml(note.id)}">
@@ -4433,7 +4463,7 @@ function renderAddNotePhotoArea() {
   if (pending) {
     return `
       <div class="add-note-photo-preview">
-        <img class="add-note-photo-thumb" src="${escapeHtml(pending.previewUrl)}" alt="" />
+        <img loading="lazy" class="add-note-photo-thumb" src="${escapeHtml(pending.previewUrl)}" alt="" />
         <div class="add-note-photo-meta">
           <div class="add-note-photo-meta-title">&#10003; Photo added</div>
           <button type="button" class="add-note-photo-change" data-action="add-note-pick-photo">Tap to change</button>
@@ -4452,7 +4482,7 @@ function renderAddNoteCoachTip(lastPhoto) {
       : '';
     thumbHtml = `
       <div class="add-note-coach-last">
-        <img class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
+        <img loading="lazy" class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
         <div class="add-note-coach-last-label">Last photo${dateLabel ? ' · ' + escapeHtml(dateLabel) : ''}</div>
       </div>`;
   }
@@ -4513,7 +4543,7 @@ function openSlideshow(plantId, originPhotoId) {
   let currentIndex = 0;
 
   const plantTileHtml = plant.photoUrl
-    ? `<span class="slideshow-plant-tile"><img src="${escapeHtml(plant.photoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" /></span>`
+    ? `<span class="slideshow-plant-tile"><img loading="lazy" src="${escapeHtml(plant.photoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" /></span>`
     : `<span class="slideshow-plant-tile">${escapeHtml(plant.emoji ?? '🪴')}</span>`;
 
   const overlay = document.createElement('div');
@@ -4525,7 +4555,7 @@ function openSlideshow(plantId, originPhotoId) {
       <div class="slideshow-plant">${escapeHtml(plant.name ?? '')}</div>
     </div>
     <div class="slideshow-photo-area">
-      <img class="slideshow-photo" alt="" />
+      <img loading="lazy" class="slideshow-photo" alt="" />
       <button type="button" class="slideshow-nav slideshow-nav-prev" aria-label="Previous">&#8249;</button>
       <button type="button" class="slideshow-nav slideshow-nav-next" aria-label="Next">&#8250;</button>
     </div>
@@ -4671,7 +4701,7 @@ function openPhotoFullscreen(url, noteId = null, plantId = null, bare = false) {
     div.innerHTML = `
       <button type="button" class="photo-fullscreen-close" aria-label="Close">&times;</button>
       <div class="photo-fullscreen-photo-area">
-        <img src="${escapeHtml(url)}" alt="" />
+        <img loading="lazy" src="${escapeHtml(url)}" alt="" />
       </div>
     `;
     const close = () => {
@@ -4694,11 +4724,11 @@ function openPhotoFullscreen(url, noteId = null, plantId = null, bare = false) {
   const photoCount = photoSequence.length;
 
   const plantTileInner = currentPlant?.photoUrl
-    ? `<img src="${escapeHtml(currentPlant.photoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" />`
+    ? `<img loading="lazy" src="${escapeHtml(currentPlant.photoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" />`
     : escapeHtml(currentPlant?.emoji ?? '🪴');
 
   const thumbsHtml = photoSequence.map(n =>
-    `<img class="photo-fullscreen-thumb" src="${escapeHtml(n.photoUrl)}" alt="" />`
+    `<img loading="lazy" class="photo-fullscreen-thumb" src="${escapeHtml(n.photoUrl)}" alt="" />`
   ).join('');
 
   const div = document.createElement('div');
@@ -4715,7 +4745,7 @@ function openPhotoFullscreen(url, noteId = null, plantId = null, bare = false) {
       <button type="button" class="photo-fullscreen-close" aria-label="Close">&times;</button>
     </div>
     <div class="photo-fullscreen-photo-card">
-      <img src="${escapeHtml(url)}" alt="" />
+      <img loading="lazy" src="${escapeHtml(url)}" alt="" />
       <button type="button" class="photo-fullscreen-prev" aria-label="Previous">&#8249;</button>
       <button type="button" class="photo-fullscreen-next" aria-label="Next">&#8250;</button>
       <div class="photo-fullscreen-zoom-icon">⤢</div>
@@ -4857,7 +4887,7 @@ async function renderManagePhotosSheet(plantId) {
       : '';
     return `
       <div class="manage-photos-row" data-photo-id="${escapeHtml(p.id)}">
-        <img class="manage-photos-thumb" src="${escapeHtml(p.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(p.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
+        <img loading="lazy" class="manage-photos-thumb" src="${escapeHtml(p.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(p.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
         <div class="manage-photos-date">${escapeHtml(date)}</div>
         <button class="manage-photos-delete" data-action="manage-photos-delete" data-photo-id="${escapeHtml(p.id)}" data-plant="${escapeHtml(plantId)}" data-note-id="${escapeHtml(p.note_id ?? '')}" data-url="${escapeHtml(p.storage_url ?? '')}">Delete</button>
       </div>`;
@@ -4872,7 +4902,7 @@ function renderEditNotePhotoSection(note, lastPhoto, photoMeta) {
       : '';
     return `
       <div style="display:flex;align-items:center;gap:12px;padding:8px;background:#fff;border:1px solid #e4e9e0;border-radius:10px;">
-        <img class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
+        <img loading="lazy" class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
         <div style="flex:1;font-size:13px;color:#1a2e1f;">${escapeHtml(dateLabel)}</div>
         <button class="manage-photos-delete" data-action="edit-note-delete-photo">Delete</button>
       </div>`;
@@ -4889,7 +4919,7 @@ function renderEditNotePhotoSection(note, lastPhoto, photoMeta) {
           <div class="add-note-coach-body" style="color:#2a5a8a;">Same angle helps track progress!</div>
         </div>
         <div class="add-note-coach-last">
-          <img class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
+          <img loading="lazy" class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
           <div class="add-note-coach-last-label" style="color:#5a82aa;">Last photo${dateLabel ? ' · ' + escapeHtml(dateLabel) : ''}</div>
         </div>
       </div>`;
@@ -5036,7 +5066,7 @@ function renderEditPlantStep2Html(plant) {
   let sublabel;
   if (sd.editIconMode === 'photo') {
     const photoSrc = sd.pendingPlantPhoto?.previewUrl ?? sd.editExistingPhotoUrl ?? '';
-    iconHtml = `<img src="${escapeHtml(photoSrc)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:1.5px solid #c8c8c8;flex-shrink:0;display:block;box-sizing:border-box;" />`;
+    iconHtml = `<img loading="lazy" src="${escapeHtml(photoSrc)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:1.5px solid #c8c8c8;flex-shrink:0;display:block;box-sizing:border-box;" />`;
     sublabel = 'Tap Change to retake, pick a new one, or use an icon';
   } else {
     const emoji = sd.selectedEmoji ?? plant.emoji ?? '🪴';

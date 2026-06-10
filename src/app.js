@@ -120,6 +120,7 @@ let householdId = null;
 let userHouseholds = [];
 let activityFeed = []; // merged care_log + notes, top 5 across all plants
 let currentUserId = null;
+let isAdmin = false; // app_metadata.is_admin from the auth JWT — gates dev tools
 let inRecovery = false;
 let swRegistration = null;
 let openedFromCaring = false;
@@ -305,6 +306,7 @@ async function loadFromSupabase() {
   const { data: { user } } = await supabaseClient.auth.getUser();
   if (!user) return;
   currentUserId = user.id;
+  isAdmin = user.app_metadata?.is_admin === true;
 
   // 2. Resolve household_id from auth user — needed to scope subsequent queries
   const { data: userMemberRows } = await supabaseClient
@@ -2168,7 +2170,8 @@ function renderHome() {
 
     html += '</div>';
 
-    if (plants.length > 0 && !shouldShowOnboardingBanner()) {
+    if (plants.length > 0 && !shouldShowOnboardingBanner()
+        && localStorage.getItem(`onboarding_session6_done_${currentMemberId}`)) {
       html += `<button class="fab-add-plant" data-action="add-plant">&#43; Add Plant</button>`;
     }
 
@@ -2318,6 +2321,7 @@ function showCaringTabCoachMark() {
     overlayEl.remove();
     bubbleEl.remove();
     if (currentMemberId) localStorage.setItem(`onboarding_session6_done_${currentMemberId}`, '1');
+    renderHome();
   });
 }
 
@@ -4259,17 +4263,11 @@ function renderMenuPanel() {
         : `<button class="menu-item" data-action="menu-notifications">🔔 Notifications &middot; <span style="color:#aaa;">Off</span></button>`}
     </div>
     <div class="menu-section">
-      <div class="menu-section-title">Household</div>
-      <button class="menu-item" disabled>Change Household <span class="menu-coming-soon">Coming soon</span></button>
-    </div>
-    <div class="menu-section">
       <div class="menu-section-title">Calendar</div>
       <button class="menu-item" data-action="open-calendar-sync">📅 Sync to Calendar</button>
     </div>
     <div class="menu-section">
       <div class="menu-section-title">Account</div>
-      <button class="menu-item" data-action="menu-export-data">&#8681; Export Backup</button>
-      <button class="menu-item" data-action="menu-import-data">&#8679; Import Backup</button>
       <button class="menu-item" data-action="menu-show-onboarding">&#128218; Show getting started guide</button>
       <button class="menu-item menu-item-danger" data-action="menu-sign-out">Sign Out</button>
     </div>
@@ -5848,44 +5846,6 @@ async function handleEvent(e) {
       await handleChangePassword();
       break;
 
-    case 'menu-export-data': {
-      closeMenu();
-      const exportData = localStorage.getItem('plant-care-v1') ?? '[]';
-      const exportBlob = new Blob([exportData], { type: 'application/json' });
-      const exportUrl  = URL.createObjectURL(exportBlob);
-      const exportA    = document.createElement('a');
-      exportA.href     = exportUrl;
-      exportA.download = 'plant-care-backup.json';
-      exportA.click();
-      URL.revokeObjectURL(exportUrl);
-      break;
-    }
-
-    case 'menu-import-data': {
-      closeMenu();
-      const importInput = document.createElement('input');
-      importInput.type   = 'file';
-      importInput.accept = '.json,application/json';
-      importInput.addEventListener('change', () => {
-        const file = importInput.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          try {
-            const parsed = JSON.parse(ev.target.result);
-            if (!Array.isArray(parsed)) throw new Error('Invalid format');
-            localStorage.setItem('plant-care-v1', JSON.stringify(parsed));
-            location.reload();
-          } catch (_) {
-            alert('Invalid backup file. Please select a valid plant-care-backup.json file.');
-          }
-        };
-        reader.readAsText(file);
-      });
-      importInput.click();
-      break;
-    }
-
     case 'menu-show-onboarding': {
       closeMenu();
       if (currentMemberId) {
@@ -5894,6 +5854,7 @@ async function handleEvent(e) {
         localStorage.removeItem(`onboarding_task_id_${currentMemberId}`);
         localStorage.removeItem(`onboarding_show_coachmark_${currentMemberId}`);
         localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
+        localStorage.removeItem(`onboarding_session6_done_${currentMemberId}`);
       }
       localStorage.removeItem('onboarding_coordination_shown');
       navigateTo('home');
@@ -7315,6 +7276,7 @@ function handleFeedbackTap() {
 // ============================================================
 
 function attachDevToolsTrigger() {
+  if (!isAdmin) return; // dev tools are admin-only — never wire the listener otherwise
   const el = document.getElementById('dev-build-ts');
   if (!el) return;
   let _lpTimer = null;
@@ -7351,7 +7313,17 @@ function showDevToolsConfirm(scenario, label) {
     </div>`;
 }
 
+// Seeds are destructive — only ever run against known throwaway test households.
+const SEED_ALLOWED_HOUSEHOLDS = [
+  'e296ba61-2fd7-4bfb-a8c2-d273abd234af', // Matu & Vale's Home
+  'b3b5aeb6-ddcc-47c2-bb5e-b2e67d59f635', // Test Household 2
+];
+
 async function runDevSeed(scenario) {
+  if (!SEED_ALLOWED_HOUSEHOLDS.includes(householdId)) {
+    showToast('Seeds disabled for this household');
+    return false;
+  }
   const labels = {
     empty:      'Empty state',
     'heavy-v3': 'Heavy v3',
@@ -7389,6 +7361,7 @@ async function seedEmpty({ resetOnboarding = false } = {}) {
       localStorage.removeItem(`onboarding_task_id_${currentMemberId}`);
       localStorage.removeItem(`onboarding_show_coachmark_${currentMemberId}`);
       localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
+      localStorage.removeItem(`onboarding_session6_done_${currentMemberId}`);
     }
     localStorage.removeItem('onboarding_coordination_shown');
     if (activeUser) localStorage.removeItem(`push_accepted_${activeUser}`);

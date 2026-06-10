@@ -1,0 +1,2 @@
+[functions.get-calendar-feed]
+verify_jwt = false

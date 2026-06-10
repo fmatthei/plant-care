@@ -24,6 +24,9 @@ const compareWeekdaysMonFirst = (a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b);
 
 const VAPID_PUBLIC_KEY = 'BLVM0ZnxinWDENKHaZ5QslyAmUJNjf-9w4q3Sxc0mFuVKS19lVLePh39yuaZIc_a_PX5PPnIECGUFeQl2XkOpWQ';
 
+// When the PWA returns to the foreground after this long, force a data reload.
+const FOREGROUND_RELOAD_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
 const CARE_VERB = {
   water:     'watered',
   refill:    'refilled',
@@ -125,6 +128,7 @@ let sheetEntryTab = null;
 let householdName = null;
 let userTouchedArrivalDate = false;
 let manageHouseholdsEditingName = false;
+let lastSyncedAt = null; // ms timestamp of the last completed loadFromSupabase()
 
 // ============================================================
 // ACTIVE USER (auto-resolved from Supabase auth)
@@ -339,7 +343,7 @@ async function loadFromSupabase() {
       .is('deleted_at', null),
     supabaseClient
       .from('household_members')
-      .select('id, display_name, color, user_id')
+      .select('id, display_name, color, user_id, calendar_time, calendar_weekend_time')
       .eq('household_id', householdId),
     supabaseClient
       .from('households')
@@ -506,6 +510,8 @@ async function loadFromSupabase() {
       household_name: householdName,
     });
   }
+
+  lastSyncedAt = Date.now();
 }
 
 async function loadActivityFeed() {
@@ -2162,7 +2168,7 @@ function renderHome() {
 
     html += '</div>';
 
-    if (plants.length > 0) {
+    if (plants.length > 0 && !shouldShowOnboardingBanner()) {
       html += `<button class="fab-add-plant" data-action="add-plant">&#43; Add Plant</button>`;
     }
 
@@ -3991,6 +3997,21 @@ function closeSheet() {
   setTimeout(() => { document.getElementById('sheet-content').innerHTML = ''; }, 320);
 }
 
+// Subtle full-screen sync indicator for background foreground-reloads. Sits
+// above content but below open sheets (see .reload-indicator z-index in CSS).
+function showReloadIndicator() {
+  if (document.getElementById('reload-indicator')) return;
+  const el = document.createElement('div');
+  el.id = 'reload-indicator';
+  el.className = 'reload-indicator';
+  el.innerHTML = '<div class="reload-spinner"></div>';
+  document.body.appendChild(el);
+}
+
+function hideReloadIndicator() {
+  document.getElementById('reload-indicator')?.remove();
+}
+
 function openMenu() {
   renderMenuPanel();
   document.body.classList.add('menu-open');
@@ -4016,36 +4037,197 @@ function openCalendarSyncSheet() {
   const hhHttps    = `${base}/functions/v1/get-calendar-feed?household_id=${householdId}`;
   const hhWebcal   = `webcal://${baseHost}/functions/v1/get-calendar-feed?household_id=${householdId}`;
 
-  const urlPill = (url) => `
-    <div style="background:#f4f5f2;border-radius:8px;padding:8px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px;" title="${escapeHtml(url)}">${escapeHtml(url)}</div>`;
+  // Time values are stored as Postgres `time` (e.g. "20:00:00"); inputs use HH:MM.
+  const toHHMM = (v) => (v ? String(v).slice(0, 5) : null);
+  const member = membersCache.find(m => m.id === currentMemberId);
 
-  openSheet(`
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px;">
-      <div class="sheet-title" style="margin-bottom:0;">Sync to Calendar</div>
-      <button type="button" class="menu-close" data-action="close-sheet" aria-label="Close" style="position:static;">&#10005;</button>
-    </div>
-    <p style="font-size:13px;color:var(--text-muted);line-height:1.45;margin:0 0 18px;">Subscribe in your calendar app to see upcoming plant care tasks. The feed updates automatically.</p>
+  // Last custom weekend time — survives toggle off/on within this sheet session.
+  let lastCustomWeekend = toHHMM(member?.calendar_weekend_time);
 
-    <div class="form-group" style="margin-bottom:18px;">
-      <div class="form-label">My Tasks</div>
-      <div style="font-size:12px;color:var(--text-muted);margin:-2px 0 8px;">Only tasks assigned to you</div>
-      ${urlPill(meHttps)}
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-ghost" data-action="copy-calendar-link" data-url="${escapeHtml(meHttps)}" style="flex:1;">Copy link</button>
-        <button class="btn btn-primary" data-action="subscribe-calendar" data-url="${escapeHtml(meWebcal)}" style="flex:1;">Subscribe</button>
+  let weekdayTimer = null;
+  let weekendTimer = null;
+
+  // Debounced persist (800ms) + in-memory cache update.
+  function saveField(field, value) {
+    const m = membersCache.find(mm => mm.id === currentMemberId);
+    if (m) m[field] = value;
+    const run = async () => {
+      const { error } = await supabaseClient
+        .from('household_members')
+        .update({ [field]: value })
+        .eq('id', currentMemberId);
+      if (error) console.error('calendar time save failed:', error);
+    };
+    if (field === 'calendar_time') {
+      clearTimeout(weekdayTimer);
+      weekdayTimer = setTimeout(run, 800);
+    } else {
+      clearTimeout(weekendTimer);
+      weekendTimer = setTimeout(run, 800);
+    }
+  }
+
+  const mySubKey  = `calendar_subscribed_my_tasks_${householdId}`;
+  const allSubKey = `calendar_subscribed_all_tasks_${householdId}`;
+
+  function feedSection({ label, feedName, httpsUrl, webcalUrl, subKey }) {
+    const subscribed = localStorage.getItem(subKey) === 'true';
+    const copyLink = `<button type="button" class="btn-text-link" data-action="copy-calendar-link" data-url="${escapeHtml(httpsUrl)}">Copy link</button>`;
+    const actions = subscribed
+      ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;">
+          <span style="display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:var(--primary);">&#10003; Subscribed</span>
+          <button type="button" class="btn-text-link" data-cal-subscribe data-url="${escapeHtml(webcalUrl)}" data-subkey="${escapeHtml(subKey)}">Subscribe again</button>
+        </div>
+        <div>${copyLink}</div>`
+      : `<button type="button" class="btn btn-primary" data-cal-subscribe data-url="${escapeHtml(webcalUrl)}" data-subkey="${escapeHtml(subKey)}" style="width:100%;margin-bottom:8px;">Subscribe</button>
+        <div>${copyLink}</div>`;
+    return `
+      <div style="margin-top:22px;">
+        <div class="manage-section-label" style="margin:0 0 4px;">${label}</div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.45;margin:0 0 12px;">${escapeHtml(feedName)}</div>
+        ${actions}
+      </div>`;
+  }
+
+  function render() {
+    const m = membersCache.find(mm => mm.id === currentMemberId);
+    const weekdayTime    = toHHMM(m?.calendar_time) || '20:00';
+    const weekendEnabled = m?.calendar_weekend_time != null;
+    const weekendTime    = weekendEnabled ? (toHHMM(m?.calendar_weekend_time) || weekdayTime) : weekdayTime;
+
+    const memberName = member?.display_name ?? '';
+    const hhName     = householdName ?? 'My Household';
+    const greenName  = (txt) => `<span style="color:var(--primary);">${escapeHtml(txt)}</span>`;
+
+    // 30-minute slots from 06:00 to 23:30, 24-hour format.
+    const slots = [];
+    for (let h = 6; h <= 23; h++) {
+      for (const mm of ['00', '30']) slots.push(`${String(h).padStart(2, '0')}:${mm}`);
+    }
+    const timeSelect = (id, value, disabled) => {
+      // Preserve a saved value that isn't on a 30-min boundary by prepending it.
+      const opts = (slots.includes(value) ? slots : [value, ...slots])
+        .map(t => `<option value="${t}"${t === value ? ' selected' : ''}>${t}</option>`)
+        .join('');
+      const selStyle = `appearance:none;-webkit-appearance:none;border:1px solid #ddd;border-radius:8px;padding:8px 32px 8px 12px;font-size:14px;min-width:90px;font-family:inherit;color:var(--text);background:${disabled ? '#f4f6f2' : 'white'};`;
+      return `<div id="${id}-wrap" style="position:relative;display:inline-block;${disabled ? 'opacity:0.35;' : ''}">
+            <select id="${id}" style="${selStyle}"${disabled ? ' disabled' : ''}>${opts}</select>
+            <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:11px;color:#555;">&#9662;</span>
+          </div>`;
+    };
+
+    openSheet(`
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px;">
+        <div class="sheet-title" style="margin-bottom:0;">Sync to Calendar</div>
+        <button type="button" class="menu-close" data-action="close-sheet" aria-label="Close" style="position:static;">&#10005;</button>
       </div>
-    </div>
+      <p style="font-size:13px;color:var(--text-muted);line-height:1.45;margin:0 0 18px;">Tasks appear as daily events in your calendar app.</p>
 
-    <div class="form-group" style="margin-bottom:8px;">
-      <div class="form-label">All Household Tasks</div>
-      <div style="font-size:12px;color:var(--text-muted);margin:-2px 0 8px;">Every task across your household</div>
-      ${urlPill(hhHttps)}
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-ghost" data-action="copy-calendar-link" data-url="${escapeHtml(hhHttps)}" style="flex:1;">Copy link</button>
-        <button class="btn btn-primary" data-action="subscribe-calendar" data-url="${escapeHtml(hhWebcal)}" style="flex:1;">Subscribe</button>
+      <div style="background:#eef7f1;border-radius:12px;padding:14px 14px 6px;">
+        <div class="manage-section-label" style="margin:0 0 10px;">Schedule time</div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+          <span style="font-size:14px;font-weight:500;color:#1a2e1a;" id="cal-weekday-label">${weekendEnabled ? 'Mon &ndash; Fri' : 'All days'}</span>
+          ${timeSelect('cal-weekday-time', weekdayTime, false)}
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+          <span style="font-size:14px;font-weight:500;color:#1a2e1a;">Different time on weekends</span>
+          <button type="button" class="task-toggle-btn${weekendEnabled ? ' on' : ''}" id="cal-weekend-toggle" role="switch" aria-checked="${weekendEnabled}">
+            <span class="task-toggle-knob"></span>
+          </button>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+          <span style="font-size:14px;font-weight:500;color:#1a2e1a;${weekendEnabled ? '' : 'opacity:0.35;'}" id="cal-weekend-label">Sat &amp; Sun</span>
+          ${timeSelect('cal-weekend-time', weekendTime, !weekendEnabled)}
+        </div>
       </div>
-    </div>
-  `);
+
+      ${feedSection({
+        label: 'My Tasks',
+        feedName: `Only tasks assigned to you · Plant Care — ${memberName} · ${hhName}`,
+        httpsUrl: meHttps, webcalUrl: meWebcal, subKey: mySubKey,
+      })}
+      ${feedSection({
+        label: 'All Household Tasks',
+        feedName: `Every task across your household · Plant Care — ${hhName} · All`,
+        httpsUrl: hhHttps, webcalUrl: hhWebcal, subKey: allSubKey,
+      })}
+    `);
+
+    // Re-color the green portion of the feed name (after the "·").
+    document.querySelectorAll('#sheet-content .manage-section-label + div').forEach(el => {
+      const idx = el.textContent.indexOf('· Plant Care');
+      if (idx === -1) return;
+      const plain = el.textContent.slice(0, idx + 2);
+      const green = el.textContent.slice(idx + 2);
+      el.innerHTML = `${escapeHtml(plain)}${greenName(green)}`;
+    });
+
+    wire();
+  }
+
+  function wire() {
+    const weekdayInput = document.getElementById('cal-weekday-time');
+    const weekendInput = document.getElementById('cal-weekend-time');
+    const weekendWrap  = document.getElementById('cal-weekend-time-wrap');
+    const weekendLabel = document.getElementById('cal-weekend-label');
+    const weekdayLabel = document.getElementById('cal-weekday-label');
+    const toggle       = document.getElementById('cal-weekend-toggle');
+
+    const isOn = () => toggle?.getAttribute('aria-checked') === 'true';
+
+    weekdayInput?.addEventListener('input', () => {
+      const v = weekdayInput.value;
+      if (!v) return;
+      saveField('calendar_time', v);
+      // When weekend uses the same time, mirror live.
+      if (!isOn()) weekendInput.value = v;
+    });
+
+    weekendInput?.addEventListener('input', () => {
+      if (!isOn()) return;
+      const v = weekendInput.value;
+      if (!v) return;
+      lastCustomWeekend = v;
+      saveField('calendar_weekend_time', v);
+    });
+
+    toggle?.addEventListener('click', () => {
+      const turningOn = !isOn();
+      toggle.setAttribute('aria-checked', String(turningOn));
+      toggle.classList.toggle('on', turningOn);
+      if (weekdayLabel) weekdayLabel.innerHTML = turningOn ? 'Mon &ndash; Fri' : 'All days';
+      if (turningOn) {
+        const v = lastCustomWeekend || weekdayInput.value || '20:00';
+        weekendInput.value = v;
+        weekendInput.disabled = false;
+        weekendInput.style.background = 'white';
+        if (weekendWrap) weekendWrap.style.opacity = '';
+        if (weekendLabel) weekendLabel.style.opacity = '';
+        saveField('calendar_weekend_time', v);
+      } else {
+        weekendInput.value = weekdayInput.value;
+        weekendInput.disabled = true;
+        weekendInput.style.background = '#f4f6f2';
+        if (weekendWrap) weekendWrap.style.opacity = '0.35';
+        if (weekendLabel) weekendLabel.style.opacity = '0.35';
+        saveField('calendar_weekend_time', null);
+      }
+    });
+
+    document.querySelectorAll('#sheet-content [data-cal-subscribe]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const url = btn.dataset.url;
+        if (url) window.open(url);
+        localStorage.setItem(btn.dataset.subkey, 'true');
+        render();
+      });
+    });
+  }
+
+  render();
 }
 
 async function handleCopyCalendarLink(btn) {
@@ -7866,6 +8048,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   localStorage.removeItem('active-user');
+
+  // When the PWA returns to the foreground after being away long enough, force a
+  // background data reload so stale content (e.g. care log added on another
+  // device) refreshes without a manual pull. Skipped while a sheet is open so we
+  // don't yank state out from under an in-progress edit.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (lastSyncedAt === null) return;
+    if (Date.now() - lastSyncedAt < FOREGROUND_RELOAD_THRESHOLD_MS) return;
+    if (document.getElementById('sheet')?.classList.contains('active')) return;
+    showReloadIndicator();
+    loadFromSupabase()
+      .then(() => renderApp())
+      .finally(() => hideReloadIndicator());
+  });
 
   supabaseClient.auth.onAuthStateChange(async (event, session) => {
     if (event === 'PASSWORD_RECOVERY') {

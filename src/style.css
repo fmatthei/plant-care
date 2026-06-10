@@ -1091,6 +1091,18 @@ body {
 .btn-ghost     { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
 .btn-danger    { background: var(--due-bg); color: var(--due); }
 
+.btn-text-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* ===== Health Notes ===== */
 .health-note-list {
   display: flex;
@@ -1296,6 +1308,31 @@ body {
 .overlay.active {
   opacity: 1;
   pointer-events: all;
+}
+
+/* ===== Foreground-reload sync indicator ===== */
+/* Sits above content (z-index 1400) but below the sheet overlay (1500). */
+.reload-indicator {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.reload-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: reload-spin 0.7s linear infinite;
+}
+
+@keyframes reload-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ===== Bottom Sheet ===== */

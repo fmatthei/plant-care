@@ -59,6 +59,31 @@ function icsDate(dateStr: string): string {
   return dateStr.replaceAll('-', '');
 }
 
+// Normalize a Postgres `time` value ("20:00:00") or HH:MM to HH:MM, with fallback.
+function toHHMM(t: string | null | undefined, fallback: string): string {
+  if (!t) return fallback;
+  return String(t).slice(0, 5);
+}
+
+// Build a floating-datetime stamp (YYYYMMDDTHHmmss, no Z) for `dateStr` at `hhmm`
+// plus `offsetMin` minutes, rolling the date forward/back across midnight as needed.
+function floatingDateTime(dateStr: string, hhmm: string, offsetMin = 0): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  let total = h * 60 + m + offsetMin;
+  let dayOffset = 0;
+  while (total >= 1440) { total -= 1440; dayOffset++; }
+  while (total < 0) { total += 1440; dayOffset--; }
+  const date = dayOffset === 0 ? dateStr : addDays(dateStr, dayOffset);
+  const hh = String(Math.floor(total / 60)).padStart(2, '0');
+  const mm = String(total % 60).padStart(2, '0');
+  return `${icsDate(date)}T${hh}${mm}00`;
+}
+
+// Current UTC instant as YYYYMMDDTHHmmssZ (RFC 5545 DTSTAMP format).
+function utcStamp(): string {
+  return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+}
+
 function escapeIcsText(str: string): string {
   return str.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
 }
@@ -88,12 +113,16 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  // Resolve household scope
+  // Resolve household scope + the schedule times that govern event timing.
   let resolvedHouseholdId: string;
+  let memberDisplayName = '';
+  let calendarTime = '20:00';     // HH:MM, default
+  let weekendTime: string | null = null;
+
   if (memberId) {
     const { data: member, error: memberError } = await supabase
       .from('household_members')
-      .select('household_id')
+      .select('household_id, display_name, calendar_time, calendar_weekend_time')
       .eq('id', memberId)
       .single();
 
@@ -102,9 +131,30 @@ Deno.serve(async (req) => {
       return new Response('member not found', { status: 404, headers: CORS_HEADERS });
     }
     resolvedHouseholdId = member.household_id;
+    memberDisplayName = member.display_name ?? '';
+    calendarTime = toHHMM(member.calendar_time, '20:00');
+    weekendTime = member.calendar_weekend_time ? toHHMM(member.calendar_weekend_time, '20:00') : null;
   } else {
     resolvedHouseholdId = householdIdParam!;
+    // ALL HOUSEHOLD TASKS feed: fall back to the first member's schedule times.
+    const { data: firstMembers } = await supabase
+      .from('household_members')
+      .select('calendar_time, calendar_weekend_time')
+      .eq('household_id', resolvedHouseholdId)
+      .is('deleted_at', null)
+      .limit(1);
+    const fm = firstMembers?.[0];
+    calendarTime = toHHMM(fm?.calendar_time, '20:00');
+    weekendTime = fm?.calendar_weekend_time ? toHHMM(fm.calendar_weekend_time, '20:00') : null;
   }
+
+  // Household name for the calendar title/description.
+  const { data: household } = await supabase
+    .from('households')
+    .select('name')
+    .eq('id', resolvedHouseholdId)
+    .single();
+  const householdName = household?.name ?? 'Household';
 
   // Query tasks joined with plants
   let query = supabase
@@ -127,35 +177,81 @@ Deno.serve(async (req) => {
   }
 
   const today = todayStr();
+
+  const calName = memberId
+    ? `Plant Care — ${memberDisplayName} · ${householdName}`
+    : `Plant Care — ${householdName} · All`;
+  const calDesc = memberId
+    ? `Plant care tasks assigned to ${memberDisplayName}`
+    : `All plant care tasks for ${householdName}`;
+
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
     'PRODID:-//Plant Care//Calendar Feed//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    'X-WR-CALNAME:Plant Care Tasks',
-    'X-WR-CALDESC:Upcoming plant care tasks',
+    `X-WR-CALNAME:${escapeIcsText(calName)}`,
+    `X-WR-CALDESC:${escapeIcsText(calDesc)}`,
   ];
+
+  // Group tasks by their next-due date.
+  interface DayTask { taskName: string; plantName: string; plantEmoji: string }
+  const byDate = new Map<string, DayTask[]>();
 
   for (const task of tasks ?? []) {
     const nextDue = computeNextDue(task);
     if (nextDue === null) continue;
+    if (daysBetween(today, nextDue) < 0) continue;   // exclude overdue / past dates
     if (daysBetween(today, nextDue) > 60) continue;
 
-    const dtStart = icsDate(nextDue);
-    const dtEnd = icsDate(addDays(nextDue, 1));
-
     const plant = (task as any).plants;
-    const plantName = plant?.name ?? '';
-    const plantEmoji = plant?.emoji ?? '';
-    const taskName =
-      (task.custom_name && task.custom_name.length > 0) ? task.custom_name : task.name;
+    const entry: DayTask = {
+      taskName: (task.custom_name && task.custom_name.length > 0) ? task.custom_name : task.name,
+      plantName: plant?.name ?? '',
+      plantEmoji: plant?.emoji ?? '',
+    };
+    const bucket = byDate.get(nextDue);
+    if (bucket) bucket.push(entry);
+    else byDate.set(nextDue, [entry]);
+  }
+
+  const dtStamp = utcStamp();
+  const scope = memberId ?? resolvedHouseholdId;
+
+  for (const dateStr of [...byDate.keys()].sort()) {
+    const dayTasks = byDate.get(dateStr)!;
+
+    // Event time: weekend slots use weekendTime when set, otherwise the weekday time.
+    const dow = new Date(dateStr + 'T12:00:00').getDay();
+    const isWeekend = dow === 0 || dow === 6;
+    const eventTime = (isWeekend && weekendTime) ? weekendTime : calendarTime;
+
+    const dtStart = floatingDateTime(dateStr, eventTime, 0);
+    const dtEnd = floatingDateTime(dateStr, eventTime, 30);
+
+    let summary: string;
+    let description: string | null = null;
+    if (dayTasks.length === 1) {
+      const t = dayTasks[0];
+      summary = `${t.plantEmoji} ${t.plantName} — ${t.taskName}`;
+    } else {
+      summary = `🌿 Plant Care · ${dayTasks.length} tasks`;
+      description = dayTasks.map(t => `${t.taskName} · ${t.plantName}`).join('\n');
+    }
 
     lines.push('BEGIN:VEVENT');
-    lines.push(`UID:${task.id}@plantcare`);
-    lines.push(`DTSTART;VALUE=DATE:${dtStart}`);
-    lines.push(`DTEND;VALUE=DATE:${dtEnd}`);
-    lines.push(`SUMMARY:${escapeIcsText(`${plantEmoji} ${plantName} — ${taskName}`)}`);
+    lines.push(`UID:${icsDate(dateStr)}-${scope}@plantcare`);
+    lines.push(`DTSTAMP:${dtStamp}`);
+    lines.push(`DTSTART:${dtStart}`);
+    lines.push(`DTEND:${dtEnd}`);
+    lines.push(`SUMMARY:${escapeIcsText(summary)}`);
+    if (description !== null) lines.push(`DESCRIPTION:${escapeIcsText(description)}`);
+    lines.push('BEGIN:VALARM');
+    lines.push('TRIGGER:PT0M');
+    lines.push('ACTION:DISPLAY');
+    lines.push('DESCRIPTION:Plant Care reminder');
+    lines.push('END:VALARM');
     lines.push('END:VEVENT');
   }
 

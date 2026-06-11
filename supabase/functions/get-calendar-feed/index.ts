@@ -55,6 +55,60 @@ function computeNextDue(task: any): string | null {
   return addDays(task.last_done, task.recurrence?.every ?? 7);
 }
 
+// Enumerate every occurrence of a task within a window. Computes the first
+// occurrence via computeNextDue() once, then steps forward by recurrence type —
+// porting the validated steppers in src/app.js (Summary "Upcoming" :2935–2974,
+// intervalOccurrencesAfterToday :3739, weekdayOccurrencesAfterToday :3752).
+// Returns YYYY-MM-DD strings in ascending order. Windowed mode (`until`) is the
+// only mode implemented; `count` is reserved for later.
+function enumerateOccurrences(
+  task: any,
+  opts: { until?: string; count?: number },
+): string[] {
+  const first = computeNextDue(task);
+  if (first === null) return [];
+
+  const until = opts.until;
+  if (!until) return [];                 // only windowed mode is implemented
+
+  const recType = task.recurrence?.type ?? 'interval';
+
+  // one-off: a single occurrence, emitted iff inside the window. Never step.
+  if (recType === 'one-off') {
+    return first <= until ? [first] : [];
+  }
+
+  if (first > until) return [];
+
+  // weekday: step day-by-day from first, collecting cursors whose weekday is
+  // selected. `first` is already a valid selected weekday (the override
+  // start-boundary snap was consumed by computeNextDue) — do not re-resolve the
+  // override mid-loop.
+  if (recType === 'weekdays') {
+    const days = task.recurrence?.days ?? [];
+    if (days.length === 0) return [];
+    const out: string[] = [];
+    let cursor = first;
+    while (cursor <= until) {
+      if (days.includes(new Date(cursor + 'T12:00:00').getDay())) out.push(cursor);
+      cursor = addDays(cursor, 1);
+    }
+    return out;
+  }
+
+  // interval: step by `every` days from first. addDays anchors at noon
+  // (T12:00:00), so the lattice never drifts across DST.
+  const every = task.recurrence?.every ?? 7;
+  if (every <= 0) return [first];
+  const out: string[] = [];
+  let cursor = first;
+  while (cursor <= until) {
+    out.push(cursor);
+    cursor = addDays(cursor, every);
+  }
+  return out;
+}
+
 function icsDate(dateStr: string): string {
   return dateStr.replaceAll('-', '');
 }
@@ -195,15 +249,16 @@ Deno.serve(async (req) => {
     `X-WR-CALDESC:${escapeIcsText(calDesc)}`,
   ];
 
-  // Group tasks by their next-due date.
+  // Group tasks by occurrence date. Each task contributes every occurrence
+  // within the next 14 days, not just its next one.
   interface DayTask { taskName: string; plantName: string; plantEmoji: string }
   const byDate = new Map<string, DayTask[]>();
+  const windowEnd = addDays(today, 14);
 
   for (const task of tasks ?? []) {
-    const nextDue = computeNextDue(task);
-    if (nextDue === null) continue;
-    if (daysBetween(today, nextDue) < 0) continue;   // exclude overdue / past dates
-    if (daysBetween(today, nextDue) > 60) continue;
+    // Done-today suppression: a task completed today whose next occurrence is
+    // today must not emit a today event (mirrors src/app.js :2367 / :2937).
+    if (task.last_done === today && computeNextDue(task) === today) continue;
 
     const plant = (task as any).plants;
     const entry: DayTask = {
@@ -211,9 +266,13 @@ Deno.serve(async (req) => {
       plantName: plant?.name ?? '',
       plantEmoji: plant?.emoji ?? '',
     };
-    const bucket = byDate.get(nextDue);
-    if (bucket) bucket.push(entry);
-    else byDate.set(nextDue, [entry]);
+
+    for (const dateStr of enumerateOccurrences(task, { until: windowEnd })) {
+      if (daysBetween(today, dateStr) < 0) continue;   // never before today
+      const bucket = byDate.get(dateStr);
+      if (bucket) bucket.push(entry);
+      else byDate.set(dateStr, [entry]);
+    }
   }
 
   const dtStamp = utcStamp();

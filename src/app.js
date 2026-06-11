@@ -2793,7 +2793,9 @@ function renderSummaryTab(plant) {
     const rt = task.recurrenceType ?? 'interval';
     if (rt === 'one-off') return 'One-off';
     if (rt === 'weekdays') {
-      const dInts = (task.weekdays ?? []).slice().sort(compareWeekdaysMonFirst);
+      const dInts = (task.weekdays ?? [])
+        .filter(d => Number.isInteger(d) && d >= 0 && d <= 6)  // drop null/NaN/out-of-range → no empty slot
+        .slice().sort(compareWeekdaysMonFirst);
       const abbrev = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       return dInts.length > 0 ? `Every ${dInts.map(d => abbrev[d]).join(', ')}` : 'Days of week';
     }
@@ -6874,11 +6876,9 @@ async function handleEvent(e) {
 
     // DEV TOOLS — remove before public launch
     case 'dev-seed-empty':     showDevToolsConfirm('empty',     'Empty state');  break;
-    case 'dev-seed-heavy-v3':  showDevToolsConfirm('heavy-v3',  'Heavy v3');     break;
     case 'dev-seed-heavy-v4':  showDevToolsConfirm('heavy-v4',  'Heavy v4');     break;
     case 'dev-tools-cancel': document.getElementById('dev-tools-body').innerHTML = `
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
-      <button class="dev-tools-btn" data-action="dev-seed-heavy-v3">🌳 Heavy v3</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy-v4">🌲 Heavy v4</button>`; break;
     case 'dev-tools-confirm': {
       if (target.disabled) break;
@@ -7302,7 +7302,6 @@ function openDevToolsPanel() {
     <div style="font-size:11px;color:#888;margin-bottom:16px;">Seed data scenarios — replaces all current household data</div>
     <div id="dev-tools-body">
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
-      <button class="dev-tools-btn" data-action="dev-seed-heavy-v3">🌳 Heavy v3</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy-v4">🌲 Heavy v4</button>
     </div>
     <button class="add-plant-back-link" data-action="close-sheet" style="margin-top:12px;">Cancel</button>
@@ -7323,7 +7322,6 @@ function showDevToolsConfirm(scenario, label) {
 
 // Seeds are destructive — only ever run against known throwaway test households.
 const SEED_ALLOWED_HOUSEHOLDS = [
-  'e296ba61-2fd7-4bfb-a8c2-d273abd234af', // Matu & Vale's Home
   'b3b5aeb6-ddcc-47c2-bb5e-b2e67d59f635', // Test Household 2
 ];
 
@@ -7334,12 +7332,10 @@ async function runDevSeed(scenario) {
   }
   const labels = {
     empty:      'Empty state',
-    'heavy-v3': 'Heavy v3',
     'heavy-v4': 'Heavy v4',
   };
   try {
     if (scenario === 'empty')    await seedEmpty({ resetOnboarding: true });
-    if (scenario === 'heavy-v3') await seedHeavyV3();
     if (scenario === 'heavy-v4') await seedHeavyV4();
     closeSheet();
     await loadFromSupabase();
@@ -7376,213 +7372,9 @@ async function seedEmpty({ resetOnboarding = false } = {}) {
   }
 }
 
-async function seedHeavyV3() {
-  // Teardown — same sequence as seedHeavyV2 (children before parent).
-  if (householdId) {
-    const { data: allPlants } = await supabaseClient
-      .from('plants').select('id').eq('household_id', householdId);
-    const plantIds = (allPlants ?? []).map(r => r.id);
-    if (plantIds.length) {
-      await supabaseClient.from('plant_photos').delete().in('plant_id', plantIds);
-      await supabaseClient.from('care_log').delete().in('plant_id', plantIds);
-      await supabaseClient.from('notes').delete().in('plant_id', plantIds);
-      await supabaseClient.from('tasks').delete().in('plant_id', plantIds);
-      await supabaseClient.from('plants').delete().in('id', plantIds);
-    }
-  }
-
-  const today = todayStr();
-  const memberA = membersCache[0]?.id ?? null;
-  const memberB = (membersCache[1] ?? membersCache[0])?.id ?? null;
-
-  const insertPlant = async (name, emoji, sortOrder, daysAgo) => {
-    const { data } = await supabaseClient.from('plants').insert({
-      household_id:  householdId,
-      name,
-      emoji,
-      date_acquired: addDays(today, -daysAgo),
-      sort_order:    sortOrder,
-    }).select().single();
-    return data;
-  };
-
-  const insertTask = async (plantId, idx, def) => {
-    const { data } = await supabaseClient.from('tasks').insert({
-      plant_id:          plantId,
-      name:              def.name,
-      icon:              def.icon,
-      type:              def.type,
-      recurrence:        def.rec,
-      owner_id:          def.owner,
-      paused:            def.paused ?? false,
-      note:              '',
-      sort_order:        idx + 1,
-      last_done:         def.ld ?? null,
-      next_due_override: def.ndo ?? null,
-    }).select().single();
-    return data;
-  };
-
-  // 1. Mandarin Tree — overdue watering (non-multiple displacement; prompt fires)
-  const mandarin = await insertPlant('Mandarin Tree', '🍊', 1, 100);
-  await insertTask(mandarin.id, 0, {
-    name: 'Watering', icon: '💧', type: 'water',
-    rec: { type: 'interval', every: 7, unit: 'days', days: [] },
-    owner: memberA, ld: addDays(today, -10), ndo: null,
-  });
-  const mandarinFert = await insertTask(mandarin.id, 1, {
-    name: 'Fertilizing', icon: '🌿', type: 'fertilize',
-    rec: { type: 'interval', every: 5, unit: 'days', days: [] },
-    owner: memberB, ld: addDays(today, -5), ndo: null,
-  });
-  const mandarinTs = new Date(); mandarinTs.setDate(mandarinTs.getDate() - 5); mandarinTs.setHours(10, 0, 0, 0);
-  await supabaseClient.from('care_log').insert({
-    plant_id:            mandarin.id,
-    task_id:             mandarinFert.id,
-    household_member_id: memberB,
-    task_name:           'Fertilizing',
-    task_type:           'fertilize',
-    date:                addDays(today, -5),
-    created_at:          mandarinTs.toISOString(),
-  });
-
-  // 2. Pothos — overdue watering with exact-multiple displacement (prompt suppressed);
-  //    rotation done today (also produces a care_log entry below).
-  const pothos = await insertPlant('Pothos', '🪴', 2, 60);
-  await insertTask(pothos.id, 0, {
-    name: 'Watering', icon: '💧', type: 'water',
-    rec: { type: 'interval', every: 7, unit: 'days', days: [] },
-    owner: memberA, ld: addDays(today, -14), ndo: null,
-  });
-  const pothosRotation = await insertTask(pothos.id, 1, {
-    name: 'Rotation', icon: '🔄', type: 'rotate',
-    rec: { type: 'interval', every: 3, unit: 'days', days: [] },
-    owner: memberB, ld: today, ndo: null,
-  });
-
-  const rotTs = new Date(); rotTs.setHours(10, 0, 0, 0);
-  await supabaseClient.from('care_log').insert({
-    plant_id:            pothos.id,
-    task_id:             pothosRotation.id,
-    household_member_id: memberB,
-    task_name:           'Rotation',
-    task_type:           'rotate',
-    date:                today,
-    created_at:          rotTs.toISOString(),
-  });
-
-  // 3. Cactus — overdue weekdays-task (two weekdays excluding today and tomorrow,
-  //    so the task reliably looks "overdue" instead of conveniently due today);
-  //    paused fertilizing.
-  const cactus = await insertPlant('Cactus', '🌵', 3, 80);
-  const todayDow = new Date().getDay(); // 0=Sun … 6=Sat
-  const candidateDays = [1, 2, 3, 4, 5]; // Mon–Fri only
-  const safeDays = candidateDays.filter(
-    d => d !== todayDow && d !== (todayDow === 5 ? 1 : todayDow + 1)
-  );
-  const cactusWeekdays = [safeDays[0], safeDays[1]];
-  await insertTask(cactus.id, 0, {
-    name: 'Watering', icon: '💧', type: 'water',
-    rec: { type: 'weekdays', days: cactusWeekdays },
-    owner: memberA, ld: addDays(today, -12), ndo: null,
-  });
-  const cactusFert = await insertTask(cactus.id, 1, {
-    name: 'Fertilizing', icon: '🌿', type: 'fertilize',
-    rec: { type: 'interval', every: 30, unit: 'days', days: [] },
-    owner: memberB, ld: addDays(today, -5), ndo: null, paused: true,
-  });
-  const cactusTs = new Date(); cactusTs.setDate(cactusTs.getDate() - 5); cactusTs.setHours(10, 0, 0, 0);
-  await supabaseClient.from('care_log').insert({
-    plant_id:            cactus.id,
-    task_id:             cactusFert.id,
-    household_member_id: memberB,
-    task_name:           'Fertilizing',
-    task_type:           'fertilize',
-    date:                addDays(today, -5),
-    created_at:          cactusTs.toISOString(),
-  });
-
-  // 4. Bougainvillea — upcoming watering (mark-done-early test); pending one-off repot.
-  //    Photo set on the plant itself so it renders as the plant icon.
-  const { data: bougainvillea } = await supabaseClient.from('plants').insert({
-    household_id:  householdId,
-    name:          'Bougainvillea',
-    emoji:         '🌸',
-    date_acquired: addDays(today, -90),
-    sort_order:    4,
-    photo_url:     'https://kmkfywdzoitgdtbttxaa.supabase.co/storage/v1/object/public/plant-photos/test-assets/bugam-photo.jpeg',
-  }).select().single();
-  const bougainWater = await insertTask(bougainvillea.id, 0, {
-    name: 'Watering', icon: '💧', type: 'water',
-    rec: { type: 'interval', every: 7, unit: 'days', days: [] },
-    owner: memberA, ld: addDays(today, -3), ndo: null,
-  });
-  const bougainTs = new Date(); bougainTs.setDate(bougainTs.getDate() - 3); bougainTs.setHours(10, 0, 0, 0);
-  await supabaseClient.from('care_log').insert({
-    plant_id:            bougainvillea.id,
-    task_id:             bougainWater.id,
-    household_member_id: memberA,
-    task_name:           'Watering',
-    task_type:           'water',
-    date:                addDays(today, -3),
-    created_at:          bougainTs.toISOString(),
-  });
-  await insertTask(bougainvillea.id, 1, {
-    name: 'Repot', icon: '🪴', type: 'repot',
-    rec: { type: 'one-off' },
-    owner: memberB, ld: null, ndo: addDays(today, 2),
-  });
-
-  // 5. Fern — due-today misting + 3 notes (last two with photos).
-  const fern = await insertPlant('Fern', '🌿', 5, 40);
-  const fernMisting = await insertTask(fern.id, 0, {
-    name: 'Misting', icon: '💦', type: 'water',
-    rec: { type: 'interval', every: 2, unit: 'days', days: [] },
-    owner: memberA, ld: addDays(today, -2), ndo: null,
-  });
-  const fernTs = new Date(); fernTs.setDate(fernTs.getDate() - 2); fernTs.setHours(10, 0, 0, 0);
-  await supabaseClient.from('care_log').insert({
-    plant_id:            fern.id,
-    task_id:             fernMisting.id,
-    household_member_id: memberA,
-    task_name:           'Misting',
-    task_type:           'water',
-    date:                addDays(today, -2),
-    created_at:          fernTs.toISOString(),
-  });
-
-  const FERN_PHOTO_BASE = 'https://kmkfywdzoitgdtbttxaa.supabase.co/storage/v1/object/public/plant-photos/test-assets';
-  const note1Ts = new Date(); note1Ts.setDate(note1Ts.getDate() - 5);
-  const note2Ts = new Date(); note2Ts.setDate(note2Ts.getDate() - 2);
-  const note3Ts = new Date();
-
-  await supabaseClient.from('notes').insert({
-    plant_id:            fern.id,
-    household_member_id: memberA,
-    note:                'New leaves coming in on the left side 🌱',
-    photo_url:           null,
-    created_at:          note1Ts.toISOString(),
-  });
-  await supabaseClient.from('notes').insert({
-    plant_id:            fern.id,
-    household_member_id: memberB,
-    note:                'Looking healthy after the last watering',
-    photo_url:           `${FERN_PHOTO_BASE}/Fiddle01.jpeg`,
-    created_at:          note2Ts.toISOString(),
-  });
-  await supabaseClient.from('notes').insert({
-    plant_id:            fern.id,
-    household_member_id: memberA,
-    note:                "New growth on the right too — it's spreading",
-    photo_url:           `${FERN_PHOTO_BASE}/Fiddle02.jpeg`,
-    created_at:          note3Ts.toISOString(),
-  });
-  setOnboardingStep(4);
-}
-
 async function seedHeavyV4() {
 
-  // Teardown — same sequence as seedHeavyV3
+  // Teardown — children before parent.
   if (householdId) {
     const { data: allPlants } = await supabaseClient
       .from('plants').select('id').eq('household_id', householdId);
@@ -7751,7 +7543,7 @@ async function seedHeavyV4() {
   });
   const potCheck = await insertTask(pothos.id, 2, {
     name: 'Check soil', icon: '🔍', type: 'check',
-    rec: { type: 'weekdays', days: [safeDays[1], safeDays[3]] },
+    rec: { type: 'weekdays', days: [safeDays[0], safeDays[2]] },
     owner: memberA, ld: addDays(today, -4),
   });
   await insertTask(pothos.id, 3, {
@@ -7877,7 +7669,7 @@ async function seedHeavyV4() {
   });
   const bouCheck = await insertTask(bougainvillea.id, 2, {
     name: 'Check flowers', icon: '🔍', type: 'check',
-    rec: { type: 'weekdays', days: [safeDays[1], safeDays[3]] },
+    rec: { type: 'weekdays', days: [safeDays[0], safeDays[2]] },
     owner: memberA, ld: addDays(today, -2),
   });
   await insertTask(bougainvillea.id, 3, {

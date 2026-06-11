@@ -1413,7 +1413,15 @@ function showToast(message, opts = {}) {
   }
   toast.classList.add('visible');
   clearTimeout(toast._hideTimeout);
-  toast._hideTimeout = setTimeout(() => toast.classList.remove('visible'), opts.duration ?? 2500);
+  toast._hideTimeout = setTimeout(() => {
+    // Hide AND fully reset interactive state, so a faded toast is no longer a
+    // clickable target (pointer-events reverts to none) and carries no stale
+    // action. Mirrors the non-interactive else-branch above.
+    toast.classList.remove('visible', 'toast--interactive');
+    delete toast.dataset.action;
+    delete toast.dataset.plant;
+    delete toast.dataset.task;
+  }, opts.duration ?? 2500);
 }
 
 function showDoneToast(plantId, taskId, taskName) {
@@ -7002,8 +7010,8 @@ function renderDateSelectHtml(prefix, initialDate, yearMin, yearMax) {
   setTimeout(() => attachDowLabel(prefix), 0);
 
   return `<div style="display:flex;gap:8px;width:100%;">
-    <select id="${prefix}-day" class="form-input" style="flex:1;">${dayOpts}</select>
     <select id="${prefix}-month" class="form-input" style="flex:2;">${monthOpts}</select>
+    <select id="${prefix}-day" class="form-input" style="flex:1;">${dayOpts}</select>
     <select id="${prefix}-year" class="form-input" style="flex:1.5;">${yearOpts}</select>
   </div>
   <div id="${prefix}-dow-label" class="date-select-dow-label"></div>`;

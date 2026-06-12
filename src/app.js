@@ -311,7 +311,7 @@ async function loadFromSupabase() {
   // 2. Resolve household_id from auth user — needed to scope subsequent queries
   const { data: userMemberRows } = await supabaseClient
     .from('household_members')
-    .select('household_id')
+    .select('household_id, deleted_at')
     .eq('user_id', user.id);
 
   if (!userMemberRows || userMemberRows.length === 0) {
@@ -319,7 +319,19 @@ async function loadFromSupabase() {
     return;
   }
 
-  const householdIds = userMemberRows.map(r => r.household_id);
+  // Keep only households where the user has at least one live (non-deleted)
+  // membership row, then dedup — a household with both a soft-deleted and a
+  // live row must appear exactly once; a household with only soft-deleted rows
+  // must not appear at all. (Filtering happens here in JS, not in the query
+  // above, because a deleted_at filter on that query previously caused a 500.)
+  const householdIds = [...new Set(
+    userMemberRows.filter(r => r.deleted_at === null).map(r => r.household_id)
+  )];
+
+  if (householdIds.length === 0) {
+    renderAuthErrorScreen("Your account isn't associated with a household. Contact your household admin.");
+    return;
+  }
 
   const { data: householdRows } = await supabaseClient
     .from('households')

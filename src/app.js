@@ -1995,7 +1995,7 @@ function renderOnboardingInlineTaskCard() {
 }
 
 function shouldShowOnboardingBanner() {
-  if (localStorage.getItem('onboarding_coordination_shown')) return false;
+  if (localStorage.getItem(`onboarding_coordination_shown_${currentMemberId}`)) return false;
   const step = getOnboardingStep();
   return step !== null && step < 4;
 }
@@ -5878,7 +5878,7 @@ async function handleEvent(e) {
         localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
         localStorage.removeItem(`onboarding_session6_done_${currentMemberId}`);
       }
-      localStorage.removeItem('onboarding_coordination_shown');
+      localStorage.removeItem(`onboarding_coordination_shown_${currentMemberId}`);
       navigateTo('home');
       break;
     }
@@ -5960,7 +5960,7 @@ async function handleEvent(e) {
       markTaskDone(plantId, taskId);
       if (_isOnboardingDone) {
         setOnboardingStep(4);
-        localStorage.setItem('onboarding_coordination_shown', '1');
+        localStorage.setItem(`onboarding_coordination_shown_${currentMemberId}`, '1');
         showOnboardingCompletionOverlay();
       } else {
         renderPlantDetail(state.plantId);
@@ -7371,16 +7371,14 @@ async function seedEmpty({ resetOnboarding = false } = {}) {
       .in('id', rows.map(r => r.id));
   }
   if (resetOnboarding) {
-    if (currentMemberId) {
-      localStorage.removeItem(`onboarding_step_${currentMemberId}`);
-      localStorage.removeItem(`onboarding_plant_id_${currentMemberId}`);
-      localStorage.removeItem(`onboarding_task_id_${currentMemberId}`);
-      localStorage.removeItem(`onboarding_show_coachmark_${currentMemberId}`);
-      localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
-      localStorage.removeItem(`onboarding_session6_done_${currentMemberId}`);
+    // Wipe onboarding + push-accepted state for ALL members on this browser, not
+    // just the current one — clears every key starting with these prefixes so a
+    // fresh Empty State produces a clean onboarding for whoever logs in next.
+    const resetPrefixes = ['onboarding_', 'push_accepted_'];
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && resetPrefixes.some(p => key.startsWith(p))) localStorage.removeItem(key);
     }
-    localStorage.removeItem('onboarding_coordination_shown');
-    if (activeUser) localStorage.removeItem(`push_accepted_${activeUser}`);
   }
 }
 

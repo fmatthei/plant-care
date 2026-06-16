@@ -6,7 +6,13 @@ const CORS_HEADERS = {
 };
 
 function todayStr(): string {
-  return new Date().toLocaleDateString('en-CA');
+  // Anchor to America/Santiago, NOT the runtime TZ. Supabase Edge runs with
+  // TZ=UTC, so a bare toLocaleDateString('en-CA') rolls the date at 00:00 UTC
+  // (= 20:00 Santiago, UTC−4) and drops the current local day's events ~4h
+  // early. The explicit timeZone makes the anchor independent of TZ=UTC. (The
+  // identical helper in src/app.js:600 is intentionally left bare — it runs in
+  // the device's local zone, which is already correct. Do not sync this back.)
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
 }
 
 function addDays(dateStr: string, n: number): string {
@@ -254,6 +260,11 @@ Deno.serve(async (req) => {
   interface DayTask { taskName: string; plantName: string; plantEmoji: string }
   const byDate = new Map<string, DayTask[]>();
   const windowEnd = addDays(today, 14);
+  // 2-day trailing past window: surface recently-missed interval + past-dated
+  // one-off occurrences. Derived from the same Santiago-anchored `today` (no new
+  // date minted). Weekday tasks seed forward-only and generate no past dates, so
+  // they are unaffected by construction (#309).
+  const windowStart = addDays(today, -2);
 
   for (const task of tasks ?? []) {
     // Done-today suppression: a task completed today whose next occurrence is
@@ -268,7 +279,7 @@ Deno.serve(async (req) => {
     };
 
     for (const dateStr of enumerateOccurrences(task, { until: windowEnd })) {
-      if (daysBetween(today, dateStr) < 0) continue;   // never before today
+      if (daysBetween(windowStart, dateStr) < 0) continue;   // never before the 2-day trailing window
       const bucket = byDate.get(dateStr);
       if (bucket) bucket.push(entry);
       else byDate.set(dateStr, [entry]);

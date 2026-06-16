@@ -69,7 +69,7 @@ function computeNextDue(task: any): string | null {
 // only mode implemented; `count` is reserved for later.
 function enumerateOccurrences(
   task: any,
-  opts: { until?: string; count?: number },
+  opts: { until?: string; from?: string; count?: number },
 ): string[] {
   const first = computeNextDue(task);
   if (first === null) return [];
@@ -94,6 +94,28 @@ function enumerateOccurrences(
     const days = task.recurrence?.days ?? [];
     if (days.length === 0) return [];
     const out: string[] = [];
+    // Backward pre-pass (#307): linger for the same 2-day trailing window the
+    // interval/one-off paths get. Walk back from `first` to `opts.from`
+    // (= windowStart), prepending past selected-weekday dates in ascending
+    // order. Skipped entirely when next_due_override is set — there `first` is
+    // the override-snapped start boundary, and emitting anything before it would
+    // surface the task ahead of its start. Floored at last_done (exclusive) so a
+    // weekday occurrence already completed inside the window is not resurfaced.
+    if (opts.from && !task.next_due_override) {
+      const back: string[] = [];
+      let cursor = addDays(first, -1);
+      while (cursor >= opts.from) {
+        if (
+          (!task.last_done || cursor > task.last_done) &&
+          days.includes(new Date(cursor + 'T12:00:00').getDay())
+        ) {
+          back.push(cursor);
+        }
+        cursor = addDays(cursor, -1);
+      }
+      back.reverse();          // collected newest-first; restore ascending order
+      out.push(...back);
+    }
     let cursor = first;
     while (cursor <= until) {
       if (days.includes(new Date(cursor + 'T12:00:00').getDay())) out.push(cursor);
@@ -278,7 +300,7 @@ Deno.serve(async (req) => {
       plantEmoji: plant?.emoji ?? '',
     };
 
-    for (const dateStr of enumerateOccurrences(task, { until: windowEnd })) {
+    for (const dateStr of enumerateOccurrences(task, { until: windowEnd, from: windowStart })) {
       if (daysBetween(windowStart, dateStr) < 0) continue;   // never before the 2-day trailing window
       const bucket = byDate.get(dateStr);
       if (bucket) bucket.push(entry);

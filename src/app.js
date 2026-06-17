@@ -263,6 +263,10 @@ function renderLoginScreen(errorMsg) {
 }
 
 async function handleLogin() {
+  // #326: dismiss the soft keyboard before the auth round-trip so its viewport
+  // reflow settles during the await — otherwise that late reflow lands after
+  // renderHome's window.scrollTo(0,0) (:2616) and leaves home scrolled down.
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
   const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
@@ -2068,7 +2072,7 @@ function renderOnboardingInlineTaskCard() {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
           <span style="font-size:20px;">💧</span>
           <div>
-            <div style="font-size:14px;font-weight:500;color:#1a1a1a;">First watering</div>
+            <div style="font-size:14px;font-weight:500;color:#1a1a1a;">Practice Task</div>
             <div style="font-size:12px;color:#888;">One-off · Due today</div>
           </div>
         </div>
@@ -2093,11 +2097,11 @@ function renderOnboardingBanner() {
 
   let instruction, ctaHtml;
   if (step === 1) {
-    instruction = 'Add your first plant to get started.';
+    instruction = 'Add a plant to get started.';
     ctaHtml = `<button style="${ctaStyle}" data-action="add-plant">+ Add Plant</button>`;
   } else if (step === 2) {
-    instruction = 'Create your first task.';
-    ctaHtml = `<button style="${ctaStyle}" data-action="onboarding-open-plant" data-plant="${onboardingPlantId ?? ''}">Create your first task →</button>`;
+    instruction = 'Create a task.';
+    ctaHtml = `<button style="${ctaStyle}" data-action="onboarding-open-plant" data-plant="${onboardingPlantId ?? ''}">Create a task →</button>`;
   } else {
     instruction = 'Tap ✓ Done below to complete your setup ↓';
     ctaHtml = '';
@@ -2350,47 +2354,11 @@ function renderCoachMark() {
     blockEl.remove();
   }
 
-  function showNotifStep() {
-    const tooltipEl = document.getElementById('coachmark-tooltip');
-    tooltipEl.innerHTML = `
-      <div style="position:absolute;top:-9px;left:18px;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:9px solid #fff;"></div>
-      <div style="font-size:10px;font-weight:500;color:#3a6b3a;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">One last thing</div>
-      <div style="font-size:12px;font-weight:500;color:#222;margin-bottom:6px;">Get notified when it happens</div>
-      <div style="font-size:11px;color:#555;line-height:1.5;margin-bottom:12px;">Enable notifications and you'll get a heads-up on your phone whenever someone in your household completes a care task.</div>
-      <div style="margin-bottom:12px;">
-        <div style="font-size:9px;color:#aaa;font-style:italic;text-align:center;margin-bottom:6px;">Here's what you'll see:</div>
-        <div style="background:#f0f0f0;border-radius:10px;padding:8px 10px;display:flex;align-items:center;gap:8px;">
-          <div style="width:32px;height:32px;border-radius:8px;overflow:hidden;flex-shrink:0;"><img src="/icons/plant-care-icon-192.png" style="width:100%;height:100%;object-fit:cover;display:block;"></div>
-          <div style="flex:1;min-width:0;">
-            <div style="display:flex;align-items:baseline;justify-content:space-between;">
-              <div style="font-size:11px;font-weight:600;color:#1a1a1a;">Plant Care</div>
-              <div style="font-size:10px;color:#aaa;">now</div>
-            </div>
-            <div style="font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">A household member watered ${escapeHtml(plantName)}</div>
-          </div>
-        </div>
-      </div>
-      <button id="coachmark-enable-notif" style="width:100%;padding:12px;background:#3a6b3a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:8px;">Enable notifications</button>
-      <button id="coachmark-no-thanks" style="width:100%;padding:6px;background:none;border:none;font-size:11px;color:#888;cursor:pointer;">No thanks</button>`;
-
-    document.getElementById('coachmark-enable-notif').addEventListener('click', async () => {
-      await subscribeToPush();
-      if (Notification.permission === 'granted') showToast('Notifications enabled');
-      if (currentMemberId) localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
-      dismissCoachMark();
-      showCaringTabCoachMark();
-    });
-
-    document.getElementById('coachmark-no-thanks').addEventListener('click', () => {
-      if (currentMemberId) localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
-      if (activeUser) localStorage.setItem(`push_accepted_${activeUser}`, '1');
-      dismissCoachMark();
-      showCaringTabCoachMark();
-    });
-  }
-
   document.getElementById('coachmark-got-it').addEventListener('click', () => {
-    showNotifStep();
+    // #330: notif coach-mark removed — go straight from the activity-feed
+    // coach-mark to the Caring-tab coach-mark. Dismiss this overlay first.
+    dismissCoachMark();
+    showCaringTabCoachMark();
   });
 }
 
@@ -3207,9 +3175,9 @@ function renderTasksTab(plant) {
   if (step === 2 && isOnboardingPlant) {
     return `<div class="onboarding-first-task-prompt">
   <div class="onboarding-first-task-emoji">💧</div>
-  <div class="onboarding-first-task-header">Your first care task</div>
+  <div class="onboarding-first-task-header">Your care task</div>
   <div class="onboarding-first-task-sub">We'll create a simple watering task to get you started.</div>
-  <button class="btn btn-primary onboarding-first-task-btn" data-action="onboarding-add-first-task" data-plant="${plant.id}">Add First Task (Example)</button>
+  <button class="btn btn-primary onboarding-first-task-btn" data-action="onboarding-add-first-task" data-plant="${plant.id}">Add a Task (Example)</button>
 </div>`;
   }
 
@@ -5749,7 +5717,7 @@ async function handleOnboardingFirstTask(plantId) {
     .from('tasks')
     .insert({
       plant_id:          plantId,
-      name:              'First watering',
+      name:              'Practice Task',
       icon:              '💧',
       type:              'water',
       recurrence:        { type: 'one-off' },
@@ -5771,7 +5739,7 @@ async function handleOnboardingFirstTask(plantId) {
 
   plant.tasks.push({
     id:              taskId,
-    name:            'First watering',
+    name:            'Practice Task',
     icon:            '💧',
     type:            'water',
     recurrenceType:  'one-off',
@@ -5804,25 +5772,6 @@ function renderApp() {
   else if (state.view === 'manage-households') renderManageHouseholds();
 }
 
-function showOnboardingCompletionOverlay() {
-  navigateTo('home');
-  const overlay = document.createElement('div');
-  overlay.className = 'onboarding-complete-overlay';
-  overlay.id = 'onboarding-complete-overlay';
-  overlay.innerHTML = `
-    <div class="onboarding-complete-card">
-      <div style="font-size:36px;line-height:1;margin-bottom:12px;">🌱</div>
-      <h2 class="onboarding-complete-heading">You're all set!</h2>
-      <p class="onboarding-complete-sub">Your first care action is logged. Your household is ready to go.</p>
-      <button class="onboarding-complete-btn" data-action="onboarding-complete-dismiss">Show me around →</button>
-    </div>`;
-  document.body.appendChild(overlay);
-  overlay.querySelector('[data-action="onboarding-complete-dismiss"]').addEventListener('click', () => {
-    overlay.remove();
-    if (currentMemberId) localStorage.setItem(`onboarding_show_coachmark_${currentMemberId}`, 'true');
-    navigateTo('home');
-  });
-}
 
 function navigateTo(view, plantId = null) {
   closeSheet();
@@ -6044,7 +5993,11 @@ async function handleEvent(e) {
       if (_isOnboardingDone) {
         setOnboardingStep(4);
         localStorage.setItem(`onboarding_coordination_shown_${currentMemberId}`, '1');
-        showOnboardingCompletionOverlay();
+        // #329: no celebration overlay — write the coach-mark trigger flag and
+        // render home directly. renderHome's existing read-and-delete trigger
+        // (:2291) picks it up and fires the activity-feed coach-mark.
+        localStorage.setItem(`onboarding_show_coachmark_${currentMemberId}`, 'true');
+        navigateTo('home');
       } else {
         renderPlantDetail(state.plantId);
         showDoneToast(plantId, taskId, _doneName);

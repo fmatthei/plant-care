@@ -137,6 +137,17 @@ let lastSyncedAt = null; // ms timestamp of the last completed loadFromSupabase(
 
 async function routeAfterAuth() {
   if (inRecovery) return;
+
+  // #319/#321: iOS browser-tab users must install to Home Screen before
+  // anything loads. Gated here — the single chokepoint every post-auth path
+  // funnels through (INITIAL_SESSION reload, fresh login, post-recovery login)
+  // — so the takeover fires before any data load, onboarding, or home render.
+  // Re-runs every load; once installed, isStandalone() is true and it never shows.
+  if (isIOS() && !isStandalone()) {
+    renderIOSInstallTakeover();
+    return;
+  }
+
   await loadFromSupabase();
 
   // routeAfterAuth: if loadFromSupabase already rendered an auth error, bail
@@ -159,6 +170,78 @@ function renderAuthErrorScreen(message) {
       <p style="color:var(--text-muted);font-size:14px;text-align:center;line-height:1.5;max-width:320px;margin:0 auto;">${escapeHtml(message)}</p>
       <div class="user-select-buttons" style="margin-top:20px;">
         <button class="btn btn-primary" data-action="menu-sign-out" style="width:100%;padding:14px;font-size:15px;">Sign out</button>
+      </div>
+    </div>`;
+}
+
+// ============================================================
+// iOS PWA INSTALL TAKEOVER (#319)
+// ============================================================
+// Gated in onAuthStateChange immediately before routeAfterAuth(): on iOS in a
+// browser tab (not the installed PWA) the user must Add to Home Screen before
+// any data loads, onboarding fires, or the home renders. The gate re-runs on
+// every load; once installed, isStandalone() returns true and it never shows.
+// Uses the .user-select-screen full-screen pattern (replaces #app innerHTML) —
+// no overlay, no dismiss control.
+
+function isIOS() {
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/.test(ua)) return true;
+  // iPadOS 13+ reports a desktop (Macintosh) UA; disambiguate via touch points.
+  return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+}
+
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches
+    || navigator.standalone === true;
+}
+
+function isIOSSafari() {
+  // Chrome (CriOS), Firefox (FxiOS), Edge (EdgiOS), Opera (OPiOS) on iOS are
+  // not Safari and cannot install to the Home Screen.
+  return !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(navigator.userAgent || '');
+}
+
+const IOS_SHARE_ICON = `<svg class="ios-step-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg>`;
+
+function renderIOSInstallTakeover() {
+  document.getElementById('app').innerHTML = isIOSSafari()
+    ? renderInstallStepsHTML()
+    : renderOpenInSafariHTML();
+}
+
+function renderInstallStepsHTML() {
+  return `
+    <div class="user-select-screen ios-install">
+      <div class="ios-install-card">
+        <div class="ios-install-emoji">🌱</div>
+        <h2>Install Plant Care</h2>
+        <p class="ios-install-lead">Add Plant Care to your Home Screen to start using it.</p>
+        <ol class="ios-install-steps">
+          <li><span class="ios-step-num">1</span><span class="ios-step-text">Tap <span class="ios-step-pill">•••</span> in the toolbar</span></li>
+          <li><span class="ios-step-num">2</span><span class="ios-step-text">Tap <span class="ios-step-pill">${IOS_SHARE_ICON} Share</span></span></li>
+          <li><span class="ios-step-num">3</span><span class="ios-step-text">Tap <span class="ios-step-pill">View More</span></span></li>
+          <li><span class="ios-step-num">4</span><span class="ios-step-text">Scroll to <span class="ios-step-pill">Add to Home Screen ➕</span></span></li>
+          <li><span class="ios-step-num">5</span><span class="ios-step-text">Tap <span class="ios-step-pill">Add</span></span></li>
+        </ol>
+        <p class="ios-install-footer">This screen stays until the app is installed.</p>
+      </div>
+    </div>`;
+}
+
+function renderOpenInSafariHTML() {
+  return `
+    <div class="user-select-screen ios-install">
+      <div class="ios-install-card">
+        <div class="ios-install-emoji">🧭</div>
+        <h2>Open in Safari</h2>
+        <p class="ios-install-lead">Plant Care can only be installed from Safari. To continue:</p>
+        <ol class="ios-install-steps">
+          <li><span class="ios-step-num">1</span><span class="ios-step-text">Copy this link:<br><span class="ios-step-link">${escapeHtml(window.location.href)}</span></span></li>
+          <li><span class="ios-step-num">2</span><span class="ios-step-text">Open the <span class="ios-step-pill">Safari</span> app</span></li>
+          <li><span class="ios-step-num">3</span><span class="ios-step-text">Paste the link, then follow the install steps</span></li>
+        </ol>
+        <p class="ios-install-footer">This screen stays until the app is installed.</p>
       </div>
     </div>`;
 }
@@ -7865,6 +7948,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
+    // The iOS install gate lives in routeAfterAuth() (#321) — the single
+    // chokepoint all post-auth paths funnel through.
     await routeAfterAuth();
   });
 });

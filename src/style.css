@@ -2107,6 +2107,113 @@ body {
   max-width: 280px;
 }
 
+/* #319 — iOS PWA install takeover */
+.ios-install {
+  gap: 0;
+}
+
+.ios-install-card {
+  width: 100%;
+  max-width: 340px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 28px 22px;
+  text-align: center;
+}
+
+.ios-install-emoji {
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+
+.ios-install-card h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--primary-dark);
+  margin: 0 0 8px;
+}
+
+.ios-install-lead {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 0 0 20px;
+}
+
+.ios-install-steps {
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ios-install-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ios-step-num {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ios-step-text {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  padding-top: 1px;
+}
+
+.ios-step-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  font-weight: 600;
+  border-radius: var(--radius-xs);
+  padding: 1px 7px;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+.ios-step-svg {
+  vertical-align: -2px;
+}
+
+.ios-step-link {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  word-break: break-all;
+}
+
+.ios-install-footer {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
 .user-select-btn {
   width: 100%;
   padding: 18px;

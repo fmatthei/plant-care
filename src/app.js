@@ -444,8 +444,9 @@ async function loadFromSupabase() {
       .is('deleted_at', null),
     supabaseClient
       .from('household_members')
-      .select('id, display_name, color, user_id, calendar_time, calendar_weekend_time')
-      .eq('household_id', householdId),
+      .select('id, display_name, color, user_id, calendar_time, calendar_weekend_time, notifications_enabled')
+      .eq('household_id', householdId)
+      .is('deleted_at', null),
     supabaseClient
       .from('households')
       .select('name')
@@ -4331,12 +4332,12 @@ function renderMenuPanel() {
       <div class="menu-section-title">Profile</div>
       <div class="menu-user-name">&#128100; ${escapeHtml(activeUser)}</div>
       <button class="menu-item" data-action="change-password">Change Password</button>
-      ${localStorage.getItem(`push_accepted_${activeUser}`)
-        ? `<button class="menu-item" style="color:#3a6b3a;opacity:0.7;" disabled>🔔 Notifications &middot; On</button>`
-        : `<button class="menu-item" data-action="menu-notifications">🔔 Notifications &middot; <span style="color:#aaa;">Off</span></button>`}
     </div>
     <div class="menu-section">
-      <div class="menu-section-title">Calendar</div>
+      <div class="menu-section-title">Reminders & Notifications</div>
+      ${membersCache.find(m => m.id === currentMemberId)?.notifications_enabled
+        ? `<button class="menu-item" style="color:#3a6b3a;opacity:0.7;" disabled>🔔 Notifications &middot; On</button>`
+        : `<button class="menu-item" data-action="menu-notifications">🔔 Notifications &middot; <span style="color:#aaa;">Off</span></button>`}
       <button class="menu-item" data-action="open-calendar-sync">📅 Sync to Calendar</button>
     </div>
     <div class="menu-section">
@@ -5892,7 +5893,9 @@ async function handleEvent(e) {
 
     case 'sheet-enable-notifications':
       await subscribeToPush();
+      await setNotificationsEnabled(true);
       closeSheet();
+      renderMenuPanel(); // re-render so the row shows "On" without reopening the menu
       showToast('🔔 Notifications enabled!');
       break;
 
@@ -5980,6 +5983,7 @@ async function handleEvent(e) {
     case 'enable-notifications': {
       console.log('enable-notifications handler reached');
       await subscribeToPush();
+      await setNotificationsEnabled(true);
       if (Notification.permission === 'granted') showToast('Notifications enabled');
       renderHome();
       break;
@@ -6989,14 +6993,24 @@ async function subscribeToPush() {
         { household_member_id: member.id, subscription: subscription.toJSON() },
         { onConflict: 'household_member_id' }
       );
-    if (error) {
-      console.error('[Push] upsert error:', error);
-    } else {
-      localStorage.setItem(`push_accepted_${activeUser}`, '1');
-    }
+    if (error) console.error('[Push] upsert error:', error);
   } catch (err) {
     console.error('[Push] subscription failed:', err);
   }
+}
+
+// #332: persist the notification preference on the current member's
+// household_members row and mirror it into the cache so the menu label
+// (driven by notifications_enabled) reflects it immediately.
+async function setNotificationsEnabled(enabled) {
+  if (!currentMemberId) return;
+  const m = membersCache.find(mm => mm.id === currentMemberId);
+  if (m) m.notifications_enabled = enabled;
+  const { error } = await supabaseClient
+    .from('household_members')
+    .update({ notifications_enabled: enabled })
+    .eq('id', currentMemberId);
+  if (error) console.error('notifications_enabled save failed:', error);
 }
 
 // ============================================================

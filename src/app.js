@@ -432,8 +432,9 @@ async function loadFromSupabase() {
   }));
 
   const validIds = userHouseholds.map(h => h.id);
+  const stored = localStorage.getItem('active_household_id');
   if (!householdId || !validIds.includes(householdId)) {
-    householdId = userHouseholds[0].id;
+    householdId = (stored && validIds.includes(stored)) ? stored : userHouseholds[0].id;
   }
 
   // 3. Fetch all non-deleted plants, household_members, and household name in parallel
@@ -2068,14 +2069,20 @@ function renderOnboardingInlineTaskCard() {
   const onboardingTaskId  = getOnboardingTaskId();
   if (!onboardingPlantId || !onboardingTaskId) return '';
 
+  // #351: derive copy from the real onboarding task (created via the Add Task
+  // sheet in #349). Fall back gracefully if it can't be resolved.
+  const onboardingTask = getTask(onboardingPlantId, onboardingTaskId);
+  const cardName  = onboardingTask?.name ?? 'Your first task';
+  const cardSub   = onboardingTask ? recurrenceLabel(onboardingTask) : '';
+
   return `
     <div style="padding:0 16px;margin-top:12px;">
       <div style="background:#f4faf4;border:1.5px solid #3a6b3a;border-radius:12px;padding:12px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
           <span style="font-size:20px;">💧</span>
           <div>
-            <div style="font-size:14px;font-weight:500;color:#1a1a1a;">Practice Task</div>
-            <div style="font-size:12px;color:#888;">One-off · Due today</div>
+            <div style="font-size:14px;font-weight:500;color:#1a1a1a;">${escapeHtml(cardName)}</div>
+            <div style="font-size:12px;color:#888;">${escapeHtml(cardSub)}</div>
           </div>
         </div>
         <button class="btn btn-primary" style="width:100%;" data-action="mark-done" data-plant="${onboardingPlantId}" data-task="${onboardingTaskId}">&#10003; Done</button>
@@ -2149,8 +2156,254 @@ function renderRemindersCard() {
     </div>`;
 }
 
-// #339: stub — the reminders setup dialog is implemented in #340.
-function openRemindersDialog() {}
+// #340: Reminders setup dialog — a modal parallel surface to the menu's
+// Notifications + Sync to Calendar items. Renders over a full-screen backdrop
+// that blocks the app beneath. Two sections (push, calendar), each collapsing
+// to a green done-row once enabled. On close, writes the same
+// reminders_card_dismissed_<memberId> flag #339 uses — but only if at least one
+// action was completed during this dialog session.
+function openRemindersDialog() {
+  if (!currentMemberId || !householdId) {
+    showToast('Loading household data… please try again in a moment.');
+    return;
+  }
+
+  const AMBER = '#f59e0b', AMBER_BG = '#fdf6ec', AMBER_BORDER = '#f0d090';
+  const BLUE  = '#3b82f6', BLUE_BG  = '#eef4fb', BLUE_BORDER  = '#b5d4f4';
+  const GREEN = '#3a6b3a', GREEN_BG = '#eef7f1';
+
+  const base     = import.meta.env.VITE_SUPABASE_URL;
+  const baseHost = base.replace('https://', '');
+  const meWebcal = `webcal://${baseHost}/functions/v1/get-calendar-feed?member_id=${currentMemberId}`;
+  const hhWebcal = `webcal://${baseHost}/functions/v1/get-calendar-feed?household_id=${householdId}`;
+
+  const mySubKey  = `calendar_subscribed_my_tasks_${householdId}`;
+  const allSubKey = `calendar_subscribed_all_tasks_${householdId}`;
+
+  // Postgres `time` ("20:00:00") → "HH:MM"; mirrors the calendar sheet's local helper.
+  const toHHMM = (v) => (v ? String(v).slice(0, 5) : null);
+  const to12h  = (hhmm) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    const period = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+  };
+
+  const member = membersCache.find(m => m.id === currentMemberId);
+
+  // ── Session state ───────────────────────────────────────────────────────
+  let pushDone = !!member?.notifications_enabled;        // green done-state on open
+  const myActive  = localStorage.getItem(mySubKey)  === 'true';
+  const allActive = localStorage.getItem(allSubKey) === 'true';
+  let calDone  = myActive || allActive;
+  let calScope = (allActive && !myActive) ? 'all' : 'my';  // 'my' | 'all'
+  let calTime  = toHHMM(member?.calendar_time) || '20:00';
+  // #343: unsubscribe-instructions disclosure in the calendar done-state.
+  // UI-only — toggling writes no flags and touches no DB/localStorage.
+  let unsubOpen = false;
+  // Only an action taken WITHIN this dialog flips the dismiss flag on close —
+  // an already-done state present on open does not.
+  let anyCompleted = false;
+
+  const el = document.createElement('div');
+  el.id = 'reminders-dialog';
+  el.style.cssText =
+    'position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.5);display:flex;' +
+    'align-items:center;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto;';
+  document.body.appendChild(el);
+
+  function closeDialog() {
+    if (anyCompleted && currentMemberId) {
+      localStorage.setItem(`reminders_card_dismissed_${currentMemberId}`, 'true');
+    }
+    el.remove();
+    renderHome();
+  }
+
+  const tile = (bg, content) =>
+    `<div style="width:38px;height:38px;border-radius:9px;background:${bg};display:flex;` +
+    `align-items:center;justify-content:center;font-size:19px;flex-shrink:0;">${content}</div>`;
+
+  const doneRow = (title, value) => `
+    <div style="display:flex;align-items:center;gap:12px;background:${GREEN_BG};border-radius:12px;padding:14px;">
+      <div style="width:38px;height:38px;border-radius:9px;background:${GREEN};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <span style="color:#fff;font-size:20px;line-height:1;">&#10003;</span>
+      </div>
+      <div style="min-width:0;">
+        <div style="font-size:15px;font-weight:600;color:${GREEN};">${escapeHtml(title)}</div>
+        <div style="font-size:13px;color:${GREEN};opacity:0.85;">${escapeHtml(value)}</div>
+      </div>
+    </div>`;
+
+  function pushSection() {
+    if (pushDone) return doneRow('Push notifications', 'On');
+    return `
+      <div style="background:${AMBER_BG};border:0.5px solid ${AMBER_BORDER};border-radius:12px;padding:14px;">
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;">
+          ${tile(AMBER, '🔔')}
+          <div style="min-width:0;">
+            <div style="font-size:15px;font-weight:600;color:#1a1a1a;">Push notifications</div>
+            <div style="font-size:13px;color:#555;line-height:1.4;">A heads-up when someone cares for a plant.</div>
+          </div>
+        </div>
+        <button type="button" id="rd-push-btn" style="width:100%;padding:12px;background:${AMBER};color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Enable notifications</button>
+      </div>`;
+  }
+
+  // Unified segmented track — each option is an inset segment; the selected one
+  // sits on a white pill. (Track wrapper supplies the shared #e8f0fa background.)
+  function scopeBtn(scope, main, sub) {
+    const active = calScope === scope;
+    return `<button type="button" data-scope="${scope}" style="flex:1;padding:8px;border:none;border-radius:7px;cursor:pointer;font-family:inherit;background:${active ? '#fff' : 'transparent'};${active ? 'box-shadow:0 1px 2px rgba(0,0,0,0.08);' : ''}">
+      <div style="font-size:13px;font-weight:600;color:${active ? '#1d4ed8' : '#444'};">${main}</div>
+      ${sub ? `<div style="font-size:11px;color:${active ? '#3b6fd4' : '#999'};margin-top:2px;">${sub}</div>` : ''}
+    </button>`;
+  }
+
+  // #343: calendar done-state — honest "we've handed off to your Calendar app"
+  // messaging plus a tap-to-reveal iOS unsubscribe guide. The done-row reuses the
+  // same green treatment as the notifications row.
+  function calDoneState() {
+    const label   = calScope === 'my' ? 'My tasks' : 'All tasks';
+    const chevron = unsubOpen ? '&#9652;' : '&#9662;'; // ▴ / ▾
+    const instructions = unsubOpen
+      ? `<div style="margin-top:10px;background:#f4faf4;border:1px solid #d6e6d6;border-radius:8px;padding:12px;font-size:12px;color:#3a5a3a;line-height:1.5;">
+           To remove: go to <strong>Settings &rarr; Calendar &rarr; Accounts</strong>, find the Plant Care feed, and tap <strong>Delete Account</strong>.
+         </div>`
+      : '';
+    return `
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${doneRow('Calendar sync', `${label} · ${to12h(calTime)}`)}
+        <div style="background:#e8f3ea;border-radius:10px;padding:12px;font-size:12px;color:#2f5d2f;line-height:1.5;">
+          We've sent it to your Calendar app &mdash; tap to confirm the subscription if prompted.
+        </div>
+        <div>
+          <button type="button" id="rd-unsub-toggle" style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;background:none;border:none;padding:4px 2px;cursor:pointer;font-family:inherit;">
+            <span style="font-size:13px;font-weight:500;color:#3a6b3a;">Remove subscription</span>
+            <span style="font-size:11px;color:#3a6b3a;">${chevron}</span>
+          </button>
+          ${instructions}
+        </div>
+      </div>`;
+  }
+
+  function calSection() {
+    if (calDone) return calDoneState();
+    // 30-minute slots 06:00–23:30; value 24h, label 12h.
+    const slots = [];
+    for (let h = 6; h <= 23; h++) {
+      for (const mm of ['00', '30']) slots.push(`${String(h).padStart(2, '0')}:${mm}`);
+    }
+    const opts = (slots.includes(calTime) ? slots : [calTime, ...slots])
+      .map(t => `<option value="${t}"${t === calTime ? ' selected' : ''}>${to12h(t)}</option>`)
+      .join('');
+    return `
+      <div style="background:${BLUE_BG};border:0.5px solid ${BLUE_BORDER};border-radius:12px;padding:14px;">
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;">
+          ${tile(BLUE, '📅')}
+          <div style="min-width:0;">
+            <div style="font-size:15px;font-weight:600;color:#1a1a1a;">Calendar sync</div>
+            <div style="font-size:13px;color:#555;line-height:1.4;">Your tasks appear in your phone's calendar.</div>
+          </div>
+        </div>
+        <div style="display:flex;background:#e8f0fa;border-radius:9px;padding:2px;margin-bottom:14px;">
+          ${scopeBtn('my', 'My tasks only', 'Recommended')}
+          ${scopeBtn('all', 'All household tasks', '')}
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;">
+          <span style="font-size:14px;font-weight:500;color:#1a2e1a;">Remind me at</span>
+          <div style="position:relative;display:inline-block;">
+            <select id="rd-cal-time" style="appearance:none;-webkit-appearance:none;border:1.5px solid #b5d4f4;border-radius:8px;padding:8px 32px 8px 12px;font-size:14px;min-width:104px;font-family:inherit;color:#1a1a1a;background:#fff;">${opts}</select>
+            <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:11px;color:#555;">&#9662;</span>
+          </div>
+        </div>
+        <button type="button" id="rd-cal-btn" style="width:100%;padding:12px;background:${BLUE};color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Subscribe</button>
+      </div>`;
+  }
+
+  function render() {
+    // Preserve an unsaved time selection across re-renders.
+    const existingSel = el.querySelector('#rd-cal-time');
+    if (existingSel) calTime = existingSel.value;
+
+    const subtitle = (pushDone && calDone)
+      ? "You're all set. Close when you're ready."
+      : 'Turn these on now, or anytime from your profile.';
+
+    el.innerHTML = `
+      <div style="background:#fff;border-radius:18px;padding:22px;width:100%;max-width:380px;box-sizing:border-box;position:relative;box-shadow:0 12px 40px rgba(0,0,0,0.25);">
+        <button type="button" id="rd-close" aria-label="Close" style="position:absolute;top:14px;right:14px;background:none;border:none;font-size:20px;color:#999;cursor:pointer;line-height:1;padding:4px;">&#10005;</button>
+        <div style="font-size:20px;font-weight:700;color:#1a1a1a;margin-bottom:4px;">Set up reminders</div>
+        <div style="font-size:13px;color:#666;line-height:1.45;margin-bottom:20px;padding-right:24px;">${subtitle}</div>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          ${pushSection()}
+          ${calSection()}
+        </div>
+      </div>`;
+    wire();
+  }
+
+  function wire() {
+    document.getElementById('rd-close')?.addEventListener('click', closeDialog);
+
+    const pushBtn = document.getElementById('rd-push-btn');
+    pushBtn?.addEventListener('click', async () => {
+      pushBtn.disabled = true;
+      pushBtn.textContent = 'Enabling…';
+      const ok = await subscribeToPush();
+      if (ok) {
+        await setNotificationsEnabled(true);
+        pushDone = true;
+        anyCompleted = true;
+        render();
+      } else {
+        // No error styling — return to the action state.
+        pushBtn.disabled = false;
+        pushBtn.textContent = 'Enable notifications';
+      }
+    });
+
+    el.querySelectorAll('[data-scope]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sel = document.getElementById('rd-cal-time');
+        if (sel) calTime = sel.value;
+        calScope = btn.dataset.scope;
+        render();
+      });
+    });
+
+    // #343: UI-only disclosure — flips the chevron + instructions, no persistence.
+    document.getElementById('rd-unsub-toggle')?.addEventListener('click', () => {
+      unsubOpen = !unsubOpen;
+      render();
+    });
+
+    document.getElementById('rd-cal-btn')?.addEventListener('click', () => {
+      const sel = document.getElementById('rd-cal-time');
+      if (sel) calTime = sel.value;
+
+      // Persist calendar_time for this member (mirror cache + write through).
+      const m = membersCache.find(mm => mm.id === currentMemberId);
+      if (m) m.calendar_time = calTime;
+      supabaseClient
+        .from('household_members')
+        .update({ calendar_time: calTime })
+        .eq('id', currentMemberId)
+        .then(({ error }) => { if (error) console.error('calendar time save failed:', error); });
+
+      const url    = calScope === 'my' ? meWebcal : hhWebcal;
+      const subKey = calScope === 'my' ? mySubKey : allSubKey;
+      if (url) window.open(url);
+      localStorage.setItem(subKey, 'true');
+
+      calDone = true;
+      anyCompleted = true;
+      render();
+    });
+  }
+
+  render();
+}
 
 function renderHome() {
   if (document.querySelector('.onboarding-complete-overlay')) return;
@@ -2202,7 +2455,7 @@ function renderHome() {
     <div class="plants-empty-state">
       <span class="empty-emoji">🌱</span>
       <h2>Your plants live here</h2>
-      <p>Add your first plant to start tracking its care.</p>
+      <p>Add a plant to start tracking its care.</p>
     </div>`;
     }
 
@@ -3207,15 +3460,6 @@ function renderSummaryTab(plant) {
 function renderTasksTab(plant) {
   const step = getOnboardingStep();
   const isOnboardingPlant = plant.id === getOnboardingPlantId();
-
-  if (step === 2 && isOnboardingPlant) {
-    return `<div class="onboarding-first-task-prompt">
-  <div class="onboarding-first-task-emoji">💧</div>
-  <div class="onboarding-first-task-header">Your care task</div>
-  <div class="onboarding-first-task-sub">We'll create a simple watering task to get you started.</div>
-  <button class="btn btn-primary onboarding-first-task-btn" data-action="onboarding-add-first-task" data-plant="${plant.id}">Add a Task (Example)</button>
-</div>`;
-  }
 
   if (step === 3 && isOnboardingPlant) {
     const onboardingTask = plant.tasks.find(t => t.id === getOnboardingTaskId());
@@ -4603,10 +4847,16 @@ function renderAddTaskStep1(plantId) {
   `);
 }
 
-function renderAddTaskStep2(plantId, typeKey) {
+function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
   const isCustom = typeKey === 'custom';
   const cfg = isCustom ? null : TASK_CONFIG[typeKey];
-  const defaultOwner = activeUser ?? Object.keys(USERS)[0];
+  // #349: onboarding opens this sheet pre-filled (repeating interval, 3 days,
+  // owner = current member). Defaults below preserve the normal behavior.
+  const isOnboarding = !!prefill.onboarding;
+  const repeating    = prefill.repeating ?? false;
+  const recType      = prefill.recType  ?? 'interval';
+  const freqValue    = prefill.frequency ?? 7;
+  const defaultOwner = prefill.owner ?? activeUser ?? Object.keys(USERS)[0];
 
   state.sheetMode = 'add-task-step2';
   state.sheetData = { plantId, typeKey };
@@ -4638,6 +4888,14 @@ function renderAddTaskStep2(plantId, typeKey) {
   const rowLabelStyle = 'display:block;font-size:11px;color:#8a8d86;margin:0 0 4px;text-transform:none;font-weight:500;letter-spacing:normal;';
 
   openSheet(`
+    ${isOnboarding ? `
+    <div style="background:#eef7f1;padding:12px 16px;border-bottom:0.5px solid #d6e6d6;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:13px;font-weight:600;color:#3a6b3a;">Your first task</span>
+        <span style="font-size:11px;font-weight:500;color:#3a6b3a;">Step 2 of 3</span>
+      </div>
+      <div style="font-size:12px;color:#3a6b3a;line-height:1.4;">Here's a sample watering task, set to repeat.</div>
+    </div>` : ''}
     <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:0.5px solid #e8ece6;">
       ${isCustom
         ? `<button type="button" class="edit-task-icon-tile" data-action="edit-task-toggle-icon-picker" data-emoji="${escapeHtml(headerIcon)}" style="width:36px;height:36px;background:#eef3eb;border-radius:8px;border:1.5px dashed #a0c0a0;display:flex;align-items:center;justify-content:center;font-size:20px;padding:0;cursor:pointer;flex-shrink:0;">${headerIcon}</button>`
@@ -4662,23 +4920,23 @@ function renderAddTaskStep2(plantId, typeKey) {
       ${renderDateSelectHtml('task-due-oneoff', todayVal, curYear, curYear + 2)}
     </div>
 
-    <div class="task-toggle-row" id="repeating-toggle-row" data-action="toggle-repeating-task" style="padding:10px 16px;">
+    <div class="task-toggle-row${repeating ? ' task-toggle-row--expanded' : ''}" id="repeating-toggle-row" data-action="toggle-repeating-task" style="padding:10px 16px;">
       <span class="task-toggle-label">Repeating task</span>
-      <button class="task-toggle-btn" id="repeating-toggle" role="switch" aria-checked="false" type="button">
+      <button class="task-toggle-btn${repeating ? ' on' : ''}" id="repeating-toggle" role="switch" aria-checked="${repeating}" type="button">
         <span class="task-toggle-knob"></span>
       </button>
     </div>
 
-    <div id="task-recurrence-block" style="display:none;padding:0 16px 10px;">
+    <div id="task-recurrence-block" style="${repeating ? '' : 'display:none;'}padding:0 16px 10px;">
       <div style="background:#f4f6f2;border-radius:10px;padding:8px 10px;">
         <div class="recurrence-type-toggle" style="margin-bottom:8px;">
-          <div class="recurrence-option selected" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">Every X days</div>
-          <div class="recurrence-option" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">Days of week</div>
+          <div class="recurrence-option${recType === 'interval' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">Every X days</div>
+          <div class="recurrence-option${recType === 'weekdays' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">Days of week</div>
         </div>
-        <div id="recurrence-container" class="recurrence-one-off">
+        <div id="recurrence-container" class="recurrence-${repeating ? recType : 'one-off'}">
           <div class="recurrence-interval-section form-group" style="margin:0;">
             <div class="freq-row">
-              <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="7" style="width:auto;min-width:52px;font-size:13px;padding:5px 8px;overflow:visible;text-overflow:unset;">
+              <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="${freqValue}" style="width:auto;min-width:52px;font-size:13px;padding:5px 8px;overflow:visible;text-overflow:unset;">
               <span style="font-size:13px;">days between tasks</span>
             </div>
           </div>
@@ -4692,7 +4950,9 @@ function renderAddTaskStep2(plantId, typeKey) {
 
     <div class="sheet-footer-sticky">
       <div class="sheet-actions" style="padding:8px 16px 14px;">
-        <button class="btn btn-ghost" data-action="add-task-back" data-plant="${plantId}">&#8592; Back</button>
+        ${isOnboarding
+          ? `<button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>`
+          : `<button class="btn btn-ghost" data-action="add-task-back" data-plant="${plantId}">&#8592; Back</button>`}
         <button class="btn btn-primary" data-action="sheet-save-new-task">Add Task</button>
       </div>
     </div>
@@ -4701,7 +4961,7 @@ function renderAddTaskStep2(plantId, typeKey) {
   attachFutureDateSelectListeners('task-due-oneoff');
   attachRecurrenceSummaryListeners('task-due-oneoff');
   applyCompactDateSelectStyles('task-due-oneoff');
-  relocateTaskDueField(false);
+  relocateTaskDueField(repeating);
 }
 
 function renderPostTaskNoteSheet(plantId, taskId) {
@@ -5636,6 +5896,10 @@ async function handleSaveNewTask() {
   const { plantId: pid, typeKey } = state.sheetData;
   const isCustom = typeKey === 'custom';
 
+  // #349: this save is the onboarding Step-2 task ONLY when onboarding is at
+  // Step 2 on the onboarding plant. A normal task creation never matches.
+  const isOnboardingTaskSave = getOnboardingStep() === 2 && pid === getOnboardingPlantId();
+
   // Resolve name, icon, type
   let name, icon, type, customName, customIcon;
   if (isCustom) {
@@ -5651,6 +5915,8 @@ async function handleSaveNewTask() {
     icon = cfg.icon;
     type = cfg.type;
   }
+  // The onboarding sample task is a real, persistent water task with a fixed name.
+  if (isOnboardingTaskSave) name = 'Watering (Example)';
 
   const container = document.getElementById('recurrence-container');
   const recType = container?.classList.contains('recurrence-weekdays') ? 'weekdays'
@@ -5726,73 +5992,27 @@ async function handleSaveNewTask() {
   };
 
   plant.tasks.push(newTask);
+
+  // #349: advance onboarding Step 2 → 3 only for the guided onboarding save.
+  if (isOnboardingTaskSave) {
+    setOnboardingTaskId(taskId);
+    setOnboardingStep(3);
+  }
+
   closeSheet();
   const _appEl = document.getElementById('app');
   _appEl.style.pointerEvents = 'none';
-  if (sheetEntryTab) plantDetailTab = sheetEntryTab;
-  sheetEntryTab = null;
-  renderPlantDetail(pid);
+  if (isOnboardingTaskSave) {
+    // #351: land on home so the polished Step 3 card renders (renderHome :2442).
+    sheetEntryTab = null;
+    navigateTo('home');
+  } else {
+    if (sheetEntryTab) plantDetailTab = sheetEntryTab;
+    sheetEntryTab = null;
+    renderPlantDetail(pid);
+  }
   setTimeout(() => { _appEl.style.pointerEvents = ''; }, 350);
   showToast('✅ Task added!');
-  } finally {
-    isSaving = false;
-  }
-}
-
-async function handleOnboardingFirstTask(plantId) {
-  if (isSaving) return;
-  isSaving = true;
-  try {
-  const plant = getPlant(plantId);
-  if (!plant) return;
-
-  const sortOrder = plant.tasks.length + 1;
-  const ownerMember = membersCache.find(m => m.id === currentMemberId);
-
-  const { data: inserted, error } = await supabaseClient
-    .from('tasks')
-    .insert({
-      plant_id:          plantId,
-      name:              'Practice Task',
-      icon:              '💧',
-      type:              'water',
-      recurrence:        { type: 'one-off' },
-      owner_id:          currentMemberId,
-      paused:            false,
-      note:              '',
-      sort_order:        sortOrder,
-      next_due_override: todayStr(),
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error('handleOnboardingFirstTask: insert error:', error);
-    return;
-  }
-
-  const taskId = inserted?.id ?? uid();
-
-  plant.tasks.push({
-    id:              taskId,
-    name:            'Practice Task',
-    icon:            '💧',
-    type:            'water',
-    recurrenceType:  'one-off',
-    frequencyDays:   7,
-    recurrenceUnit:  'days',
-    weekdays:        [],
-    lastDone:        null,
-    nextDueOverride: todayStr(),
-    paused:          false,
-    owner:           ownerMember?.display_name ?? activeUser,
-    note:            '',
-  });
-
-  setOnboardingTaskId(taskId);
-  setOnboardingStep(3);
-  navigateTo('home');
-  showToast('💧 Task added!', { duration: 4000 });
   } finally {
     isSaving = false;
   }
@@ -5884,6 +6104,7 @@ async function handleEvent(e) {
       pill?.classList.remove('open');
       pill?.setAttribute('aria-expanded', 'false');
       householdId = newId;
+      localStorage.setItem('active_household_id', newId);
       activeTab = 'plants';
       await loadFromSupabase();
       navigateTo('home');
@@ -5973,6 +6194,7 @@ async function handleEvent(e) {
 
     case 'menu-sign-out':
       closeMenu();
+      localStorage.removeItem('active_household_id');
       supabaseClient.auth.signOut().then(() => renderLoginScreen());
       break;
 
@@ -5995,17 +6217,23 @@ async function handleEvent(e) {
       navigateTo('plant', plantId);
       break;
 
-    case 'onboarding-open-plant':
-      closeSheet();
-      state.view = 'plant';
+    case 'onboarding-open-plant': {
+      // #349: open the real Add Task sheet pre-filled (skipping the type picker)
+      // instead of navigating to the scripted Example card. state.view stays as-is
+      // so Cancel returns to wherever the banner was tapped (home); a successful
+      // save routes to the plant's Tasks tab via handleSaveNewTask.
+      const _obMember = membersCache.find(m => m.id === currentMemberId);
       state.plantId = plantId;
       plantDetailTab = 'tasks';
-      renderPlantDetail(plantId);
+      renderAddTaskStep2(plantId, 'normal-water', {
+        onboarding: true,
+        repeating:  true,
+        recType:    'interval',
+        frequency:  3,
+        owner:      _obMember?.display_name,
+      });
       break;
-
-    case 'onboarding-add-first-task':
-      handleOnboardingFirstTask(plantId);
-      break;
+    }
 
     case 'go-home':
       navigateTo('home');
@@ -6983,9 +7211,11 @@ async function handleEvent(e) {
     // DEV TOOLS — remove before public launch
     case 'dev-seed-empty':     showDevToolsConfirm('empty',     'Empty state');  break;
     case 'dev-seed-heavy-v4':  showDevToolsConfirm('heavy-v4',  'Heavy v4');     break;
+    case 'dev-seed-reminders-test': showDevToolsConfirm('reminders-test', 'Reminders Test'); break;
     case 'dev-tools-cancel': document.getElementById('dev-tools-body').innerHTML = `
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
-      <button class="dev-tools-btn" data-action="dev-seed-heavy-v4">🌲 Heavy v4</button>`; break;
+      <button class="dev-tools-btn" data-action="dev-seed-heavy-v4">🌲 Heavy v4</button>
+      <button class="dev-tools-btn" data-action="dev-seed-reminders-test">🔔 Reminders Test</button>`; break;
     case 'dev-tools-confirm': {
       if (target.disabled) break;
       target.disabled = true;
@@ -7424,6 +7654,7 @@ function openDevToolsPanel() {
     <div id="dev-tools-body">
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy-v4">🌲 Heavy v4</button>
+      <button class="dev-tools-btn" data-action="dev-seed-reminders-test">🔔 Reminders Test</button>
     </div>
     <button class="add-plant-back-link" data-action="close-sheet" style="margin-top:12px;">Cancel</button>
   `);
@@ -7454,10 +7685,12 @@ async function runDevSeed(scenario) {
   const labels = {
     empty:      'Empty state',
     'heavy-v4': 'Heavy v4',
+    'reminders-test': 'Reminders Test',
   };
   try {
     if (scenario === 'empty')    await seedEmpty({ resetOnboarding: true });
     if (scenario === 'heavy-v4') await seedHeavyV4();
+    if (scenario === 'reminders-test') await seedRemindersTest();
     closeSheet();
     await loadFromSupabase();
     navigateTo('home');
@@ -7871,6 +8104,75 @@ async function seedHeavyV4() {
   await insertNote(cactus.id, memberB, 'Considering moving it to the windowsill for more sun', null, 4);
   setOnboardingStep(4);
 } // end seedHeavyV4
+
+// #342: "Reminders Test" — lands on a clean home with the #339 reminders card
+// visible, onboarding read as complete (FAB unlocked, no Getting Started flow),
+// notifications OFF, and one plant with two feed-valid tasks so the calendar
+// feed emits VEVENTs. Mirrors seedHeavyV4's teardown order and seedEmpty's
+// all-members flag wipe.
+async function seedRemindersTest() {
+  // Teardown — children before parent (same order as Heavy v4).
+  if (householdId) {
+    const { data: allPlants } = await supabaseClient
+      .from('plants').select('id').eq('household_id', householdId);
+    const plantIds = (allPlants ?? []).map(r => r.id);
+    if (plantIds.length) {
+      await supabaseClient.from('plant_photos').delete().in('plant_id', plantIds);
+      await supabaseClient.from('care_log').delete().in('plant_id', plantIds);
+      await supabaseClient.from('notes').delete().in('plant_id', plantIds);
+      await supabaseClient.from('tasks').delete().in('plant_id', plantIds);
+      await supabaseClient.from('plants').delete().in('id', plantIds);
+    }
+  }
+
+  // Clear onboarding + reminder state for ALL members on this browser (#314),
+  // including calendar-subscribed flags, so both dialog sections read action-state.
+  const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_subscribed_'];
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key && resetPrefixes.some(p => key.startsWith(p))) localStorage.removeItem(key);
+  }
+
+  // Tour complete → reminders card renders + FAB unlocked, and onboarding step
+  // past the banner (step 4) so no Getting Started flow appears. Set AFTER the
+  // wipe above (which clears the onboarding_ prefix, resetting step to 1).
+  if (currentMemberId) {
+    localStorage.setItem(`onboarding_session6_done_${currentMemberId}`, 'true');
+  }
+  setOnboardingStep(4);
+
+  // Notifications OFF so the Push section renders in its action-state.
+  await setNotificationsEnabled(false);
+
+  const today = todayStr();
+  const { data: plant } = await supabaseClient.from('plants').insert({
+    household_id:  householdId,
+    name:          'Reminder Test Plant',
+    emoji:         '🪴',
+    date_acquired: addDays(today, -30),
+    sort_order:    1,
+  }).select().single();
+
+  // Two feed-valid tasks owned by the current member:
+  //   - interval water, every 3 days, first due today (no last_done → computeNextDue = today)
+  //   - weekday fertilize, Mon+Thu, no override (→ next Mon/Thu)
+  await supabaseClient.from('tasks').insert([
+    {
+      plant_id:   plant.id,
+      name:       'Watering', icon: '💧', type: 'water',
+      recurrence: { type: 'interval', every: 3, unit: 'days', days: [] },
+      owner_id:   currentMemberId,
+      sort_order: 1,
+    },
+    {
+      plant_id:   plant.id,
+      name:       'Fertilizing', icon: '🌿', type: 'fertilize',
+      recurrence: { type: 'weekdays', days: [1, 4] },
+      owner_id:   currentMemberId,
+      sort_order: 2,
+    },
+  ]);
+}
 
 // DEV TOOLS — handleEvent cases added inline in the switch statement
 

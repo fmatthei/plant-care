@@ -130,6 +130,7 @@ let householdName = null;
 let userTouchedArrivalDate = false;
 let manageHouseholdsEditingName = false;
 let lastSyncedAt = null; // ms timestamp of the last completed loadFromSupabase()
+let remindersCardCollapsed = false; // #339: in-session only (Full→Note). Resets on reload; no flag written.
 
 // ============================================================
 // ACTIVE USER (auto-resolved from Supabase auth)
@@ -2119,6 +2120,38 @@ function renderOnboardingBanner() {
     </div>`;
 }
 
+// #339: Reminders invitation card — fills the home slot vacated by the
+// completed onboarding "Get started" flow. Three states:
+//   Gone  — tour not done, OR permanently dismissed (reminders_card_dismissed flag).
+//   Note  — in-session collapsed view (remindersCardCollapsed); writes NO flag.
+//   Full  — the invitation card.
+function renderRemindersCard() {
+  if (!currentMemberId) return '';
+  if (!localStorage.getItem(`onboarding_session6_done_${currentMemberId}`)) return '';
+  if (localStorage.getItem(`reminders_card_dismissed_${currentMemberId}`)) return '';
+
+  if (remindersCardCollapsed) {
+    return `
+    <div class="reminders-card-note">
+      <span class="reminders-card-note-bell" aria-hidden="true">🔔</span>
+      <span class="reminders-card-note-text">You can turn on Reminders and Calendar Sync anytime from the menu.</span>
+      <button class="reminders-card-note-close" data-action="reminders-note-dismiss" aria-label="Dismiss">&#10005;</button>
+    </div>`;
+  }
+
+  return `
+    <div class="reminders-card">
+      <div class="reminders-card-icon" aria-hidden="true">🔔</div>
+      <div class="reminders-card-title">Never miss a watering</div>
+      <div class="reminders-card-subtitle">Get reminders and see tasks in your calendar.</div>
+      <button class="btn btn-primary reminders-card-btn" data-action="reminders-setup">Set up reminders</button>
+      <button class="reminders-card-later" data-action="reminders-maybe-later">Maybe later</button>
+    </div>`;
+}
+
+// #339: stub — the reminders setup dialog is implemented in #340.
+function openRemindersDialog() {}
+
 function renderHome() {
   if (document.querySelector('.onboarding-complete-overlay')) return;
 
@@ -2156,6 +2189,8 @@ function renderHome() {
 
   if (activeTab === 'plants') {
     if (shouldShowOnboardingBanner()) html += renderOnboardingBanner();
+
+    html += renderRemindersCard();
 
     if (getOnboardingStep() === 3) html += renderOnboardingInlineTaskCard();
 
@@ -5891,13 +5926,31 @@ async function handleEvent(e) {
       renderNotificationsSheet();
       break;
 
-    case 'sheet-enable-notifications':
-      await subscribeToPush();
-      await setNotificationsEnabled(true);
-      closeSheet();
-      renderMenuPanel(); // re-render so the row shows "On" without reopening the menu
-      showToast('🔔 Notifications enabled!');
+    case 'reminders-setup':
+      openRemindersDialog();
       break;
+
+    case 'reminders-maybe-later':
+      // #339: Full → Note, in-session only — no flag written, reload restores Full.
+      remindersCardCollapsed = true;
+      renderHome();
+      break;
+
+    case 'reminders-note-dismiss':
+      // #339: Note → Gone, permanent.
+      if (currentMemberId) localStorage.setItem(`reminders_card_dismissed_${currentMemberId}`, 'true');
+      renderHome();
+      break;
+
+    case 'sheet-enable-notifications': {
+      // #341: only persist + celebrate on genuine success; denial/failure writes nothing.
+      const ok = await subscribeToPush();
+      if (ok) await setNotificationsEnabled(true);
+      closeSheet();
+      renderMenuPanel(); // re-render so the row reflects the real state
+      showToast(ok ? '🔔 Notifications enabled!' : "Notifications weren't enabled");
+      break;
+    }
 
     case 'save-change-password':
       await handleChangePassword();
@@ -5982,9 +6035,10 @@ async function handleEvent(e) {
 
     case 'enable-notifications': {
       console.log('enable-notifications handler reached');
-      await subscribeToPush();
-      await setNotificationsEnabled(true);
-      if (Notification.permission === 'granted') showToast('Notifications enabled');
+      // #341: gate the toast + DB write on the real outcome, not an unconditional write.
+      const ok = await subscribeToPush();
+      if (ok) await setNotificationsEnabled(true);
+      showToast(ok ? 'Notifications enabled' : "Notifications weren't enabled");
       renderHome();
       break;
     }
@@ -6970,12 +7024,15 @@ async function registerServiceWorker() {
   }
 }
 
+// #341: returns true ONLY on genuine success (permission granted + subscribe +
+// upsert ok); false on every other path (no SW/PushManager, denied, no member,
+// upsert error, throw). Callers gate the success toast + DB write on this.
 async function subscribeToPush() {
-  if (!swRegistration || !('PushManager' in window)) return;
+  if (!swRegistration || !('PushManager' in window)) return false;
 
   let permission = Notification.permission;
   if (permission === 'default') permission = await Notification.requestPermission();
-  if (permission !== 'granted') return;
+  if (permission !== 'granted') return false;
 
   try {
     const subscription = await swRegistration.pushManager.subscribe({
@@ -6985,7 +7042,7 @@ async function subscribeToPush() {
 
     if (membersCache.length === 0) await loadFromSupabase();
     const member = membersCache.find(m => m.display_name === activeUser);
-    if (!member) return;
+    if (!member) return false;
 
     const { error } = await supabaseClient
       .from('push_subscriptions')
@@ -6993,9 +7050,11 @@ async function subscribeToPush() {
         { household_member_id: member.id, subscription: subscription.toJSON() },
         { onConflict: 'household_member_id' }
       );
-    if (error) console.error('[Push] upsert error:', error);
+    if (error) { console.error('[Push] upsert error:', error); return false; }
+    return true;
   } catch (err) {
     console.error('[Push] subscription failed:', err);
+    return false;
   }
 }
 
@@ -7424,7 +7483,7 @@ async function seedEmpty({ resetOnboarding = false } = {}) {
     // Wipe onboarding + push-accepted state for ALL members on this browser, not
     // just the current one — clears every key starting with these prefixes so a
     // fresh Empty State produces a clean onboarding for whoever logs in next.
-    const resetPrefixes = ['onboarding_', 'push_accepted_'];
+    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_'];
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
       if (key && resetPrefixes.some(p => key.startsWith(p))) localStorage.removeItem(key);

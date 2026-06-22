@@ -2072,7 +2072,7 @@ function renderOnboardingInlineTaskCard() {
   // #351: derive copy from the real onboarding task (created via the Add Task
   // sheet in #349). Fall back gracefully if it can't be resolved.
   const onboardingTask = getTask(onboardingPlantId, onboardingTaskId);
-  const cardName  = onboardingTask?.name ?? 'Your first task';
+  const cardName  = onboardingTask?.name ?? 'Watering (Example)';
   const cardSub   = onboardingTask ? recurrenceLabel(onboardingTask) : '';
 
   return `
@@ -4891,10 +4891,10 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
     ${isOnboarding ? `
     <div style="background:#eef7f1;padding:12px 16px;border-bottom:0.5px solid #d6e6d6;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-        <span style="font-size:13px;font-weight:600;color:#3a6b3a;">Your first task</span>
+        <span style="font-size:13px;font-weight:600;color:#3a6b3a;">Your care task</span>
         <span style="font-size:11px;font-weight:500;color:#3a6b3a;">Step 2 of 3</span>
       </div>
-      <div style="font-size:12px;color:#3a6b3a;line-height:1.4;">Here's a sample watering task, set to repeat.</div>
+      <div style="font-size:12px;color:#3a6b3a;line-height:1.4;">Here's a sample watering task to get you started.</div>
     </div>` : ''}
     <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:0.5px solid #e8ece6;">
       ${isCustom

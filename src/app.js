@@ -2127,11 +2127,14 @@ function renderOnboardingBanner() {
     </div>`;
 }
 
-// #339: Reminders invitation card — fills the home slot vacated by the
-// completed onboarding "Get started" flow. Three states:
-//   Gone  — tour not done, OR permanently dismissed (reminders_card_dismissed flag).
-//   Note  — in-session collapsed view (remindersCardCollapsed); writes NO flag.
-//   Full  — the invitation card.
+// #363: Notifications invitation card — fills the home slot vacated by the
+// completed onboarding "Get started" flow. States:
+//   Gone       — tour not done, OR permanently dismissed (reminders_card_dismissed flag).
+//   Note       — in-session collapsed view (remindersCardCollapsed); writes NO flag.
+//   OS-blocked — notifications denied at the OS level; the Enable button is a dead
+//                end until the user flips it in device settings. Detected live from
+//                Notification.permission, so it survives reloads while denial holds.
+//   Full       — the invitation card with an inline Enable button.
 function renderRemindersCard() {
   if (!currentMemberId) return '';
   if (!localStorage.getItem(`onboarding_session6_done_${currentMemberId}`)) return '';
@@ -2141,268 +2144,30 @@ function renderRemindersCard() {
     return `
     <div class="reminders-card-note">
       <span class="reminders-card-note-bell" aria-hidden="true">🔔</span>
-      <span class="reminders-card-note-text">You can turn on Reminders and Calendar Sync anytime from the menu.</span>
+      <span class="reminders-card-note-text">You can enable notifications any time from the menu.</span>
       <button class="reminders-card-note-close" data-action="reminders-note-dismiss" aria-label="Dismiss">&#10005;</button>
+    </div>`;
+  }
+
+  // #363: OS-denied → the Full card's Enable button can't work, so show the
+  // settings-path state instead. Feature-detect before reading permission (#361 §6).
+  if ('Notification' in window && Notification.permission === 'denied') {
+    return `
+    <div class="reminders-card-blocked">
+      <button class="reminders-card-blocked-close" data-action="reminders-note-dismiss" aria-label="Dismiss">&#10005;</button>
+      <div class="reminders-card-blocked-title">Notifications are turned off</div>
+      <div class="reminders-card-blocked-body">To turn them on: <strong>iPhone Settings &rarr; Plant Care &rarr; Notifications</strong>.</div>
     </div>`;
   }
 
   return `
     <div class="reminders-card">
       <div class="reminders-card-icon" aria-hidden="true">🔔</div>
-      <div class="reminders-card-title">Never miss a watering</div>
-      <div class="reminders-card-subtitle">Get reminders and see tasks in your calendar.</div>
-      <button class="btn btn-primary reminders-card-btn" data-action="reminders-setup">Set up reminders</button>
+      <div class="reminders-card-title">Stay in sync with your household</div>
+      <div class="reminders-card-subtitle">Get a heads-up when someone completes a care task.</div>
+      <button class="btn btn-primary reminders-card-btn" data-action="reminders-enable">Enable notifications</button>
       <button class="reminders-card-later" data-action="reminders-maybe-later">Maybe later</button>
     </div>`;
-}
-
-// #340: Reminders setup dialog — a modal parallel surface to the menu's
-// Notifications + Sync to Calendar items. Renders over a full-screen backdrop
-// that blocks the app beneath. Two sections (push, calendar), each collapsing
-// to a green done-row once enabled. On close, writes the same
-// reminders_card_dismissed_<memberId> flag #339 uses — but only if at least one
-// action was completed during this dialog session.
-function openRemindersDialog() {
-  if (!currentMemberId || !householdId) {
-    showToast('Loading household data… please try again in a moment.');
-    return;
-  }
-
-  const AMBER = '#f59e0b', AMBER_BG = '#fdf6ec', AMBER_BORDER = '#f0d090';
-  const BLUE  = '#3b82f6', BLUE_BG  = '#eef4fb', BLUE_BORDER  = '#b5d4f4';
-  const GREEN = '#3a6b3a', GREEN_BG = '#eef7f1';
-
-  const base     = import.meta.env.VITE_SUPABASE_URL;
-  const baseHost = base.replace('https://', '');
-  const meWebcal = `webcal://${baseHost}/functions/v1/get-calendar-feed?member_id=${currentMemberId}`;
-  const hhWebcal = `webcal://${baseHost}/functions/v1/get-calendar-feed?household_id=${householdId}`;
-
-  const mySubKey  = `calendar_subscribed_my_tasks_${householdId}`;
-  const allSubKey = `calendar_subscribed_all_tasks_${householdId}`;
-
-  // Postgres `time` ("20:00:00") → "HH:MM"; mirrors the calendar sheet's local helper.
-  const toHHMM = (v) => (v ? String(v).slice(0, 5) : null);
-  const to12h  = (hhmm) => {
-    const [h, m] = hhmm.split(':').map(Number);
-    const period = h >= 12 ? 'PM' : 'AM';
-    const h12 = h % 12 === 0 ? 12 : h % 12;
-    return `${h12}:${String(m).padStart(2, '0')} ${period}`;
-  };
-
-  const member = membersCache.find(m => m.id === currentMemberId);
-
-  // ── Session state ───────────────────────────────────────────────────────
-  let pushDone = !!member?.notifications_enabled;        // green done-state on open
-  const myActive  = localStorage.getItem(mySubKey)  === 'true';
-  const allActive = localStorage.getItem(allSubKey) === 'true';
-  let calDone  = myActive || allActive;
-  let calScope = (allActive && !myActive) ? 'all' : 'my';  // 'my' | 'all'
-  let calTime  = toHHMM(member?.calendar_time) || '20:00';
-  // #343: unsubscribe-instructions disclosure in the calendar done-state.
-  // UI-only — toggling writes no flags and touches no DB/localStorage.
-  let unsubOpen = false;
-  // Only an action taken WITHIN this dialog flips the dismiss flag on close —
-  // an already-done state present on open does not.
-  let anyCompleted = false;
-
-  const el = document.createElement('div');
-  el.id = 'reminders-dialog';
-  el.style.cssText =
-    'position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.5);display:flex;' +
-    'align-items:center;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto;';
-  document.body.appendChild(el);
-
-  function closeDialog() {
-    if (anyCompleted && currentMemberId) {
-      localStorage.setItem(`reminders_card_dismissed_${currentMemberId}`, 'true');
-    }
-    el.remove();
-    renderHome();
-  }
-
-  const tile = (bg, content) =>
-    `<div style="width:38px;height:38px;border-radius:9px;background:${bg};display:flex;` +
-    `align-items:center;justify-content:center;font-size:19px;flex-shrink:0;">${content}</div>`;
-
-  const doneRow = (title, value) => `
-    <div style="display:flex;align-items:center;gap:12px;background:${GREEN_BG};border-radius:12px;padding:14px;">
-      <div style="width:38px;height:38px;border-radius:9px;background:${GREEN};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-        <span style="color:#fff;font-size:20px;line-height:1;">&#10003;</span>
-      </div>
-      <div style="min-width:0;">
-        <div style="font-size:15px;font-weight:600;color:${GREEN};">${escapeHtml(title)}</div>
-        <div style="font-size:13px;color:${GREEN};opacity:0.85;">${escapeHtml(value)}</div>
-      </div>
-    </div>`;
-
-  function pushSection() {
-    if (pushDone) return doneRow('Push notifications', 'On');
-    return `
-      <div style="background:${AMBER_BG};border:0.5px solid ${AMBER_BORDER};border-radius:12px;padding:14px;">
-        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;">
-          ${tile(AMBER, '🔔')}
-          <div style="min-width:0;">
-            <div style="font-size:15px;font-weight:600;color:#1a1a1a;">Push notifications</div>
-            <div style="font-size:13px;color:#555;line-height:1.4;">A heads-up when someone cares for a plant.</div>
-          </div>
-        </div>
-        <button type="button" id="rd-push-btn" style="width:100%;padding:12px;background:${AMBER};color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Enable notifications</button>
-      </div>`;
-  }
-
-  // Unified segmented track — each option is an inset segment; the selected one
-  // sits on a white pill. (Track wrapper supplies the shared #e8f0fa background.)
-  function scopeBtn(scope, main, sub) {
-    const active = calScope === scope;
-    return `<button type="button" data-scope="${scope}" style="flex:1;padding:8px;border:none;border-radius:7px;cursor:pointer;font-family:inherit;background:${active ? '#fff' : 'transparent'};${active ? 'box-shadow:0 1px 2px rgba(0,0,0,0.08);' : ''}">
-      <div style="font-size:13px;font-weight:600;color:${active ? '#1d4ed8' : '#444'};">${main}</div>
-      ${sub ? `<div style="font-size:11px;color:${active ? '#3b6fd4' : '#999'};margin-top:2px;">${sub}</div>` : ''}
-    </button>`;
-  }
-
-  // #343: calendar done-state — honest "we've handed off to your Calendar app"
-  // messaging plus a tap-to-reveal iOS unsubscribe guide. The done-row reuses the
-  // same green treatment as the notifications row.
-  function calDoneState() {
-    const label   = calScope === 'my' ? 'My tasks' : 'All tasks';
-    const chevron = unsubOpen ? '&#9652;' : '&#9662;'; // ▴ / ▾
-    const instructions = unsubOpen
-      ? `<div style="margin-top:10px;background:#f4faf4;border:1px solid #d6e6d6;border-radius:8px;padding:12px;font-size:12px;color:#3a5a3a;line-height:1.5;">
-           To remove: go to <strong>Settings &rarr; Calendar &rarr; Accounts</strong>, find the Plant Care feed, and tap <strong>Delete Account</strong>.
-         </div>`
-      : '';
-    return `
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        ${doneRow('Calendar sync', `${label} · ${to12h(calTime)}`)}
-        <div style="background:#e8f3ea;border-radius:10px;padding:12px;font-size:12px;color:#2f5d2f;line-height:1.5;">
-          We've sent it to your Calendar app &mdash; tap to confirm the subscription if prompted.
-        </div>
-        <div>
-          <button type="button" id="rd-unsub-toggle" style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;background:none;border:none;padding:4px 2px;cursor:pointer;font-family:inherit;">
-            <span style="font-size:13px;font-weight:500;color:#3a6b3a;">Remove subscription</span>
-            <span style="font-size:11px;color:#3a6b3a;">${chevron}</span>
-          </button>
-          ${instructions}
-        </div>
-      </div>`;
-  }
-
-  function calSection() {
-    if (calDone) return calDoneState();
-    // 30-minute slots 06:00–23:30; value 24h, label 12h.
-    const slots = [];
-    for (let h = 6; h <= 23; h++) {
-      for (const mm of ['00', '30']) slots.push(`${String(h).padStart(2, '0')}:${mm}`);
-    }
-    const opts = (slots.includes(calTime) ? slots : [calTime, ...slots])
-      .map(t => `<option value="${t}"${t === calTime ? ' selected' : ''}>${to12h(t)}</option>`)
-      .join('');
-    return `
-      <div style="background:${BLUE_BG};border:0.5px solid ${BLUE_BORDER};border-radius:12px;padding:14px;">
-        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;">
-          ${tile(BLUE, '📅')}
-          <div style="min-width:0;">
-            <div style="font-size:15px;font-weight:600;color:#1a1a1a;">Calendar sync</div>
-            <div style="font-size:13px;color:#555;line-height:1.4;">Your tasks appear in your phone's calendar.</div>
-          </div>
-        </div>
-        <div style="display:flex;background:#e8f0fa;border-radius:9px;padding:2px;margin-bottom:14px;">
-          ${scopeBtn('my', 'My tasks only', 'Recommended')}
-          ${scopeBtn('all', 'All household tasks', '')}
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;">
-          <span style="font-size:14px;font-weight:500;color:#1a2e1a;">Remind me at</span>
-          <div style="position:relative;display:inline-block;">
-            <select id="rd-cal-time" style="appearance:none;-webkit-appearance:none;border:1.5px solid #b5d4f4;border-radius:8px;padding:8px 32px 8px 12px;font-size:14px;min-width:104px;font-family:inherit;color:#1a1a1a;background:#fff;">${opts}</select>
-            <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:11px;color:#555;">&#9662;</span>
-          </div>
-        </div>
-        <button type="button" id="rd-cal-btn" style="width:100%;padding:12px;background:${BLUE};color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Subscribe</button>
-      </div>`;
-  }
-
-  function render() {
-    // Preserve an unsaved time selection across re-renders.
-    const existingSel = el.querySelector('#rd-cal-time');
-    if (existingSel) calTime = existingSel.value;
-
-    const subtitle = (pushDone && calDone)
-      ? "You're all set. Close when you're ready."
-      : 'Turn these on now, or anytime from your profile.';
-
-    el.innerHTML = `
-      <div style="background:#fff;border-radius:18px;padding:22px;width:100%;max-width:380px;box-sizing:border-box;position:relative;box-shadow:0 12px 40px rgba(0,0,0,0.25);">
-        <button type="button" id="rd-close" aria-label="Close" style="position:absolute;top:14px;right:14px;background:none;border:none;font-size:20px;color:#999;cursor:pointer;line-height:1;padding:4px;">&#10005;</button>
-        <div style="font-size:20px;font-weight:700;color:#1a1a1a;margin-bottom:4px;">Set up reminders</div>
-        <div style="font-size:13px;color:#666;line-height:1.45;margin-bottom:20px;padding-right:24px;">${subtitle}</div>
-        <div style="display:flex;flex-direction:column;gap:14px;">
-          ${pushSection()}
-          ${calSection()}
-        </div>
-      </div>`;
-    wire();
-  }
-
-  function wire() {
-    document.getElementById('rd-close')?.addEventListener('click', closeDialog);
-
-    const pushBtn = document.getElementById('rd-push-btn');
-    pushBtn?.addEventListener('click', async () => {
-      pushBtn.disabled = true;
-      pushBtn.textContent = 'Enabling…';
-      const ok = await subscribeToPush();
-      if (ok) {
-        await setNotificationsEnabled(true);
-        pushDone = true;
-        anyCompleted = true;
-        render();
-      } else {
-        // No error styling — return to the action state.
-        pushBtn.disabled = false;
-        pushBtn.textContent = 'Enable notifications';
-      }
-    });
-
-    el.querySelectorAll('[data-scope]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const sel = document.getElementById('rd-cal-time');
-        if (sel) calTime = sel.value;
-        calScope = btn.dataset.scope;
-        render();
-      });
-    });
-
-    // #343: UI-only disclosure — flips the chevron + instructions, no persistence.
-    document.getElementById('rd-unsub-toggle')?.addEventListener('click', () => {
-      unsubOpen = !unsubOpen;
-      render();
-    });
-
-    document.getElementById('rd-cal-btn')?.addEventListener('click', () => {
-      const sel = document.getElementById('rd-cal-time');
-      if (sel) calTime = sel.value;
-
-      // Persist calendar_time for this member (mirror cache + write through).
-      const m = membersCache.find(mm => mm.id === currentMemberId);
-      if (m) m.calendar_time = calTime;
-      supabaseClient
-        .from('household_members')
-        .update({ calendar_time: calTime })
-        .eq('id', currentMemberId)
-        .then(({ error }) => { if (error) console.error('calendar time save failed:', error); });
-
-      const url    = calScope === 'my' ? meWebcal : hhWebcal;
-      const subKey = calScope === 'my' ? mySubKey : allSubKey;
-      if (url) window.open(url);
-      localStorage.setItem(subKey, 'true');
-
-      calDone = true;
-      anyCompleted = true;
-      render();
-    });
-  }
-
-  render();
 }
 
 function renderHome() {
@@ -6147,9 +5912,20 @@ async function handleEvent(e) {
       renderNotificationsSheet();
       break;
 
-    case 'reminders-setup':
-      openRemindersDialog();
+    case 'reminders-enable': {
+      // #363: inline enable — replaces the removed reminders setup dialog.
+      // Model on sheet-enable-notifications: only persist/celebrate on real grant.
+      const ok = await subscribeToPush();
+      if (ok) {
+        await setNotificationsEnabled(true);
+        if (currentMemberId) localStorage.setItem(`reminders_card_dismissed_${currentMemberId}`, 'true');
+        showToast('Notifications enabled');
+      }
+      // On false: a denial flips the card to the OS-blocked state on re-render;
+      // any other failure (no SW/PushManager) leaves the full card. No toast either way.
+      renderHome();
       break;
+    }
 
     case 'reminders-maybe-later':
       // #339: Full → Note, in-session only — no flag written, reload restores Full.

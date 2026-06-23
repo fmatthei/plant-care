@@ -2268,9 +2268,9 @@ body {
   font-size: 14px;
 }
 
-/* #339: Reminders invitation card — occupies the post-tour "Get started" slot.
-   #339b: compact horizontal layout (icon left, text right, button below) via
-   grid on the flat markup; amber one-off accent (hardcoded, not tokens). */
+/* #339/#363: Notifications invitation card — occupies the post-tour "Get started"
+   slot. Compact horizontal layout (icon left, text right, button below) via grid
+   on the flat markup. #363: green accent (hardcoded hex, not tokens). */
 .reminders-card {
   display: grid;
   grid-template-columns: 40px 1fr;
@@ -2281,8 +2281,8 @@ body {
     "later later";
   column-gap: 12px;
   align-items: start;
-  background: #fff;
-  border: 1.5px solid #3a6b3a;
+  background: #ffffff;
+  border: 1.5px solid #2e7d51;
   border-radius: 12px;
   padding: 11px 12px; /* #339c: match Get Started (.onboarding-banner) footprint */
   margin: 12px 16px 0;
@@ -2297,8 +2297,8 @@ body {
   align-items: center;
   justify-content: center;
   font-size: 20px;
-  color: #9a6a1c;
-  background: #f5e6cf;
+  color: #2e7d51;
+  background: #e6f4ec;
   border-radius: 10px;
 }
 
@@ -2306,13 +2306,13 @@ body {
   grid-area: title;
   font-size: 12px; /* #339c: match Get Started title (.onboarding-label) */
   font-weight: 500;
-  color: #1f2421;
+  color: #1c2b1c;
 }
 
 .reminders-card-subtitle {
   grid-area: subtitle;
   font-size: 11px; /* #339c: match Get Started body (.onboarding-instruction) */
-  color: #6b716c;
+  color: #6b7c6b;
   line-height: 1.4;
   margin-top: 2px;
 }
@@ -2335,19 +2335,19 @@ body {
   background: none;
   border: none;
   font-size: 13px;
-  color: #8a8f8a;
+  color: #2e7d51;
   cursor: pointer;
   padding: 6px;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Note — in-session collapsed view of the reminders card (amber wash). */
+/* Note — in-session collapsed view of the card (light green wash). */
 .reminders-card-note {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #fdf6ea;
-  border: 1px solid #ead9c2;
+  background: #e6f4ec;
+  border: 1px solid #dde8dd;
   border-radius: 12px;
   padding: 12px 14px;
   margin: 12px 16px 0;
@@ -2355,7 +2355,7 @@ body {
 
 .reminders-card-note-bell {
   font-size: 17px;
-  color: #9a6a1c;
+  color: #2e7d51;
   flex-shrink: 0;
 }
 
@@ -2363,7 +2363,7 @@ body {
   flex: 1;
   min-width: 0;
   font-size: 13px;
-  color: #7a5b27;
+  color: #1c2b1c;
   line-height: 1.4;
 }
 
@@ -2377,7 +2377,55 @@ body {
   background: none;
   border: none;
   font-size: 17px;
-  color: #b89a6a;
+  color: #6b7c6b;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* #363: OS-blocked state — notifications denied at the device level. Neutral
+   card; the settings path is emphasized. Corner × writes the dismiss flag. */
+.reminders-card-blocked {
+  position: relative;
+  background: #ffffff;
+  border: 1px solid #dde8dd;
+  border-radius: 12px;
+  padding: 12px 36px 12px 14px;
+  margin: 12px 16px 0;
+}
+
+.reminders-card-blocked-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1c2b1c;
+}
+
+.reminders-card-blocked-body {
+  font-size: 12px;
+  color: #6b7c6b;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.reminders-card-blocked-body strong {
+  color: #1c2b1c;
+  font-weight: 600;
+}
+
+.reminders-card-blocked-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  font-size: 17px;
+  color: #6b7c6b;
   cursor: pointer;
   padding: 0;
   line-height: 1;

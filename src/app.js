@@ -955,23 +955,25 @@ async function markTaskDone(plantId, taskId) {
         task_type: task.type,
         task_name: task.name,
       });
-    });
 
-  fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/notify-care-log`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-    },
-    body: JSON.stringify({
-      care_log_id:  null,
-      plant_name:   plant.name,
-      task_name:    taskCfg.name,
-      task_type:    taskCfg.type,
-      actor_name:   activeUser,
-      household_id: householdId,
-    }),
-  }).catch(() => {});
+      // #370: only notify once the care_log row is confirmed written, so a
+      // recipient tapping the push always finds the entry in Recent Activity.
+      fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/notify-care-log`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          care_log_id:  null,
+          plant_name:   plant.name,
+          task_name:    taskCfg.name,
+          task_type:    taskCfg.type,
+          actor_name:   activeUser,
+          household_id: householdId,
+        }),
+      }).catch(() => {});
+    });
 
   loadActivityFeed().then(() => { if (state.view === 'home') renderHome(); });
 
@@ -4185,7 +4187,7 @@ function openCalendarSyncSheet() {
     return;
   }
   const base       = import.meta.env.VITE_SUPABASE_URL;
-  const baseHost   = base.replace('https://', '');
+  const baseHost   = base.replace(/^https?:\/\//, '');
   const meHttps    = `${base}/functions/v1/get-calendar-feed?member_id=${currentMemberId}`;
   const meWebcal   = `webcal://${baseHost}/functions/v1/get-calendar-feed?member_id=${currentMemberId}`;
   const hhHttps    = `${base}/functions/v1/get-calendar-feed?household_id=${householdId}`;
@@ -7166,6 +7168,15 @@ async function registerServiceWorker() {
   } catch (err) {
     console.error('[SW] registration failed:', err);
   }
+
+  // #370: when a push notification is tapped, the SW focuses this window and
+  // posts 'notification-tapped'. Refresh the activity feed so the new entry
+  // shows without the user closing and reopening the PWA.
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'notification-tapped') {
+      loadActivityFeed().then(() => renderApp());
+    }
+  });
 }
 
 // #341: returns true ONLY on genuine success (permission granted + subscribe +

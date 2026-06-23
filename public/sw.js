@@ -16,6 +16,9 @@ self.addEventListener('notificationclick', event => {
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const client of list) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
+          // #370: tell the foregrounded PWA to refresh its activity feed so the
+          // tapped entry is visible without a manual close/reopen.
+          client.postMessage({ type: 'notification-tapped' });
           return client.focus();
         }
       }

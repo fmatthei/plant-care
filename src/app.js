@@ -131,6 +131,7 @@ let userTouchedArrivalDate = false;
 let manageHouseholdsEditingName = false;
 let lastSyncedAt = null; // ms timestamp of the last completed loadFromSupabase()
 let remindersCardCollapsed = false; // #339: in-session only (Full→Note). Resets on reload; no flag written.
+let calendarCardCollapsed  = false; // #366: mirrors remindersCardCollapsed for the calendar card.
 
 // ============================================================
 // ACTIVE USER (auto-resolved from Supabase auth)
@@ -2170,6 +2171,37 @@ function renderRemindersCard() {
     </div>`;
 }
 
+function shouldShowCalendarCard() {
+  if (!currentMemberId) return false;
+  if (!localStorage.getItem(`onboarding_session6_done_${currentMemberId}`)) return false;
+  if (!localStorage.getItem(`calendar_card_triggered_${currentMemberId}`)) return false;
+  if (localStorage.getItem(`calendar_card_dismissed_${currentMemberId}`)) return false;
+  return true;
+}
+
+function renderCalendarCard() {
+  if (localStorage.getItem(`calendar_card_dismissed_${currentMemberId}`)) return '';
+
+  if (calendarCardCollapsed) {
+    return `
+    <div class="reminders-card-note">
+      <span class="reminders-card-note-bell" aria-hidden="true">📅</span>
+      <span class="reminders-card-note-text">You can sync your tasks to your Calendar app anytime from the menu.</span>
+      <button class="reminders-card-note-close" data-action="cal-card-dismiss" aria-label="Dismiss">&#10005;</button>
+    </div>`;
+  }
+
+  return `
+    <div style="position:relative;display:grid;grid-template-columns:40px 1fr;grid-template-areas:'icon title' 'icon subtitle' 'btn btn' 'later later';column-gap:12px;align-items:start;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:11px 36px 11px 12px;margin:12px 16px 0;">
+      <button type="button" data-action="cal-card-dismiss" aria-label="Dismiss" style="position:absolute;top:8px;right:8px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:none;border:none;font-size:17px;color:#6b7c6b;cursor:pointer;padding:0;">&#10005;</button>
+      <div style="grid-area:icon;align-self:center;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:20px;background:#eef3fb;border-radius:10px;" aria-hidden="true">📅</div>
+      <div style="grid-area:title;font-size:12px;font-weight:500;color:#1c2b1c;">See your tasks in your calendar</div>
+      <div style="grid-area:subtitle;font-size:11px;color:#6b7c6b;line-height:1.4;margin-top:2px;">Your plant care tasks will appear automatically as calendar events (a single event per day).</div>
+      <button class="btn btn-primary" data-action="cal-card-subscribe" style="grid-area:btn;width:100%;padding:10px 14px;font-size:14px;margin-top:8px;height:38px;min-height:38px;line-height:1;">Set up Calendar Sync</button>
+      <button type="button" data-action="cal-card-maybe-later" style="grid-area:later;justify-self:center;margin-top:8px;background:none;border:none;font-size:13px;color:#2e7d51;cursor:pointer;padding:6px;font-family:inherit;">Maybe later</button>
+    </div>`;
+}
+
 function renderHome() {
   if (document.querySelector('.onboarding-complete-overlay')) return;
 
@@ -2208,7 +2240,7 @@ function renderHome() {
   if (activeTab === 'plants') {
     if (shouldShowOnboardingBanner()) html += renderOnboardingBanner();
 
-    html += renderRemindersCard();
+    html += shouldShowCalendarCard() ? renderCalendarCard() : renderRemindersCard();
 
     if (getOnboardingStep() === 3) html += renderOnboardingInlineTaskCard();
 
@@ -4161,6 +4193,11 @@ function openCalendarSyncSheet() {
 
   // Time values are stored as Postgres `time` (e.g. "20:00:00"); inputs use HH:MM.
   const toHHMM = (v) => (v ? String(v).slice(0, 5) : null);
+  const to12h  = (hhmm) => {
+    if (!hhmm) return '';
+    const [h, m] = hhmm.split(':').map(Number);
+    return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+  };
   const member = membersCache.find(m => m.id === currentMemberId);
 
   // Last custom weekend time — survives toggle off/on within this sheet session.
@@ -4189,27 +4226,10 @@ function openCalendarSyncSheet() {
     }
   }
 
-  const mySubKey  = `calendar_subscribed_my_tasks_${householdId}`;
-  const allSubKey = `calendar_subscribed_all_tasks_${householdId}`;
+  const mySubKey  = `calendar_subscribed_my_tasks_${householdId}_${currentMemberId}`;
+  const allSubKey = `calendar_subscribed_all_tasks_${householdId}_${currentMemberId}`;
 
-  function feedSection({ label, feedName, httpsUrl, webcalUrl, subKey }) {
-    const subscribed = localStorage.getItem(subKey) === 'true';
-    const copyLink = `<button type="button" class="btn-text-link" data-action="copy-calendar-link" data-url="${escapeHtml(httpsUrl)}">Copy link</button>`;
-    const actions = subscribed
-      ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;">
-          <span style="display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:var(--primary);">&#10003; Subscribed</span>
-          <button type="button" class="btn-text-link" data-cal-subscribe data-url="${escapeHtml(webcalUrl)}" data-subkey="${escapeHtml(subKey)}">Subscribe again</button>
-        </div>
-        <div>${copyLink}</div>`
-      : `<button type="button" class="btn btn-primary" data-cal-subscribe data-url="${escapeHtml(webcalUrl)}" data-subkey="${escapeHtml(subKey)}" style="width:100%;margin-bottom:8px;">Subscribe</button>
-        <div>${copyLink}</div>`;
-    return `
-      <div style="margin-top:22px;">
-        <div class="manage-section-label" style="margin:0 0 4px;">${label}</div>
-        <div style="font-size:12px;color:var(--text-muted);line-height:1.45;margin:0 0 12px;">${escapeHtml(feedName)}</div>
-        ${actions}
-      </div>`;
-  }
+  let calScope = 'my';
 
   function render() {
     const m = membersCache.find(mm => mm.id === currentMemberId);
@@ -4219,7 +4239,6 @@ function openCalendarSyncSheet() {
 
     const memberName = member?.display_name ?? '';
     const hhName     = householdName ?? 'My Household';
-    const greenName  = (txt) => `<span style="color:var(--primary);">${escapeHtml(txt)}</span>`;
 
     // 30-minute slots from 06:00 to 23:30, 24-hour format.
     const slots = [];
@@ -4238,6 +4257,101 @@ function openCalendarSyncSheet() {
           </div>`;
     };
 
+    const subKey     = calScope === 'my' ? mySubKey : allSubKey;
+    const subscribed = localStorage.getItem(subKey) === 'true';
+
+    let feedBlock;
+    if (!subscribed) {
+      const myActive = calScope === 'my';
+
+      feedBlock = `
+        <div style="margin-bottom:16px;">
+          <div class="manage-section-label" style="margin:0 0 10px;">Choose a feed</div>
+
+          <div data-action="cal-scope-toggle" data-scope="my"
+            style="border:1.5px solid ${myActive ? '#2e7d51' : '#e5e7eb'};border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;background:${myActive ? '#f0faf4' : '#fff'};">
+            <div style="width:18px;height:18px;border-radius:50%;border:2px solid ${myActive ? '#2e7d51' : '#d1d5db'};flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;background:${myActive ? '#2e7d51' : 'transparent'};">
+              ${myActive ? '<div style="width:6px;height:6px;border-radius:50%;background:#fff;"></div>' : ''}
+            </div>
+            <div>
+              <div style="font-size:14px;font-weight:500;color:${myActive ? '#2e7d51' : '#1a1a1a'};margin-bottom:2px;">My tasks</div>
+              <div style="font-size:12px;color:#6b7280;line-height:1.45;">Only tasks assigned to you.</div>
+            </div>
+          </div>
+
+          <div data-action="cal-scope-toggle" data-scope="all"
+            style="border:1.5px solid ${!myActive ? '#2e7d51' : '#e5e7eb'};border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;background:${!myActive ? '#f0faf4' : '#fff'};">
+            <div style="width:18px;height:18px;border-radius:50%;border:2px solid ${!myActive ? '#2e7d51' : '#d1d5db'};flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;background:${!myActive ? '#2e7d51' : 'transparent'};">
+              ${!myActive ? '<div style="width:6px;height:6px;border-radius:50%;background:#fff;"></div>' : ''}
+            </div>
+            <div>
+              <div style="font-size:14px;font-weight:500;color:${!myActive ? '#2e7d51' : '#1a1a1a'};margin-bottom:2px;">All household tasks</div>
+              <div style="font-size:12px;color:#6b7280;line-height:1.45;">Every task across your household.</div>
+            </div>
+          </div>
+        </div>
+        <div style="background:#f4f6f2;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text-muted);margin-bottom:16px;">
+          Tapping Subscribe will open your Calendar app. Tap Allow when prompted to add the feed.
+        </div>
+        <button type="button" class="btn btn-primary" id="cal-subscribe-btn" style="width:100%;">Subscribe</button>`;
+    } else {
+      const calTime = toHHMM(m?.calendar_time) || '20:00';
+      const today   = todayStr();
+      let closestTask = null, closestDate = null, closestPlant = null;
+      for (const plant of plants) {
+        for (const task of (plant.tasks ?? [])) {
+          if (task.paused) continue;
+          if (task.owner !== (member?.display_name ?? '')) continue;
+          const due = computeNextDue(task);
+          if (!due || due < today) continue;
+          if (!closestDate || due < closestDate) {
+            closestDate = due; closestTask = task; closestPlant = plant;
+          }
+        }
+      }
+
+      let taskHintHtml;
+      if (closestTask && closestPlant) {
+        const dateObj = new Date(closestDate + 'T12:00:00');
+        const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        taskHintHtml = `${escapeHtml(closestPlant.emoji ?? '')}  ${escapeHtml(closestTask.name)} · ${escapeHtml(formattedDate)} at ${escapeHtml(to12h(calTime))}`;
+      } else {
+        taskHintHtml = 'Open your Calendar app and look for upcoming Plant Care events.';
+      }
+
+      feedBlock = `
+        <div style="font-size:16px;font-weight:500;color:#1a1a1a;margin-bottom:12px;">Check your Calendar app</div>
+        <div style="background:#eef7f1;border-radius:8px;padding:10px 12px;font-size:12px;color:#2e7d51;margin-bottom:16px;">${taskHintHtml}</div>
+        <button type="button" class="btn btn-primary" id="cal-confirm-btn" style="width:100%;margin-bottom:12px;">Confirm Calendar Sync enabled</button>
+        <button type="button" data-action="cal-need-help" style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:12px;color:#4b5563;background:none;font-family:inherit;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+          Need help?
+          <span id="cal-help-chevron">&#9660;</span>
+        </button>
+        <div id="cal-troubleshoot" style="display:none;margin-top:12px;">
+          <div style="font-size:13px;font-weight:500;margin-bottom:10px;">Troubleshooting</div>
+          <ol style="margin:0;padding:0;list-style:none;">
+            <li style="display:flex;gap:8px;font-size:12px;color:#4b5563;line-height:1.55;margin-bottom:8px;">
+              <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">1.</span>
+              <span>Wait a minute — Calendar can take a moment to sync after adding a new feed.</span>
+            </li>
+            <li style="display:flex;gap:8px;font-size:12px;color:#4b5563;line-height:1.55;margin-bottom:8px;">
+              <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">2.</span>
+              <span>Open the Calendar app directly and pull down to refresh.</span>
+            </li>
+            <li style="display:flex;gap:8px;font-size:12px;color:#4b5563;line-height:1.55;margin-bottom:8px;">
+              <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">3.</span>
+              <span>Make sure the Plant Care calendar is visible — tap Calendars at the bottom and check it's enabled.</span>
+            </li>
+          </ol>
+          <div style="background:#f4f6f2;border-radius:8px;padding:12px 14px;margin-top:14px;">
+            <div class="manage-section-label" style="margin:0 0 6px;">WANT TO START OVER?</div>
+            <div style="font-size:12px;color:#4b5563;line-height:1.6;">
+              Remove the feed first: go to <strong>Settings &rarr; Calendar &rarr; Accounts</strong>, find the Plant Care feed, and tap <strong>Delete Account</strong> — this only removes the calendar feed, not your Plant Care account. Then come back here to subscribe again.
+            </div>
+          </div>
+        </div>`;
+    }
+
     openSheet(`
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px;">
         <div class="sheet-title" style="margin-bottom:0;">Sync to Calendar</div>
@@ -4245,7 +4359,7 @@ function openCalendarSyncSheet() {
       </div>
       <p style="font-size:13px;color:var(--text-muted);line-height:1.45;margin:0 0 18px;">Tasks appear as daily events in your calendar app.</p>
 
-      <div style="background:#eef7f1;border-radius:12px;padding:14px 14px 6px;">
+      ${!subscribed ? `<div style="background:#eef7f1;border-radius:12px;padding:14px 14px 6px;">
         <div class="manage-section-label" style="margin:0 0 10px;">Schedule time</div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
@@ -4264,28 +4378,10 @@ function openCalendarSyncSheet() {
           <span style="font-size:14px;font-weight:500;color:#1a2e1a;${weekendEnabled ? '' : 'opacity:0.35;'}" id="cal-weekend-label">Sat &amp; Sun</span>
           ${timeSelect('cal-weekend-time', weekendTime, !weekendEnabled)}
         </div>
-      </div>
+      </div>` : ''}
 
-      ${feedSection({
-        label: 'My Tasks',
-        feedName: `Only tasks assigned to you · Plant Care — ${memberName} · ${hhName}`,
-        httpsUrl: meHttps, webcalUrl: meWebcal, subKey: mySubKey,
-      })}
-      ${feedSection({
-        label: 'All Household Tasks',
-        feedName: `Every task across your household · Plant Care — ${hhName} · All`,
-        httpsUrl: hhHttps, webcalUrl: hhWebcal, subKey: allSubKey,
-      })}
+      <div style="margin-top:22px;">${feedBlock}</div>
     `);
-
-    // Re-color the green portion of the feed name (after the "·").
-    document.querySelectorAll('#sheet-content .manage-section-label + div').forEach(el => {
-      const idx = el.textContent.indexOf('· Plant Care');
-      if (idx === -1) return;
-      const plain = el.textContent.slice(0, idx + 2);
-      const green = el.textContent.slice(idx + 2);
-      el.innerHTML = `${escapeHtml(plain)}${greenName(green)}`;
-    });
 
     wire();
   }
@@ -4339,13 +4435,31 @@ function openCalendarSyncSheet() {
       }
     });
 
-    document.querySelectorAll('#sheet-content [data-cal-subscribe]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const url = btn.dataset.url;
-        if (url) window.open(url);
-        localStorage.setItem(btn.dataset.subkey, 'true');
-        render();
-      });
+    document.getElementById('cal-subscribe-btn')?.addEventListener('click', () => {
+      const webcalUrl = calScope === 'my' ? meWebcal : hhWebcal;
+      const subKey    = calScope === 'my' ? mySubKey : allSubKey;
+      window.open(webcalUrl);
+      localStorage.setItem(subKey, 'true');
+      render();
+    });
+
+    document.getElementById('cal-confirm-btn')?.addEventListener('click', () => {
+      closeSheet();
+      if (currentMemberId) localStorage.setItem(`calendar_card_dismissed_${currentMemberId}`, '1');
+      renderHome();
+    });
+
+    document.querySelectorAll('[data-action="cal-scope-toggle"]').forEach(btn => {
+      btn.addEventListener('click', () => { calScope = btn.dataset.scope; render(); });
+    });
+
+    document.querySelector('[data-action="cal-need-help"]')?.addEventListener('click', () => {
+      const section = document.getElementById('cal-troubleshoot');
+      const chevron = document.getElementById('cal-help-chevron');
+      if (!section) return;
+      const showing = section.style.display !== 'none';
+      section.style.display = showing ? 'none' : '';
+      if (chevron) chevron.innerHTML = showing ? '&#9660;' : '&#9650;';
     });
   }
 
@@ -4379,7 +4493,10 @@ function renderMenuPanel() {
     </div>
     <div class="menu-section">
       <div class="menu-section-title">Reminders & Notifications</div>
-      ${membersCache.find(m => m.id === currentMemberId)?.notifications_enabled
+      ${('Notification' in window && Notification.permission === 'denied')
+        ? `<button class="menu-item" data-action="menu-notifications">🔔 Notifications &middot; <span style="color:#c0392b;">Blocked</span></button>
+        <div style="padding:0 20px 12px;font-size:12px;color:#999;line-height:1.4;">To turn them on: <strong>iPhone Settings &rarr; Plant Care &rarr; Notifications</strong>.</div>`
+        : membersCache.find(m => m.id === currentMemberId)?.notifications_enabled
         ? `<button class="menu-item" style="color:#3a6b3a;opacity:0.7;" disabled>🔔 Notifications &middot; On</button>`
         : `<button class="menu-item" data-action="menu-notifications">🔔 Notifications &middot; <span style="color:#aaa;">Off</span></button>`}
       <button class="menu-item" data-action="open-calendar-sync">📅 Sync to Calendar</button>
@@ -5735,6 +5852,9 @@ async function handleSaveNewTask() {
     console.error('handleSaveNewTask: Supabase insert error:', error);
   } else {
     posthog.capture('task_created', { plant_id: pid, task_type: type });
+    if (!isOnboardingTaskSave && currentMemberId) {
+      localStorage.setItem(`calendar_card_triggered_${currentMemberId}`, '1');
+    }
   }
 
   const taskId = inserted?.id ?? uid();
@@ -5908,6 +6028,9 @@ async function handleEvent(e) {
       break;
 
     case 'menu-notifications':
+      // #358: OS-blocked state is informational only — subscribeToPush() can't
+      // grant once permission is 'denied', so don't open the enable flow.
+      if ('Notification' in window && Notification.permission === 'denied') break;
       closeMenu();
       renderNotificationsSheet();
       break;
@@ -5937,6 +6060,21 @@ async function handleEvent(e) {
       // #339: Note → Gone, permanent.
       if (currentMemberId) localStorage.setItem(`reminders_card_dismissed_${currentMemberId}`, 'true');
       renderHome();
+      break;
+
+    case 'cal-card-dismiss':
+      if (currentMemberId) localStorage.setItem(`calendar_card_dismissed_${currentMemberId}`, '1');
+      calendarCardCollapsed = false;
+      renderHome();
+      break;
+
+    case 'cal-card-maybe-later':
+      calendarCardCollapsed = true;
+      renderHome();
+      break;
+
+    case 'cal-card-subscribe':
+      openCalendarSyncSheet();
       break;
 
     case 'sheet-enable-notifications': {
@@ -7492,10 +7630,18 @@ async function seedEmpty({ resetOnboarding = false } = {}) {
     // Wipe onboarding + push-accepted state for ALL members on this browser, not
     // just the current one — clears every key starting with these prefixes so a
     // fresh Empty State produces a clean onboarding for whoever logs in next.
-    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_'];
+    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_card_dismissed_', 'calendar_card_triggered_', 'calendar_subscribed_'];
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
       if (key && resetPrefixes.some(p => key.startsWith(p))) localStorage.removeItem(key);
+    }
+    if (currentMemberId) {
+      await supabaseClient
+        .from('household_members')
+        .update({ calendar_time: '20:00', calendar_weekend_time: null })
+        .eq('id', currentMemberId);
+      const m = membersCache.find(m => m.id === currentMemberId);
+      if (m) { m.calendar_time = '20:00'; m.calendar_weekend_time = null; }
     }
   }
 }

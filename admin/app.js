@@ -10,6 +10,10 @@ const supabaseClient = window.supabase.createClient(
 
 const app = document.getElementById('app');
 
+// Throwaway household that dev seeds are allowed to target (mirrors
+// SEED_ALLOWED_HOUSEHOLDS in the main app). Display-only here.
+const SEED_ALLOWED_HOUSEHOLD_ID = 'b3b5aeb6-ddcc-47c2-bb5e-b2e67d59f635';
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -112,6 +116,10 @@ async function renderDashboard(user) {
     <section id="users-section">
       <h2>Users</h2>
       <p class="muted">Loading…</p>
+    </section>
+    <section id="devinfo-section" style="margin-top:32px;padding:16px;border:1px dashed #c8c8c8;border-radius:8px;background:#f5f5f5;color:#666;">
+      <h2 style="color:#666;">Dev Info</h2>
+      <p class="muted">Loading…</p>
     </section>`;
   document.getElementById('signout-btn').addEventListener('click', signOut);
 
@@ -142,6 +150,7 @@ async function reload() {
   cachedMembers = mem.data || [];
   renderHouseholds();
   renderUsers();
+  renderDevInfo();
 }
 
 // ---- Households render ----
@@ -220,12 +229,13 @@ function renderMemberRow(m, h) {
       <td><input id="mem-edit-name" type="text" value="${esc(m.display_name || '')}"></td>
       <td>
         <span class="color-field">
-          <input type="color" id="mem-edit-color" value="${esc(m.color || defaultMemberColor(h.id))}" oninput="document.getElementById('mem-edit-color-hex').textContent = this.value">
-          <span id="mem-edit-color-hex" class="color-hex">${esc(m.color || defaultMemberColor(h.id))}</span>
+          <input type="color" id="mem-edit-color" value="${esc(m.color || defaultMemberColor(h.id))}" oninput="document.getElementById('mem-edit-color-hex').value = this.value">
+          <input type="text" id="mem-edit-color-hex" class="color-hex" value="${esc(m.color || defaultMemberColor(h.id))}" oninput="if (/^#[0-9a-fA-F]{6}$/.test(this.value)) document.getElementById('mem-edit-color').value = this.value">
         </span>
       </td>
       <td>${roleSelect('mem-edit-role', m.role)}</td>
       <td class="actions">
+        <p id="mem-edit-error-${esc(m.id)}" class="error" style="display:none"></p>
         <button class="btn btn-sm" data-action="mem-edit-confirm" data-id="${esc(m.id)}">Confirm</button>
         <button class="btn btn-sm btn-secondary" data-action="mem-edit-cancel">Cancel</button>
       </td>
@@ -241,6 +251,8 @@ function renderMemberRow(m, h) {
     <td class="actions">
       <button class="btn btn-sm btn-secondary" data-action="mem-edit" data-id="${esc(m.id)}">Edit</button>
       <button class="btn btn-sm btn-danger" data-action="mem-remove" data-id="${esc(m.id)}">Remove</button>
+      <button class="btn btn-sm" style="background:#2e7d32;color:#fff;border-color:#2e7d32;" data-action="mem-grant-admin" data-id="${esc(m.id)}" data-user="${esc(m.user_id || '')}">Grant admin</button>
+      <button class="btn btn-sm btn-danger" data-action="mem-revoke-admin" data-id="${esc(m.id)}" data-user="${esc(m.user_id || '')}">Revoke admin</button>
     </td>
   </tr>`;
 }
@@ -270,8 +282,8 @@ function renderAddMemberForm(h) {
     </label>
     <label class="field"><span>Color</span>
       <span class="color-field">
-        <input type="color" id="mem-add-color" value="${defaultMemberColor(h.id)}" oninput="document.getElementById('mem-add-color-hex').textContent = this.value">
-        <span id="mem-add-color-hex" class="color-hex">${defaultMemberColor(h.id)}</span>
+        <input type="color" id="mem-add-color" value="${defaultMemberColor(h.id)}" oninput="document.getElementById('mem-add-color-hex').value = this.value">
+        <input type="text" id="mem-add-color-hex" class="color-hex" value="${defaultMemberColor(h.id)}" oninput="if (/^#[0-9a-fA-F]{6}$/.test(this.value)) document.getElementById('mem-add-color').value = this.value">
       </span>
     </label>
     <label class="field"><span>Role</span>
@@ -320,12 +332,31 @@ function renderUsers() {
   if (ui.memberEditId) document.getElementById('mem-edit-name')?.focus();
 }
 
+// ---- Dev Info render ----
+
+// Read-only diagnostic panel. Uses only already-loaded data (no new queries).
+function renderDevInfo() {
+  const section = document.getElementById('devinfo-section');
+  if (!section) return;
+
+  const shortId = `${SEED_ALLOWED_HOUSEHOLD_ID.slice(0, 8)}…${SEED_ALLOWED_HOUSEHOLD_ID.slice(-3)}`;
+  const seedHh = cachedHouseholds.find(h => h.id === SEED_ALLOWED_HOUSEHOLD_ID);
+  const seedLine = seedHh
+    ? `Seed household: ${esc(seedHh.name)} (${shortId})`
+    : `Seed household: ${esc(SEED_ALLOWED_HOUSEHOLD_ID)} <span style="color:#b71c1c;">⚠️ Not found in loaded households</span>`;
+
+  section.innerHTML = `
+    <h2 style="color:#666;">Dev Info</h2>
+    <p style="margin:8px 0;">${seedLine}</p>
+    <p style="margin:8px 0;">App admin status is not readable via the anon key. Use Grant/Revoke admin buttons above, or check Supabase Auth dashboard.</p>`;
+}
+
 // ---- Event handling ----
 
 function onAction(e) {
   const el = e.target.closest('[data-action]');
   if (!el) return;
-  const { action, id, hh } = el.dataset;
+  const { action, id, hh, user } = el.dataset;
   switch (action) {
     case 'hh-create-open':   ui.hhError = ''; ui.hhCreateOpen = true; renderHouseholds(); break;
     case 'hh-create-cancel': ui.hhCreateOpen = false; renderHouseholds(); break;
@@ -338,6 +369,8 @@ function onAction(e) {
     case 'mem-edit-cancel':  ui.memberEditId = null; renderUsers(); break;
     case 'mem-edit-confirm': confirmEditMember(id); break;
     case 'mem-remove':       removeMember(id); break;
+    case 'mem-grant-admin':  toggleAdminStatus(id, user, true); break;
+    case 'mem-revoke-admin': toggleAdminStatus(id, user, false); break;
     case 'mem-add-open':     ui.memberError = ''; ui.memberAddFor = hh; renderUsers(); break;
     case 'mem-add-cancel':   ui.memberAddFor = null; renderUsers(); break;
     case 'mem-add-submit':   addMember(hh); break;
@@ -493,6 +526,15 @@ async function confirmEditMember(id) {
   const name = document.getElementById('mem-edit-name')?.value.trim();
   const color = document.getElementById('mem-edit-color')?.value.trim();
   const role = document.getElementById('mem-edit-role')?.value;
+  const errEl = document.getElementById(`mem-edit-error-${id}`);
+  if (!color) {
+    if (errEl) { errEl.textContent = 'Color is required.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
+    if (errEl) { errEl.textContent = 'Color must be a valid hex value, e.g. #4a7c59.'; errEl.style.display = 'block'; }
+    return;
+  }
   try {
     const { error } = await supabaseClient.from('household_members').update({
       display_name: name || null,
@@ -525,6 +567,56 @@ async function removeMember(id) {
     cachedMembers = cachedMembers.filter(x => x.id !== id);
     renderUsers();
     await reload();
+  } catch (e) {
+    ui.memberError = e?.message || String(e);
+    renderUsers();
+  }
+}
+
+// Deployed Edge Function that writes auth.users app_metadata.is_admin.
+// The anon key cannot read is_admin back from auth.users, so this control is
+// write-only: there is no current-state indicator, only Grant/Revoke actions.
+const SET_ADMIN_STATUS_URL = 'https://kmkfywdzoitgdtbttxaa.supabase.co/functions/v1/set-admin-status';
+
+// Minimal transient toast (no styling deps — inline-styled so style.css is untouched).
+function showToast(message) {
+  const el = document.createElement('div');
+  el.textContent = message;
+  el.style.cssText = [
+    'position:fixed', 'left:50%', 'bottom:24px', 'transform:translateX(-50%)',
+    'max-width:90%', 'background:#1f2937', 'color:#fff', 'padding:12px 16px',
+    'border-radius:8px', 'font-size:14px', 'line-height:1.4', 'z-index:9999',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.25)',
+  ].join(';');
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
+// Write-only admin toggle: posts to the set-admin-status Edge Function with the
+// caller's JWT. The function re-verifies the caller is an admin server-side.
+async function toggleAdminStatus(memberId, userId, isAdmin) {
+  ui.memberError = '';
+  if (!userId) { ui.memberError = 'This member has no linked user account.'; renderUsers(); return; }
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    const token = session?.access_token;
+    if (!token) { ui.memberError = 'Session expired — sign in again.'; renderUsers(); return; }
+    const res = await fetch(SET_ADMIN_STATUS_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ user_id: userId, is_admin: isAdmin }),
+    });
+    let payload = {};
+    try { payload = await res.json(); } catch { /* non-JSON error body */ }
+    if (!res.ok || !payload.success) {
+      ui.memberError = payload.error || `Request failed (${res.status}).`;
+      renderUsers();
+      return;
+    }
+    showToast('Admin status updated — user must log out and back in for changes to take effect');
   } catch (e) {
     ui.memberError = e?.message || String(e);
     renderUsers();

@@ -91,6 +91,9 @@ async function signOut() {
 // Loaded data + transient UI state. Re-derived from the DB on every reload().
 let cachedHouseholds = [];
 let cachedMembers = [];
+// { [user_id]: boolean } — is_admin read via the set-admin-status GET endpoint
+// (the anon key cannot read auth.users directly). Refreshed in reload().
+let adminStatusMap = {};
 const ui = {
   hhCreateOpen: false,   // "New household" form visible
   hhEditId: null,        // household id being renamed inline
@@ -148,9 +151,27 @@ async function reload() {
   ui.memberError = mem.error ? mem.error.message : '';
   cachedHouseholds = hh.data || [];
   cachedMembers = mem.data || [];
+  await loadAdminStatus();
   renderHouseholds();
   renderUsers();
   renderDevInfo();
+}
+
+// Fetch is_admin for every loaded member via the gated GET endpoint. Best-effort:
+// on failure the map is left empty so badges simply don't render (no hard error).
+async function loadAdminStatus() {
+  const userIds = [...new Set(cachedMembers.map(m => m.user_id).filter(Boolean))];
+  if (userIds.length === 0) { adminStatusMap = {}; return; }
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    const token = session?.access_token;
+    if (!token) { adminStatusMap = {}; return; }
+    const url = `${SET_ADMIN_STATUS_URL}?user_ids=${encodeURIComponent(userIds.join(','))}`;
+    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+    adminStatusMap = res.ok ? (await res.json()) : {};
+  } catch {
+    adminStatusMap = {};
+  }
 }
 
 // ---- Households render ----
@@ -174,9 +195,12 @@ function renderHouseholds() {
   } else {
     const body = cachedHouseholds.map(h => {
       const editing = ui.hhEditId === h.id;
+      const seedBadge = h.id === SEED_ALLOWED_HOUSEHOLD_ID
+        ? ' <span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:600;white-space:nowrap;">🌱 Seed</span>'
+        : '';
       const nameCell = editing
         ? `<input id="hh-edit-name" type="text" value="${esc(h.name)}">`
-        : esc(h.name);
+        : `${esc(h.name)}${seedBadge}`;
       const actions = editing
         ? `<button class="btn btn-sm" data-action="hh-edit-confirm" data-id="${esc(h.id)}">Confirm</button>
            <button class="btn btn-sm btn-secondary" data-action="hh-edit-cancel">Cancel</button>`
@@ -247,7 +271,7 @@ function renderMemberRow(m, h) {
       <span class="swatch" style="background:${esc(m.color || 'transparent')}"></span>
       <span class="mono">${esc(m.color || '—')}</span>
     </td>
-    <td>${esc(m.role) || '<span class="muted">—</span>'}</td>
+    <td>${esc(m.role) || '<span class="muted">—</span>'}${adminStatusMap[m.user_id] === true ? ' <span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:#fff3cd;color:#92400e;font-size:11px;font-weight:600;white-space:nowrap;">🔑 App admin</span>' : ''}</td>
     <td class="actions">
       <button class="btn btn-sm btn-secondary" data-action="mem-edit" data-id="${esc(m.id)}">Edit</button>
       <button class="btn btn-sm btn-danger" data-action="mem-remove" data-id="${esc(m.id)}">Remove</button>
@@ -616,7 +640,7 @@ async function toggleAdminStatus(memberId, userId, isAdmin) {
       renderUsers();
       return;
     }
-    showToast('Admin status updated — user must log out and back in for changes to take effect');
+    showToast('Admin status updated — user must sign out and back in to the Plant Care app for changes to take effect');
   } catch (e) {
     ui.memberError = e?.message || String(e);
     renderUsers();

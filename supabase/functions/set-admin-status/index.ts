@@ -1,14 +1,17 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-// Promote / demote a user's admin status by writing app_metadata.is_admin.
+// Read / write a user's admin status (app_metadata.is_admin).
+//   POST — promote / demote a single user.
+//   GET  — read is_admin for a set of users (the anon key cannot read auth.users,
+//          so the admin tool reads through this gated endpoint).
 // Gated: the caller must themselves be an admin (app_metadata.is_admin === true),
-// the same source the main app trusts at src/app.js:398. Writing auth.users metadata
-// requires the service-role key, so this runs server-side only.
+// the same source the main app trusts at src/app.js:398. Reading/writing auth.users
+// metadata requires the service-role key, so this runs server-side only.
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://plant-care-admin.netlify.app',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
 function json(body: unknown, status: number): Response {
@@ -22,14 +25,14 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS });
   }
-  if (req.method !== 'POST') {
+  if (req.method !== 'GET' && req.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405);
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-  // ---- Authenticate the caller from their JWT ----
+  // ---- Authenticate the caller from their JWT (shared by GET and POST) ----
   const authHeader = req.headers.get('Authorization') ?? '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   if (!token) {
@@ -46,7 +49,43 @@ Deno.serve(async (req) => {
     return json({ error: 'Forbidden: caller is not an administrator.' }, 403);
   }
 
-  // ---- Parse and validate the request body ----
+  // ---- GET: read is_admin for a set of users ----
+  if (req.method === 'GET') {
+    const url = new URL(req.url);
+    const userIdsParam = url.searchParams.get('user_ids');
+    if (!userIdsParam) {
+      return json({ error: 'user_ids query parameter is required.' }, 400);
+    }
+    const requested = new Set(
+      userIdsParam.split(',').map(s => s.trim()).filter(Boolean),
+    );
+    if (requested.size === 0) {
+      return json({ error: 'user_ids must contain at least one id.' }, 400);
+    }
+
+    // listUsers is paginated (default 50/page); walk pages until we run dry so
+    // requested ids on later pages aren't silently missed.
+    const statusMap: Record<string, boolean> = {};
+    let page = 1;
+    const perPage = 1000;
+    while (true) {
+      const { data: list, error: listError } = await adminClient.auth.admin.listUsers({ page, perPage });
+      if (listError) {
+        return json({ error: listError.message }, 500);
+      }
+      for (const u of list.users) {
+        if (requested.has(u.id)) {
+          statusMap[u.id] = u.app_metadata?.is_admin === true;
+        }
+      }
+      if (list.users.length < perPage) break;
+      page++;
+    }
+
+    return json(statusMap, 200);
+  }
+
+  // ---- POST: parse and validate the request body ----
   let body: { user_id?: unknown; is_admin?: unknown };
   try {
     body = await req.json();

@@ -640,6 +640,8 @@ async function toggleAdminStatus(memberId, userId, isAdmin) {
       renderUsers();
       return;
     }
+    await loadAdminStatus();
+    renderUsers();
     showToast('Admin status updated — user must sign out and back in to the Plant Care app for changes to take effect');
   } catch (e) {
     ui.memberError = e?.message || String(e);

@@ -218,14 +218,13 @@ function renderInstallStepsHTML() {
       <div class="ios-install-card">
         <img src="/icons/plant-care-icon-192.png" alt="Plant Care" style="width:64px;height:64px;border-radius:14px;display:block;margin:0 auto 8px;">
         <h2>Install Plant Care</h2>
-        <p class="ios-install-lead">Add Plant Care to your Home Screen to start using it.</p>
+        <p class="ios-install-lead">Add it to your Home Screen to get started.</p>
         <ol class="ios-install-steps">
-          <li><span class="ios-step-num">1</span><span class="ios-step-text">Tap <span class="ios-step-pill">•••</span> in the bottom-right toolbar</span></li>
-          <li><span class="ios-step-num">2</span><span class="ios-step-text">Tap <span class="ios-step-pill">${IOS_SHARE_ICON} Share</span></span></li>
-          <li><span class="ios-step-num">3</span><span class="ios-step-text">Tap <span class="ios-step-pill">View More</span></span></li>
-          <li><span class="ios-step-num">4</span><span class="ios-step-text">Scroll down to <span class="ios-step-pill">Add to Home Screen ➕</span></span></li>
-          <li><span class="ios-step-num">5</span><span class="ios-step-text">Tap <span class="ios-step-pill">Add</span></span></li>
-          <li class="ios-install-step--highlight" style="background:#eef7f1;border-radius:8px;padding:7px 8px;border:0.5px solid #b8ddc8;"><span class="ios-step-num" style="background:#1e5c3a;">6</span><span class="ios-step-text">Close Safari and open <img src="/icons/plant-care-icon-192.png" alt="" style="width:18px;height:18px;border-radius:4px;vertical-align:middle;margin:0 2px;"> Plant Care from your Home Screen like a normal app</span></li>
+          <li><span class="ios-step-num">1</span><span class="ios-step-text">Tap <span class="ios-step-pill">•••</span> then <span class="ios-step-pill">${IOS_SHARE_ICON} Share</span> in the bottom-right toolbar</span></li>
+          <li><span class="ios-step-num">2</span><span class="ios-step-text">Tap <span class="ios-step-pill">View More</span></span></li>
+          <li><span class="ios-step-num">3</span><span class="ios-step-text">Scroll down to <span class="ios-step-pill">Add to Home Screen ➕</span></span></li>
+          <li><span class="ios-step-num">4</span><span class="ios-step-text">Tap <span class="ios-step-pill">Add</span></span></li>
+          <li class="ios-install-step--highlight" style="background:#eef7f1;border-radius:8px;padding:7px 8px;border:0.5px solid #b8ddc8;"><span class="ios-step-num" style="background:#1e5c3a;">5</span><span class="ios-step-text">Close Safari and open <img src="/icons/plant-care-icon-192.png" alt="" style="width:18px;height:18px;border-radius:4px;vertical-align:middle;margin:0 2px;"> Plant Care from your Home Screen like a normal app</span></li>
         </ol>
       </div>
     </div>`;
@@ -2088,7 +2087,7 @@ function renderOnboardingInlineTaskCard() {
             <div style="font-size:12px;color:#888;">${escapeHtml(cardSub)}</div>
           </div>
         </div>
-        <button class="btn btn-primary" style="width:100%;" data-action="mark-done" data-plant="${onboardingPlantId}" data-task="${onboardingTaskId}">&#10003; Done</button>
+        <button class="btn btn-primary" style="width:100%;" data-action="mark-done" data-plant="${onboardingPlantId}" data-task="${onboardingTaskId}">&#10003; Mark as Done</button>
       </div>
     </div>`;
 }
@@ -2112,7 +2111,7 @@ function renderOnboardingBanner() {
     instruction = 'Add a plant to get started.';
     ctaHtml = `<button style="${ctaStyle}" data-action="add-plant">+ Add Plant</button>`;
   } else if (step === 2) {
-    instruction = 'Create a task.';
+    instruction = 'Create a task to water your plant every 3 days.';
     ctaHtml = `<button style="${ctaStyle}" data-action="onboarding-open-plant" data-plant="${onboardingPlantId ?? ''}">Create a task →</button>`;
   } else {
     instruction = 'Tap ✓ Done below to complete your setup ↓';
@@ -4778,7 +4777,7 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
         <span style="font-size:13px;font-weight:600;color:#3a6b3a;">Your care task</span>
         <span style="font-size:11px;font-weight:500;color:#3a6b3a;">Step 2 of 3</span>
       </div>
-      <div style="font-size:12px;color:#3a6b3a;line-height:1.4;">Here's a sample watering task to get you started.</div>
+      <div style="font-size:12px;color:#3a6b3a;line-height:1.4;">We've pre-filled a watering task for you. Adjust it or tap Add task to continue.</div>
     </div>` : ''}
     <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:0.5px solid #e8ece6;">
       ${isCustom

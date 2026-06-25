@@ -216,17 +216,17 @@ function renderInstallStepsHTML() {
   return `
     <div class="user-select-screen ios-install">
       <div class="ios-install-card">
-        <div class="ios-install-emoji">🌱</div>
+        <img src="/icons/plant-care-icon-192.png" alt="Plant Care" style="width:64px;height:64px;border-radius:14px;display:block;margin:0 auto 8px;">
         <h2>Install Plant Care</h2>
         <p class="ios-install-lead">Add Plant Care to your Home Screen to start using it.</p>
         <ol class="ios-install-steps">
-          <li><span class="ios-step-num">1</span><span class="ios-step-text">Tap <span class="ios-step-pill">•••</span> in the toolbar</span></li>
+          <li><span class="ios-step-num">1</span><span class="ios-step-text">Tap <span class="ios-step-pill">•••</span> in the bottom-right toolbar</span></li>
           <li><span class="ios-step-num">2</span><span class="ios-step-text">Tap <span class="ios-step-pill">${IOS_SHARE_ICON} Share</span></span></li>
           <li><span class="ios-step-num">3</span><span class="ios-step-text">Tap <span class="ios-step-pill">View More</span></span></li>
-          <li><span class="ios-step-num">4</span><span class="ios-step-text">Scroll to <span class="ios-step-pill">Add to Home Screen ➕</span></span></li>
+          <li><span class="ios-step-num">4</span><span class="ios-step-text">Scroll down to <span class="ios-step-pill">Add to Home Screen ➕</span></span></li>
           <li><span class="ios-step-num">5</span><span class="ios-step-text">Tap <span class="ios-step-pill">Add</span></span></li>
+          <li class="ios-install-step--highlight" style="background:#eef7f1;border-radius:8px;padding:7px 8px;border:0.5px solid #b8ddc8;"><span class="ios-step-num" style="background:#1e5c3a;">6</span><span class="ios-step-text">Close Safari and open <img src="/icons/plant-care-icon-192.png" alt="" style="width:18px;height:18px;border-radius:4px;vertical-align:middle;margin:0 2px;"> Plant Care from your Home Screen like a normal app</span></li>
         </ol>
-        <p class="ios-install-footer">This screen stays until the app is installed.</p>
       </div>
     </div>`;
 }

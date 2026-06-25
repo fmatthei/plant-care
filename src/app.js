@@ -138,6 +138,7 @@ let calendarCardCollapsed  = false; // #366: mirrors remindersCardCollapsed for 
 // ============================================================
 
 async function routeAfterAuth() {
+  window.scrollTo(0, 0);
   if (inRecovery) return;
 
   // #319/#321: iOS browser-tab users must install to Home Screen before
@@ -2668,7 +2669,6 @@ function renderPlantDetail(plantId) {
   }
 
   document.getElementById('app').innerHTML = html;
-  window.scrollTo(0, 0);
 }
 
 function renderManageHouseholds() {
@@ -2722,7 +2722,6 @@ function renderManageHouseholds() {
   </div>`;
 
   document.getElementById('app').innerHTML = html;
-  window.scrollTo(0, 0);
 
   if (manageHouseholdsEditingName) {
     const input = document.getElementById('manage-household-name-input');
@@ -5916,6 +5915,7 @@ function renderApp() {
 
 
 function navigateTo(view, plantId = null) {
+  window.scrollTo(0, 0);
   closeSheet();
   state.view = view;
   state.plantId = plantId;

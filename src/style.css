@@ -3806,7 +3806,11 @@ body.menu-open {
   display: flex;
   align-items: center;
   gap: 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(255, 255, 255, 0.08);
 }
+.detail-header-title:active { opacity: 0.7; }
 
 .detail-header-emoji-circle {
   width: 30px;
@@ -3855,25 +3859,14 @@ body.menu-open {
   gap: 5px;
 }
 
-.header-edit-chevron-btn {
-  min-width: 20px;
-  min-height: 20px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.18);
-  border: none;
-  padding: 0;
-  color: #fff;
-  font-size: 8px;
+.header-edit-chevron-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  cursor: pointer;
-  line-height: 1;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 0;
 }
-.header-edit-chevron-btn:active { opacity: 0.6; }
 
 .user-initial-circle {
   width: 34px;

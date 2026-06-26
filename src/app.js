@@ -1812,6 +1812,9 @@ function attachAddPlantStep3Listener() {
 // ============================================================
 
 const FEEDBACK_BUBBLE_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
+// #400: chevron-right on the plant-detail title (tappable → Edit Plant). Inline
+// SVG (matches the repo's icon convention) since no Tabler webfont is loaded.
+const CHEVRON_RIGHT_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
 
 function renderHeaderRight() {
   const activeMember = membersCache.find(m => m.display_name === activeUser);
@@ -2599,13 +2602,13 @@ function renderPlantDetail(plantId) {
   let html = `
   <div class="app-header app-header--plant-detail">
     <button class="back-btn" data-action="go-home">&#8249;</button>
-    <div class="detail-header-title">
+    <div class="detail-header-title" data-action="open-edit-plant" data-plant="${plant.id}" role="button" aria-label="Edit plant">
       ${plant.photoUrl
         ? plantIconImgHtml(plant.photoUrl, 30, '50%')
         : `<span class="detail-header-emoji-circle">${plant.emoji}</span>`}
       <div class="detail-header-name-row">
         <span class="detail-header-name">${escapeHtml(plant.name)}</span>
-        <button class="header-edit-chevron-btn" data-action="open-edit-plant" data-plant="${plant.id}" aria-label="Edit plant">▾</button>
+        <span class="header-edit-chevron-icon" aria-hidden="true">${CHEVRON_RIGHT_SVG}</span>
       </div>
     </div>
     <button class="header-feedback-btn" data-action="feedback" aria-label="Report a bug">${FEEDBACK_BUBBLE_SVG}</button>

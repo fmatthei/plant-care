@@ -7131,6 +7131,43 @@ async function handleEvent(e) {
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy-v4">🌲 Heavy v4</button>
       <button class="dev-tools-btn" data-action="dev-seed-reminders-test">🔔 Reminders Test</button>`; break;
+    case 'dev-copy-debug-info': {
+      // #402e: read-only diagnostic — assemble the onboarding-flag values for
+      // currentMemberId plus every onboarding/session6/push key, copy to clipboard.
+      // Writes nothing; does not close the panel.
+      const mid = currentMemberId;
+      const fmt = k => `${k}: ${localStorage.getItem(k) ?? 'null'}`;
+      const allKeys = Object.keys(localStorage).filter(k => /onboarding_|session6_|push_/.test(k));
+      const keyList = allKeys.length
+        ? allKeys.map(k => `${k}: ${localStorage.getItem(k)}`).join('\n')
+        : 'none found';
+      const builtTs = document.getElementById('dev-build-ts')?.textContent ?? 'unknown';
+      const debugString =
+`=== Plant Care Debug ===
+currentMemberId: ${mid}
+${fmt(`onboarding_coordination_shown_${mid}`)}
+${fmt(`onboarding_session6_done_${mid}`)}
+${fmt(`onboarding_step_${mid}`)}
+
+All onboarding/session6/push keys:
+${keyList}
+
+${builtTs}`;
+      const _origLabel = target.textContent;
+      const _flashCopied = () => {
+        target.textContent = '✓ Copied';
+        setTimeout(() => { target.textContent = _origLabel; }, 2000);
+      };
+      try {
+        await navigator.clipboard.writeText(debugString);
+        _flashCopied();
+      } catch (_) {
+        // iOS PWA clipboard can be restricted — fall back to a copyable prompt.
+        prompt('Copy this:', debugString);
+      }
+      break;
+    }
+
     case 'dev-tools-confirm': {
       if (target.disabled) break;
       target.disabled = true;
@@ -7580,6 +7617,7 @@ function openDevToolsPanel() {
       <button class="dev-tools-btn" data-action="dev-seed-heavy-v4">🌲 Heavy v4</button>
       <button class="dev-tools-btn" data-action="dev-seed-reminders-test">🔔 Reminders Test</button>
     </div>
+    <button class="dev-tools-btn" data-action="dev-copy-debug-info" style="margin-top:8px;">📋 Copy Debug Info</button>
     <button class="add-plant-back-link" data-action="close-sheet" style="margin-top:12px;">Cancel</button>
   `);
 }

@@ -221,7 +221,7 @@ function renderInstallStepsHTML() {
         <h2>Install Plant Care</h2>
         <p class="ios-install-lead">Add it to your Home Screen to get started.</p>
         <ol class="ios-install-steps">
-          <li><span class="ios-step-num">1</span><span class="ios-step-text">Tap <span class="ios-step-pill">•••</span> then <span class="ios-step-pill">${IOS_SHARE_ICON} Share</span> in the bottom-right toolbar</span></li>
+          <li><span class="ios-step-num">1</span><span class="ios-step-text">Tap the <span class="ios-step-pill">${IOS_SHARE_ICON} Share</span> button in the bottom toolbar. If you don't see it, tap <span class="ios-step-pill">•••</span> first.</span></li>
           <li><span class="ios-step-num">2</span><span class="ios-step-text">Tap <span class="ios-step-pill">View More</span></span></li>
           <li><span class="ios-step-num">3</span><span class="ios-step-text">Scroll down to <span class="ios-step-pill">Add to Home Screen ➕</span></span></li>
           <li><span class="ios-step-num">4</span><span class="ios-step-text">Tap <span class="ios-step-pill">Add</span></span></li>
@@ -4527,7 +4527,6 @@ function renderMenuPanel() {
     </div>
     <div class="menu-section">
       <div class="menu-section-title">Account</div>
-      <button class="menu-item" data-action="menu-show-onboarding">&#128218; Show getting started guide</button>
       <button class="menu-item menu-item-danger" data-action="menu-sign-out">Sign Out</button>
     </div>
   `;
@@ -6118,20 +6117,6 @@ async function handleEvent(e) {
       await handleChangePassword();
       break;
 
-    case 'menu-show-onboarding': {
-      closeMenu();
-      if (currentMemberId) {
-        localStorage.removeItem(`onboarding_step_${currentMemberId}`);
-        localStorage.removeItem(`onboarding_plant_id_${currentMemberId}`);
-        localStorage.removeItem(`onboarding_task_id_${currentMemberId}`);
-        localStorage.removeItem(`onboarding_show_coachmark_${currentMemberId}`);
-        localStorage.removeItem(`onboarding_session6_done_${currentMemberId}`);
-      }
-      localStorage.removeItem(`onboarding_coordination_shown_${currentMemberId}`);
-      navigateTo('home');
-      break;
-    }
-
     case 'menu-sign-out':
       closeMenu();
       localStorage.removeItem('active_household_id');
@@ -7152,10 +7137,13 @@ async function handleEvent(e) {
     case 'dev-seed-empty':     showDevToolsConfirm('empty',     'Empty state');  break;
     case 'dev-seed-heavy-v4':  showDevToolsConfirm('heavy-v4',  'Heavy v4');     break;
     case 'dev-seed-reminders-test': showDevToolsConfirm('reminders-test', 'Reminders Test'); break;
+    case 'dev-full-onboarding-reset': showOnboardingResetConfirm(); break;
     case 'dev-tools-cancel': document.getElementById('dev-tools-body').innerHTML = `
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy-v4">🌲 Heavy v4</button>
-      <button class="dev-tools-btn" data-action="dev-seed-reminders-test">🔔 Reminders Test</button>`; break;
+      <button class="dev-tools-btn" data-action="dev-seed-reminders-test">🔔 Reminders Test</button>
+      <div style="height:1px;background:#eee;margin:10px 0;"></div>
+      <button class="dev-tools-btn" data-action="dev-full-onboarding-reset">♻️ Full Onboarding Reset (this member)</button>`; break;
     case 'dev-copy-debug-info': {
       // #402e: read-only diagnostic — assemble the onboarding-flag values for
       // currentMemberId plus every onboarding/session6/push key, copy to clipboard.
@@ -7199,6 +7187,19 @@ ${builtTs}`;
       const _origLabel = target.textContent;
       target.textContent = 'Running…';
       const _ok = await runDevSeed(target.dataset.scenario);
+      if (!_ok) {
+        target.disabled = false;
+        target.textContent = _origLabel;
+      }
+      break;
+    }
+
+    case 'dev-onboarding-reset-confirm': {
+      if (target.disabled) break;
+      target.disabled = true;
+      const _origLabel = target.textContent;
+      target.textContent = 'Running…';
+      const _ok = await runOnboardingReset();
       if (!_ok) {
         target.disabled = false;
         target.textContent = _origLabel;
@@ -7654,11 +7655,13 @@ function openDevToolsPanel() {
   openSheet(`
     <div style="width:36px;height:4px;background:#ddd;border-radius:2px;margin:0 auto 16px;"></div>
     <div style="font-size:13px;font-weight:500;color:#222;margin-bottom:4px;">Dev Tools</div>
-    <div style="font-size:11px;color:#888;margin-bottom:16px;">Seed data scenarios — replaces all current household data</div>
+    <div style="font-size:11px;color:#888;margin-bottom:16px;">Seed scenarios replace household data · Onboarding reset affects only you</div>
     <div id="dev-tools-body">
       <button class="dev-tools-btn" data-action="dev-seed-empty">🌱 Empty state</button>
       <button class="dev-tools-btn" data-action="dev-seed-heavy-v4">🌲 Heavy v4</button>
       <button class="dev-tools-btn" data-action="dev-seed-reminders-test">🔔 Reminders Test</button>
+      <div style="height:1px;background:#eee;margin:10px 0;"></div>
+      <button class="dev-tools-btn" data-action="dev-full-onboarding-reset">♻️ Full Onboarding Reset (this member)</button>
     </div>
     <button class="dev-tools-btn" data-action="dev-copy-debug-info" style="margin-top:8px;">📋 Copy Debug Info</button>
     <button class="add-plant-back-link" data-action="close-sheet" style="margin-top:12px;">Cancel</button>
@@ -7704,6 +7707,79 @@ async function runDevSeed(scenario) {
   } catch (err) {
     console.error('[DevTools] seed error:', err);
     showToast('❌ Seed failed — check console');
+    return false;
+  }
+}
+
+// #405a: confirm screen for the onboarding-only reset. Distinct from the seed
+// confirm (showDevToolsConfirm) — this touches no household data, only the current
+// member's onboarding flags/completion column/notification state.
+function showOnboardingResetConfirm() {
+  document.getElementById('dev-tools-body').innerHTML = `
+    <p style="font-size:13px;color:#333;margin-bottom:16px;">
+      Reset <strong>onboarding</strong> for <strong>${escapeHtml(activeUser || 'this member')}</strong>?
+      Clears local onboarding flags, sets <code>onboarding_completed_at</code> → null, and (if on)
+      disables notifications. Plants and tasks are left untouched.
+    </p>
+    <div style="display:flex;gap:8px;">
+      <button class="dev-tools-btn" style="flex:1;" data-action="dev-tools-cancel">Cancel</button>
+      <button class="dev-tools-btn" style="flex:1;background:#c0392b;color:#fff;border-color:#c0392b;"
+              data-action="dev-onboarding-reset-confirm">Yes, reset onboarding</button>
+    </div>`;
+}
+
+// #405a: onboarding-state-only reset for the CURRENT member. Clears the local
+// onboarding-adjacent keys (same prefix list as seedEmpty, but scoped to this
+// member), nulls the server completion column, and — only if notifications were
+// enabled — disables them and drops the push subscription. Does NOT touch
+// plants/tasks/care_log/notes/plant_photos.
+async function runOnboardingReset() {
+  if (!currentMemberId) { showToast('No current member'); return false; }
+  try {
+    // 1. Local: clear onboarding-adjacent keys for THIS member only.
+    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_card_dismissed_', 'calendar_card_triggered_', 'calendar_subscribed_'];
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && key.includes(currentMemberId) && resetPrefixes.some(p => key.startsWith(p))) {
+        localStorage.removeItem(key);
+      }
+    }
+
+    // 2. Server: null the completion column so reconcileOnboardingFromServer()
+    //    early-returns and the local flags drive a fresh tour.
+    const { error: obErr } = await supabaseClient
+      .from('household_members')
+      .update({ onboarding_completed_at: null })
+      .eq('id', currentMemberId);
+    if (obErr) throw obErr;
+    const m = membersCache.find(mm => mm.id === currentMemberId);
+    if (m) m.onboarding_completed_at = null;
+
+    // 3. Server: if notifications were on, turn them off and remove the push sub.
+    //    Skip entirely (no-op) when already off.
+    if (m?.notifications_enabled) {
+      const { error: nErr } = await supabaseClient
+        .from('household_members')
+        .update({ notifications_enabled: false })
+        .eq('id', currentMemberId);
+      if (nErr) throw nErr;
+      m.notifications_enabled = false;
+
+      const { error: pErr } = await supabaseClient
+        .from('push_subscriptions')
+        .delete()
+        .eq('household_member_id', currentMemberId);
+      if (pErr) throw pErr;
+    }
+
+    closeSheet();
+    await loadFromSupabase();
+    navigateTo('home');
+    showToast('✅ Onboarding reset');
+    return true;
+  } catch (err) {
+    console.error('[DevTools] onboarding reset error:', err);
+    showToast('❌ Reset failed — check console');
     return false;
   }
 }

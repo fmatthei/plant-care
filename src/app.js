@@ -447,7 +447,7 @@ async function loadFromSupabase() {
       .is('deleted_at', null),
     supabaseClient
       .from('household_members')
-      .select('id, display_name, color, user_id, calendar_time, calendar_weekend_time, notifications_enabled')
+      .select('id, display_name, color, user_id, calendar_time, calendar_weekend_time, notifications_enabled, onboarding_completed_at')
       .eq('household_id', householdId)
       .is('deleted_at', null),
     supabaseClient
@@ -475,6 +475,11 @@ async function loadFromSupabase() {
   }
   currentMemberId = meInCache.id;
   activeUser = meInCache.display_name ?? '';
+
+  // #403: server is the source of truth for "finished onboarding". If this
+  // person completed it on any device, force the local device-facts to agree
+  // so a second device doesn't re-show the banner or re-lock the FAB.
+  reconcileOnboardingFromServer();
 
   if (plantRows.length === 0) {
     plants = [];
@@ -2038,6 +2043,22 @@ function renderHomeActivityFeed() {
 // ============================================================
 // ONBOARDING
 // ============================================================
+
+// #403: onboarding completion is a server-side fact (household_members.
+// onboarding_completed_at). When it's set, mirror it into the local device-facts
+// the existing surfaces read, so the Get-Started banner stays suppressed, the
+// Add-Plant FAB stays unlocked, and the Notifications card stays gone — on every
+// device, regardless of this browser's local onboarding_* flags. When it's null,
+// the local flags drive (same-device, in-progress fallback).
+function reconcileOnboardingFromServer() {
+  if (!currentMemberId) return;
+  const m = membersCache.find(mm => mm.id === currentMemberId);
+  if (!m?.onboarding_completed_at) return;
+  localStorage.setItem(`onboarding_session6_done_${currentMemberId}`, 'true');
+  localStorage.setItem(`onboarding_coordination_shown_${currentMemberId}`, '1');
+  localStorage.setItem(`onboarding_step_${currentMemberId}`, '4');
+  localStorage.setItem(`reminders_card_dismissed_${currentMemberId}`, 'true');
+}
 
 function getOnboardingStep() {
   if (!currentMemberId) return null;
@@ -6046,6 +6067,7 @@ async function handleEvent(e) {
       if (ok) {
         await setNotificationsEnabled(true);
         if (currentMemberId) localStorage.setItem(`reminders_card_dismissed_${currentMemberId}`, 'true');
+        await markOnboardingCompleteIfNeeded(); // #403: enabling completes onboarding
         showToast('Notifications enabled');
       }
       // On false: a denial flips the card to the OS-blocked state on re-render;
@@ -6063,6 +6085,7 @@ async function handleEvent(e) {
     case 'reminders-note-dismiss':
       // #339: Note → Gone, permanent.
       if (currentMemberId) localStorage.setItem(`reminders_card_dismissed_${currentMemberId}`, 'true');
+      await markOnboardingCompleteIfNeeded(); // #403: dismissing the card completes onboarding
       renderHome();
       break;
 
@@ -6102,7 +6125,6 @@ async function handleEvent(e) {
         localStorage.removeItem(`onboarding_plant_id_${currentMemberId}`);
         localStorage.removeItem(`onboarding_task_id_${currentMemberId}`);
         localStorage.removeItem(`onboarding_show_coachmark_${currentMemberId}`);
-        localStorage.removeItem(`onboarding_show_pushsheet_${currentMemberId}`);
         localStorage.removeItem(`onboarding_session6_done_${currentMemberId}`);
       }
       localStorage.removeItem(`onboarding_coordination_shown_${currentMemberId}`);
@@ -7264,6 +7286,24 @@ async function setNotificationsEnabled(enabled) {
     .update({ notifications_enabled: enabled })
     .eq('id', currentMemberId);
   if (error) console.error('notifications_enabled save failed:', error);
+}
+
+// #403: stamp first onboarding completion on the current member's
+// household_members row and mirror it into the cache. Set-only-if-null semantics
+// (cache short-circuit + DB-level `.is(null)` guard) so the timestamp records the
+// first completion and isn't overwritten on repeat dismisses or a second device.
+async function markOnboardingCompleteIfNeeded() {
+  if (!currentMemberId) return;
+  const m = membersCache.find(mm => mm.id === currentMemberId);
+  if (m?.onboarding_completed_at) return;
+  const nowIso = new Date().toISOString();
+  if (m) m.onboarding_completed_at = nowIso;
+  const { error } = await supabaseClient
+    .from('household_members')
+    .update({ onboarding_completed_at: nowIso })
+    .eq('id', currentMemberId)
+    .is('onboarding_completed_at', null);
+  if (error) console.error('onboarding_completed_at save failed:', error);
 }
 
 // ============================================================

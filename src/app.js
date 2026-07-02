@@ -4513,7 +4513,6 @@ function renderMenuPanel() {
     <div class="menu-section">
       <div class="menu-section-title">Profile</div>
       <div class="menu-user-name">&#128100; ${escapeHtml(activeUser)}</div>
-      <button class="menu-item" data-action="change-password">Change Password</button>
     </div>
     <div class="menu-section">
       <div class="menu-section-title">Reminders & Notifications</div>
@@ -4527,6 +4526,7 @@ function renderMenuPanel() {
     </div>
     <div class="menu-section">
       <div class="menu-section-title">Account</div>
+      <button class="menu-item" data-action="change-password">Change Password</button>
       <button class="menu-item menu-item-danger" data-action="menu-sign-out">Sign Out</button>
     </div>
   `;

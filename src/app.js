@@ -575,6 +575,8 @@ async function loadFromSupabase() {
       weekdays:        t.recurrence?.days  ?? [],
       lastDone:        t.last_done         ?? null,
       nextDueOverride: t.next_due_override ?? null,
+      preCompletionLastDone:        t.pre_completion_last_done         ?? null,
+      preCompletionNextDueOverride: t.pre_completion_next_due_override ?? null,
       paused:          t.paused            ?? false,
       owner:           ownerMap[t.owner_id] ?? '',
       note:            t.note              ?? '',
@@ -921,8 +923,16 @@ async function markTaskDone(plantId, taskId) {
   const preRecType = task.recurrenceType ?? 'interval';
   const preDueDate = preRecType !== 'one-off' ? computeNextDue(task) : null;
 
+  // #411: preserve pre-completion schedule state so undo can restore the exact
+  // due date instead of re-anchoring to today. Capture BEFORE overwriting; the
+  // restore is a verbatim field-copy, so it is recurrence-type-agnostic.
+  const preCompletionLastDone = task.lastDone;
+  const preCompletionOverride = task.nextDueOverride;
+
   task.lastDone = todayStr();
   task.nextDueOverride = null; // clear any manual override when marking done
+  task.preCompletionLastDone = preCompletionLastDone;
+  task.preCompletionNextDueOverride = preCompletionOverride;
 
   const taskCfg = getTaskConfig(task);
   plant.careLog.unshift({
@@ -940,7 +950,12 @@ async function markTaskDone(plantId, taskId) {
   const member = membersCache.find(m => m.display_name === task.owner);
   await supabaseClient
     .from('tasks')
-    .update({ last_done: todayStr(), next_due_override: null })
+    .update({
+      last_done: todayStr(),
+      next_due_override: null,
+      pre_completion_last_done: preCompletionLastDone,
+      pre_completion_next_due_override: preCompletionOverride,
+    })
     .eq('id', taskId)
     .then(({ error }) => { if (error) console.error('markTaskDone task update error:', error); });
   await supabaseClient
@@ -1000,8 +1015,15 @@ async function undoMarkTaskDone(plantId, taskId) {
   const task = plant?.tasks.find(t => t.id === taskId);
   if (!task) return;
 
-  task.lastDone = null;
-  task.nextDueOverride = null;
+  // #411: restore the exact pre-completion schedule captured at mark-done time
+  // rather than nulling (which made computeNextDue() re-anchor to today). Copy
+  // verbatim — recurrence-type-agnostic — then clear the capture columns.
+  const restoreLastDone = task.preCompletionLastDone ?? null;
+  const restoreOverride = task.preCompletionNextDueOverride ?? null;
+  task.lastDone = restoreLastDone;
+  task.nextDueOverride = restoreOverride;
+  task.preCompletionLastDone = null;
+  task.preCompletionNextDueOverride = null;
 
   // Remove the most recent care log entry for this task (today's entry)
   const idx = plant.careLog.findIndex(e => e.taskId === taskId && e.date === todayStr());
@@ -1009,7 +1031,12 @@ async function undoMarkTaskDone(plantId, taskId) {
 
   await supabaseClient
     .from('tasks')
-    .update({ last_done: null, next_due_override: null })
+    .update({
+      last_done: restoreLastDone,
+      next_due_override: restoreOverride,
+      pre_completion_last_done: null,
+      pre_completion_next_due_override: null,
+    })
     .eq('id', taskId)
     .then(({ error }) => { if (error) console.error('undoMarkTaskDone task update error:', error); });
   await supabaseClient

@@ -26,3 +26,9 @@ self.addEventListener('notificationclick', event => {
     })
   );
 });
+
+self.addEventListener('fetch', (event) => {
+  // Transparent pass-through — presence satisfies Chrome installability
+  // (enables beforeinstallprompt). No caching / interception by design.
+  return;
+});

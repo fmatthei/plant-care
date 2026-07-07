@@ -10,6 +10,34 @@ backed by Supabase (Postgres + Storage + Auth + Edge Functions).
 - Backend: Supabase. Edge Functions written in TypeScript on Deno.
 - Always run `npm run build` after non-trivial JS edits — fastest parse check.
 
+## QA / live verification
+
+For briefs that require observing real behavior in the running app (not just a
+build/type-check), drive the browser against a seeded QA household:
+
+1. Start the dev server if it isn't up: `npm run dev` (serves
+   http://localhost:5173). Check with `curl -s -o /dev/null -w "%{http_code}"
+   http://localhost:5173`.
+2. Drive it with the Playwright MCP tools (`browser_navigate`, `browser_snapshot`,
+   `browser_click`, `browser_type`, …). `browser_snapshot`'s accessibility tree is
+   more reliable than screenshots for locating elements by `ref`.
+3. Sign in at the login screen with the QA test account:
+   - Email: `qa-bot@plantcare.test`
+   - Password: `QaBot2026!Test`
+   - This lands in the **QA Bot** household (plant "QA Fern 6", an overdue interval
+     "Watering (Example)" task). Top-level nav is **🌿 My Plants** / **✅ Caring**;
+     the Upcoming list lives on the Caring tab.
+
+Leave QA data as you found it. Prefer reversible actions and undo them: mark-done
+→ **Undo** toast (deletes the care_log row), created task → **Delete task** in the
+Edit Task sheet. After cleanup, reload the page to confirm the in-memory
+`activityFeed` (which does not always refresh on undo) matches the restored DB
+state.
+
+> The QA credential above is a throwaway shared test account, intentionally
+> checked in for reviewer/agent convenience. Do not reuse it elsewhere or point it
+> at real data.
+
 ## File layout — what's live, what's dead
 
 ```

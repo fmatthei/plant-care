@@ -27,6 +27,9 @@ const VAPID_PUBLIC_KEY = 'BLVM0ZnxinWDENKHaZ5QslyAmUJNjf-9w4q3Sxc0mFuVKS19lVLePh
 // When the PWA returns to the foreground after this long, force a data reload.
 const FOREGROUND_RELOAD_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
+// #418: cadence of the visibility-gated ambient activity-feed poll.
+const POLL_INTERVAL_MS = 45 * 1000; // 45 seconds
+
 const CARE_VERB = {
   water:     'watered',
   refill:    'refilled',
@@ -132,6 +135,7 @@ let manageHouseholdsEditingName = false;
 let lastSyncedAt = null; // ms timestamp of the last completed loadFromSupabase()
 let remindersCardCollapsed = false; // #339: in-session only (Full→Note). Resets on reload; no flag written.
 let calendarCardCollapsed  = false; // #366: mirrors remindersCardCollapsed for the calendar card.
+let activityFeedPollTimer  = null; // #418: single setInterval handle for the visibility-gated feed poll.
 
 // ============================================================
 // ACTIVE USER (auto-resolved from Supabase auth)
@@ -141,20 +145,25 @@ async function routeAfterAuth() {
   window.scrollTo(0, 0);
   if (inRecovery) return;
 
-  // #319/#321: iOS browser-tab users must install to Home Screen before
-  // anything loads. Gated here — the single chokepoint every post-auth path
-  // funnels through (INITIAL_SESSION reload, fresh login, post-recovery login)
-  // — so the takeover fires before any data load, onboarding, or home render.
-  // Re-runs every load; once installed, isStandalone() is true and it never shows.
+  await loadFromSupabase();
+
+  // routeAfterAuth: if loadFromSupabase already rendered an auth error, bail
+  if (!currentMemberId) return;
+
+  // #319/#321/#396: iOS browser-tab users must install to Home Screen. Gated
+  // AFTER loadFromSupabase() validates the session (currentMemberId set above)
+  // so a stale/expired INITIAL_SESSION token can no longer trip the takeover —
+  // #396: on a dead token loadFromSupabase() renders the login screen and we
+  // bail at the guard above, never reaching here. Re-runs every load; once
+  // installed, isStandalone() is true and it never shows.
   if (isIOS() && !isStandalone()) {
     renderIOSInstallTakeover();
     return;
   }
 
-  await loadFromSupabase();
-
-  // routeAfterAuth: if loadFromSupabase already rendered an auth error, bail
-  if (!currentMemberId) return;
+  // #418: begin the ambient feed poll now that a session is loaded. Idempotent —
+  // only the first successful load starts it; later loads (household switch) reuse it.
+  startActivityFeedPoll();
 
   const currentMember = membersCache.find(m => m.id === currentMemberId);
   if (!currentMember?.display_name) {
@@ -393,7 +402,9 @@ function saveData() {
 async function loadFromSupabase() {
   // 1. Get the logged-in user
   const { data: { user } } = await supabaseClient.auth.getUser();
-  if (!user) return;
+  // #396: a stale/expired INITIAL_SESSION token resolves to a null user here.
+  // Render the login screen rather than returning silently onto the boot spinner.
+  if (!user) { renderLoginScreen(); return; }
   currentUserId = user.id;
   isAdmin = user.app_metadata?.is_admin === true;
 
@@ -650,6 +661,24 @@ async function loadActivityFeed() {
   ]);
 
   activityFeed = buildActivityFeed(careRows, noteRows, plantMap, ownerMap);
+}
+
+// #418: ambient activity-feed refresh. A single visibility-gated interval that
+// re-fetches ONLY the feed (not a full loadFromSupabase) so an open, foregrounded
+// app picks up other members' activity without a reload, notification tap, or
+// background→foreground transition (#417 gap). Additive alongside the #260
+// visibilitychange reload and the #370 notification-tap handler. Started once from
+// routeAfterAuth(); the module-level handle guards against duplicate intervals, so
+// household switches reuse the same timer and pick up the new householdId next tick.
+function startActivityFeedPoll() {
+  if (activityFeedPollTimer !== null) return;
+  activityFeedPollTimer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    if (!householdId || !currentMemberId) return;
+    // Reuse the #260 open-sheet check so a tick never yanks state mid-edit.
+    if (document.getElementById('sheet')?.classList.contains('active')) return;
+    loadActivityFeed().then(() => renderApp());
+  }, POLL_INTERVAL_MS);
 }
 
 // Shared by loadActivityFeed() and the batched load in loadFromSupabase().

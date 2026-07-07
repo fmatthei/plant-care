@@ -2239,7 +2239,7 @@ function renderRemindersCard() {
     <div class="reminders-card-blocked">
       <button class="reminders-card-blocked-close" data-action="reminders-note-dismiss" aria-label="Dismiss">&#10005;</button>
       <div class="reminders-card-blocked-title">Notifications are turned off</div>
-      <div class="reminders-card-blocked-body">To turn them on: <strong>iPhone Settings &rarr; Plant Care &rarr; Notifications</strong>.</div>
+      <div class="reminders-card-blocked-body">To turn them on: <strong>${isIOS() ? 'iPhone Settings &rarr; Plant Care &rarr; Notifications' : 'Android Settings &rarr; Apps &rarr; Plant Care &rarr; Notifications'}</strong>.</div>
     </div>`;
   }
 
@@ -4574,7 +4574,7 @@ function renderMenuPanel() {
       <div class="menu-section-title">Reminders & Notifications</div>
       ${('Notification' in window && Notification.permission === 'denied')
         ? `<button class="menu-item" data-action="menu-notifications">🔔 Notifications &middot; <span style="color:#c0392b;">Blocked</span></button>
-        <div style="padding:0 20px 12px;font-size:12px;color:#999;line-height:1.4;">To turn them on: <strong>iPhone Settings &rarr; Plant Care &rarr; Notifications</strong>.</div>`
+        <div style="padding:0 20px 12px;font-size:12px;color:#999;line-height:1.4;">To turn them on: <strong>${isIOS() ? 'iPhone Settings &rarr; Plant Care &rarr; Notifications' : 'Android Settings &rarr; Apps &rarr; Plant Care &rarr; Notifications'}</strong>.</div>`
         : membersCache.find(m => m.id === currentMemberId)?.notifications_enabled
         ? `<button class="menu-item" style="color:#3a6b3a;opacity:0.7;" disabled>🔔 Notifications &middot; On</button>`
         : `<button class="menu-item" data-action="menu-notifications">🔔 Notifications &middot; <span style="color:#aaa;">Off</span></button>`}

@@ -429,11 +429,40 @@ Deno.serve(async (req) => {
 
   const icsString = lines.join('\r\n');
 
+  // Last-Modified (#430): best-effort freshness signal for downstream caches,
+  // notably Google Calendar's server-side ICS cache (see #429). `tasks` has no
+  // updated_at column, so derive it from the newest content-changing timestamp
+  // we do have: tasks.created_at (a task was added) and care_log.created_at (a
+  // task was marked done, which shifts its occurrence dates). Pure task edits
+  // (rename / time change) aren't captured — acceptable, because Cache-Control
+  // below forces revalidation regardless and the body is always recomputed fresh
+  // (there is no conditional-GET / 304 path in this handler).
+  let lastModifiedMs = 0;
+  for (const t of (tasks ?? []) as any[]) {
+    if (t.created_at) lastModifiedMs = Math.max(lastModifiedMs, Date.parse(t.created_at));
+  }
+  const taskIds = ((tasks ?? []) as any[]).map((t) => t.id);
+  if (taskIds.length > 0) {
+    const { data: latestLog } = await supabase
+      .from('care_log')
+      .select('created_at')
+      .in('task_id', taskIds)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const logTs = latestLog?.[0]?.created_at;
+    if (logTs) lastModifiedMs = Math.max(lastModifiedMs, Date.parse(logTs));
+  }
+  const lastModified = new Date(lastModifiedMs || Date.now()).toUTCString();
+
   return new Response(icsString, {
     headers: {
       ...CORS_HEADERS,
       'Content-Type': 'text/calendar; charset=utf-8',
       'Content-Disposition': 'inline; filename="plant-care.ics"',
+      // no-cache forces caches to revalidate with the origin before serving, so
+      // a fixed feed URL can never serve a stale body indefinitely (#429/#430).
+      'Cache-Control': 'no-cache, must-revalidate',
+      'Last-Modified': lastModified,
     },
   });
 });

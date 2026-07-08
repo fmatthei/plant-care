@@ -4430,10 +4430,18 @@ function openCalendarSyncSheet() {
   }
   const base       = import.meta.env.VITE_SUPABASE_URL;
   const baseHost   = base.replace(/^https?:\/\//, '');
-  const meHttps    = `${base}/functions/v1/get-calendar-feed?member_id=${currentMemberId}`;
-  const meWebcal   = `webcal://${baseHost}/functions/v1/get-calendar-feed?member_id=${currentMemberId}`;
-  const hhHttps    = `${base}/functions/v1/get-calendar-feed?household_id=${householdId}`;
-  const hhWebcal   = `webcal://${baseHost}/functions/v1/get-calendar-feed?household_id=${householdId}`;
+  // Cache-busting feed version (#430). Google Calendar caches subscribed ICS
+  // feeds server-side keyed on the URL and refetches on its own slow schedule,
+  // so a resubscribe to an identical URL keeps serving the old body (#429). Bump
+  // this whenever the feed FORMAT changes: existing subscribers then get a new
+  // URL key, forcing Google to fetch fresh. Appended to every subscribe/copy URL
+  // (Apple webcal, Google render's cid, copied https) so all paths share one key.
+  // The Edge Function ignores `v`; it only reads member_id / household_id.
+  const feedVer    = '2';
+  const meHttps    = `${base}/functions/v1/get-calendar-feed?member_id=${currentMemberId}&v=${feedVer}`;
+  const meWebcal   = `webcal://${baseHost}/functions/v1/get-calendar-feed?member_id=${currentMemberId}&v=${feedVer}`;
+  const hhHttps    = `${base}/functions/v1/get-calendar-feed?household_id=${householdId}&v=${feedVer}`;
+  const hhWebcal   = `webcal://${baseHost}/functions/v1/get-calendar-feed?household_id=${householdId}&v=${feedVer}`;
 
   // Time values are stored as Postgres `time` (e.g. "20:00:00"); inputs use HH:MM.
   const toHHMM = (v) => (v ? String(v).slice(0, 5) : null);

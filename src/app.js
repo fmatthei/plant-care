@@ -4482,12 +4482,176 @@ function openCalendarSyncSheet() {
   const allSubKey = `calendar_subscribed_all_tasks_${householdId}_${currentMemberId}`;
 
   let calScope = 'my';
-  // iOS-only calendar-app selection (#373). Local to this sheet session, not
-  // persisted — resets to Apple (iOS's actual default) each time the sheet opens.
-  let calendarAppChoice = 'apple';
+  // In-progress calendar-app selection for the configure/switch views (#432).
+  // Seeded from the target scope's persisted choice on entry, written back on
+  // Subscribe. Default follows the platform (iOS → Apple, else Google).
+  let calendarAppChoice = isIOS() ? 'apple' : 'google';
+
+  // Multi-subscription view state (#432). One of: 'options' (root list),
+  // 'configure' (State 1), 'switch', 'help', 'unsubscribe'. Null until the first
+  // render picks a root from subscription state. activeScope is the scope a
+  // per-card action targets; cameFromOptions decides whether 'configure' shows a
+  // Back affordance (true) or is the first-time root (false).
+  let view = null;
+  let activeScope = 'my';
+  let cameFromOptions = false;
+
+  // Per-scope persisted calendar-app choice (#432). Each active subscription
+  // (my / all) can live on a different app, so the choice can no longer be a
+  // single shared value. Key shape mirrors the subscribed-flag keys.
+  const appKey    = (scope) => `calendar_app_${scope === 'all' ? 'all' : 'my'}_${householdId}_${currentMemberId}`;
+  const getApp    = (scope) => localStorage.getItem(appKey(scope)) || (isIOS() ? 'apple' : 'google');
+  const setApp    = (scope, app) => localStorage.setItem(appKey(scope), app);
+  const scopeName = (scope) => scope === 'all' ? 'All household tasks' : 'My tasks';
+  const appLabel  = (scope) => getApp(scope) === 'google' ? 'Google Calendar' : 'Apple Calendar';
+
+  // Shared header row (title + optional Back + close), reused by every view.
+  const headerRow = (back) => `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        ${back ? `<button type="button" data-action="cal-back" aria-label="Back" style="background:none;border:none;font-size:22px;line-height:1;color:#2e7d51;cursor:pointer;padding:0 2px 0 0;font-family:inherit;">&#8249;</button>` : ''}
+        <div class="sheet-title" style="margin-bottom:0;flex:1;">Sync to Calendar</div>
+        <button type="button" class="menu-close" data-action="close-sheet" aria-label="Close" style="position:static;">&#10005;</button>
+      </div>`;
+
+  // Segmented Calendar-app chooser (#373), iOS-only. Shared by configure + switch.
+  const segStyle = (active) =>
+    `flex:1;border:none;border-radius:8px;padding:10px 8px;font-family:inherit;font-size:14px;font-weight:500;cursor:pointer;`
+    + `background:${active ? '#fff' : 'transparent'};color:${active ? '#2e7d51' : '#6b7280'};`
+    + `box-shadow:${active ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'};`;
+  const appChooserFor = (choice) => !isIOS() ? '' : `
+        <div style="margin-bottom:16px;">
+          <div class="manage-section-label" style="margin:0 0 10px;">Calendar app</div>
+          <div style="display:flex;gap:6px;background:#f4f6f2;border-radius:10px;padding:4px;">
+            <button type="button" data-action="cal-app-toggle" data-app="apple" style="${segStyle(choice === 'apple')}">Apple Calendar</button>
+            <button type="button" data-action="cal-app-toggle" data-app="google" style="${segStyle(choice !== 'apple')}">Google Calendar</button>
+          </div>
+        </div>`;
+
+  // Human-readable schedule line for a subscription card.
+  const scheduleText = (m) => {
+    const wd = toHHMM(m?.calendar_time) || '20:00';
+    if (m?.calendar_weekend_time == null) return `Daily at ${to12h(wd)}`;
+    const we = toHHMM(m?.calendar_weekend_time) || wd;
+    return `Weekdays ${to12h(wd)} · Weekends ${to12h(we)}`;
+  };
+
+  // Platform/app-specific feed-removal copy (relocated from #365b's "start over"
+  // block). Used by both Switch App and Unsubscribe.
+  const removeFeedCopy = (scope) => getApp(scope) === 'google'
+    ? `In Google Calendar, open <strong>Settings &rarr; the Plant Care calendar</strong> and choose <strong>Unsubscribe</strong>. This only removes the calendar feed, not your Plant Care account.`
+    : `Go to <strong>Settings &rarr; Calendar &rarr; Accounts</strong>, find the Plant Care feed, and tap <strong>Delete Account</strong> — this only removes the calendar feed, not your Plant Care account.`;
+
+  // Builds every view except 'configure' (State 1), which falls through to the
+  // main render() body below. Each view supplies its own body; the shared shell
+  // adds the header + intro and re-runs wire() so nav handlers attach.
+  function renderSecondaryView(m, mySub, allSub) {
+    let body;
+    let back = true;
+
+    if (view === 'options') {
+      back = false;
+      const styleBlock = `<style>
+        #cal-sync-body .section-label{font-size:12px;font-weight:700;letter-spacing:0.5px;color:#8a958a;margin:20px 0 12px;}
+        #cal-sync-body .sub-card{border:1.5px solid #e0e5e0;border-radius:14px;padding:14px 16px;margin-bottom:12px;}
+        #cal-sync-body .sub-card-top{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+        #cal-sync-body .sub-dot{width:8px;height:8px;border-radius:50%;background:#2e7d51;flex-shrink:0;}
+        #cal-sync-body .sub-title{font-size:14.5px;font-weight:700;color:#1a2e1a;}
+        #cal-sync-body .sub-sub{font-size:12px;color:#8a958a;margin-top:1px;}
+        #cal-sync-body .sub-actions{display:flex;gap:8px;padding-top:12px;border-top:1px solid #eef1ee;}
+        #cal-sync-body .sub-action{flex:1;text-align:center;font-size:12.5px;font-weight:700;color:#2e7d51;background:#f4f6f2;border-radius:8px;padding:8px 4px;cursor:pointer;}
+        #cal-sync-body .sub-action.danger{color:#b13a3a;}
+        #cal-sync-body .add-sync-row{font-size:12.5px;color:#a8b5a8;text-align:center;padding:8px 0 4px;font-style:italic;cursor:pointer;}
+        #cal-sync-body .option-card{display:flex;align-items:center;gap:14px;padding:16px;border:1.5px solid #e0e5e0;border-radius:14px;margin-bottom:10px;cursor:pointer;}
+        #cal-sync-body .option-icon{font-size:20px;width:36px;height:36px;background:#f4f6f2;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+        #cal-sync-body .option-title{font-size:15px;font-weight:700;color:#1a2e1a;}
+        #cal-sync-body .option-sub{font-size:12.5px;color:#8a958a;margin-top:1px;}
+        #cal-sync-body .option-chevron{margin-left:auto;color:#c5ccc5;font-size:16px;}
+      </style>`;
+      const cardFor = (scope) => `
+        <div class="sub-card">
+          <div class="sub-card-top">
+            <div class="sub-dot"></div>
+            <div>
+              <div class="sub-title">${scopeName(scope)} &rarr; ${appLabel(scope)}</div>
+              <div class="sub-sub">${scheduleText(m)}</div>
+            </div>
+          </div>
+          <div class="sub-actions">
+            <div class="sub-action" data-action="cal-modify" data-scope="${scope}">Modify</div>
+            ${isIOS() ? `<div class="sub-action" data-action="cal-switch" data-scope="${scope}">Switch App</div>` : ''}
+            <div class="sub-action danger" data-action="cal-unsub" data-scope="${scope}">Unsubscribe</div>
+          </div>
+        </div>`;
+      const cards = [];
+      if (mySub)  cards.push(cardFor('my'));
+      if (allSub) cards.push(cardFor('all'));
+      const addRows = [];
+      if (!mySub)  addRows.push(`<div class="add-sync-row" data-action="cal-add" data-scope="my">+ Add &ldquo;My tasks&rdquo; to your calendar</div>`);
+      if (!allSub) addRows.push(`<div class="add-sync-row" data-action="cal-add" data-scope="all">+ Add &ldquo;All household tasks&rdquo; to your calendar</div>`);
+      body = `${styleBlock}
+        <div class="section-label">ACTIVE SYNCS</div>
+        ${cards.join('') || `<p style="font-size:13px;color:var(--text-muted);margin:0 0 4px;">No calendar syncs yet — add one below.</p>`}
+        ${addRows.join('')}
+        <div class="option-card" data-action="cal-help" style="margin-top:20px;">
+          <div class="option-icon">&#10067;</div>
+          <div>
+            <div class="option-title">Get Help</div>
+            <div class="option-sub">Troubleshooting &amp; tips</div>
+          </div>
+          <div class="option-chevron">&#8250;</div>
+        </div>`;
+    } else if (view === 'help') {
+      body = `
+        <div style="font-size:16px;font-weight:600;color:#1a2e1a;margin-bottom:12px;">Troubleshooting</div>
+        <ol style="margin:0;padding:0;list-style:none;">
+          <li style="display:flex;gap:8px;font-size:12.5px;color:#4b5563;line-height:1.55;margin-bottom:10px;">
+            <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">1.</span>
+            <span>Wait a minute — Calendar can take a moment to sync after adding a new feed.</span>
+          </li>
+          <li style="display:flex;gap:8px;font-size:12.5px;color:#4b5563;line-height:1.55;margin-bottom:10px;">
+            <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">2.</span>
+            <span>Open the Calendar app directly and pull down to refresh.</span>
+          </li>
+          <li style="display:flex;gap:8px;font-size:12.5px;color:#4b5563;line-height:1.55;margin-bottom:10px;">
+            <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">3.</span>
+            <span>Make sure the Plant Care calendar is visible — tap Calendars at the bottom and check it's enabled.</span>
+          </li>
+        </ol>`;
+    } else if (view === 'switch') {
+      const chosen = calendarAppChoice === 'apple' ? 'Apple Calendar' : 'Google Calendar';
+      body = `
+        <div style="font-size:16px;font-weight:600;color:#1a2e1a;margin-bottom:6px;">Switch calendar app</div>
+        <p style="font-size:13px;color:var(--text-muted);line-height:1.5;margin:0 0 14px;">First remove the current ${scopeName(activeScope)} feed from ${appLabel(activeScope)}, then pick the new app and subscribe again.</p>
+        <div style="background:#f4f6f2;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#4b5563;line-height:1.6;">${removeFeedCopy(activeScope)}</div>
+        ${appChooserFor(calendarAppChoice)}
+        <div style="background:#f4f6f2;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text-muted);margin-bottom:16px;">Tapping Subscribe will open ${chosen}. Tap Allow when prompted to add the feed.</div>
+        <button type="button" class="btn btn-primary" id="cal-subscribe-btn" style="width:100%;">Subscribe</button>`;
+    } else if (view === 'unsubscribe') {
+      body = `
+        <div style="font-size:16px;font-weight:600;color:#1a2e1a;margin-bottom:6px;">Unsubscribe &middot; ${scopeName(activeScope)}</div>
+        <p style="font-size:13px;color:var(--text-muted);line-height:1.5;margin:0 0 14px;">To stop these events, remove the feed from your calendar app:</p>
+        <div style="background:#f4f6f2;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#4b5563;line-height:1.6;">${removeFeedCopy(activeScope)}</div>
+        <button type="button" class="btn btn-primary" data-action="cal-unsub-confirm" data-scope="${activeScope}" style="width:100%;">I've removed it</button>`;
+    }
+
+    openSheet(`<div id="cal-sync-body">
+      ${headerRow(back)}
+      <p style="font-size:13px;color:var(--text-muted);line-height:1.45;margin:0 0 18px;">Tasks appear as daily events in your calendar app.</p>
+      ${body}
+    </div>`);
+    wire();
+  }
 
   function render() {
     const m = membersCache.find(mm => mm.id === currentMemberId);
+
+    const mySub  = localStorage.getItem(mySubKey)  === 'true';
+    const allSub = localStorage.getItem(allSubKey) === 'true';
+    if (view === null) view = (mySub || allSub) ? 'options' : 'configure';
+    // Non-configure views build their own body and short-circuit; only the
+    // 'configure' view (State 1) falls through to the schedule/feed markup below.
+    if (view !== 'configure') { renderSecondaryView(m, mySub, allSub); return; }
+
     const weekdayTime    = toHHMM(m?.calendar_time) || '20:00';
     const weekendEnabled = m?.calendar_weekend_time != null;
     const weekendTime    = weekendEnabled ? (toHHMM(m?.calendar_weekend_time) || weekdayTime) : weekdayTime;
@@ -4512,11 +4676,10 @@ function openCalendarSyncSheet() {
           </div>`;
     };
 
-    const subKey     = calScope === 'my' ? mySubKey : allSubKey;
-    const subscribed = localStorage.getItem(subKey) === 'true';
-
+    // The configure view (State 1) always renders the full schedule + feed +
+    // app chooser, whether reached first-time, via Modify, or via Add sync.
     let feedBlock;
-    if (!subscribed) {
+    {
       const myActive = calScope === 'my';
 
       // Calendar-app chooser is iOS-only (#373). Android/desktop keep #423's
@@ -4526,19 +4689,7 @@ function openCalendarSyncSheet() {
       const chosenAppName  = appleActive ? 'Apple Calendar' : 'Google Calendar';
       const handoffApp     = showAppChooser ? chosenAppName : 'your Calendar app';
 
-      const segStyle = (active) =>
-        `flex:1;border:none;border-radius:8px;padding:10px 8px;font-family:inherit;font-size:14px;font-weight:500;cursor:pointer;`
-        + `background:${active ? '#fff' : 'transparent'};color:${active ? '#2e7d51' : '#6b7280'};`
-        + `box-shadow:${active ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'};`;
-
-      const appChooserHtml = showAppChooser ? `
-        <div style="margin-bottom:16px;">
-          <div class="manage-section-label" style="margin:0 0 10px;">Calendar app</div>
-          <div style="display:flex;gap:6px;background:#f4f6f2;border-radius:10px;padding:4px;">
-            <button type="button" data-action="cal-app-toggle" data-app="apple" style="${segStyle(appleActive)}">Apple Calendar</button>
-            <button type="button" data-action="cal-app-toggle" data-app="google" style="${segStyle(!appleActive)}">Google Calendar</button>
-          </div>
-        </div>` : '';
+      const appChooserHtml = appChooserFor(calendarAppChoice);
 
       feedBlock = `
         <div style="margin-bottom:16px;">
@@ -4571,74 +4722,13 @@ function openCalendarSyncSheet() {
           Tapping Subscribe will open ${handoffApp}. Tap Allow when prompted to add the feed.
         </div>
         <button type="button" class="btn btn-primary" id="cal-subscribe-btn" style="width:100%;">Subscribe</button>`;
-    } else {
-      const calTime = toHHMM(m?.calendar_time) || '20:00';
-      const today   = todayStr();
-      let closestTask = null, closestDate = null, closestPlant = null;
-      for (const plant of plants) {
-        for (const task of (plant.tasks ?? [])) {
-          if (task.paused) continue;
-          if (task.owner !== (member?.display_name ?? '')) continue;
-          const due = computeNextDue(task);
-          if (!due || due < today) continue;
-          if (!closestDate || due < closestDate) {
-            closestDate = due; closestTask = task; closestPlant = plant;
-          }
-        }
-      }
-
-      let taskHintHtml;
-      if (closestTask && closestPlant) {
-        const dateObj = new Date(closestDate + 'T12:00:00');
-        const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        taskHintHtml = `${escapeHtml(closestPlant.emoji ?? '')}  ${escapeHtml(closestTask.name)} · ${escapeHtml(formattedDate)} at ${escapeHtml(to12h(calTime))}`;
-      } else {
-        taskHintHtml = isIOS()
-          ? 'Open your Calendar app and look for upcoming Plant Care events.'
-          : 'Open Google Calendar and look for upcoming Plant Care events.';
-      }
-
-      feedBlock = `
-        <div style="font-size:16px;font-weight:500;color:#1a1a1a;margin-bottom:12px;">${isIOS() ? 'Check your Calendar app' : 'Check Google Calendar'}</div>
-        <div style="background:#eef7f1;border-radius:8px;padding:10px 12px;font-size:12px;color:#2e7d51;margin-bottom:16px;">${taskHintHtml}</div>
-        <button type="button" class="btn btn-primary" id="cal-confirm-btn" style="width:100%;margin-bottom:12px;">Confirm Calendar Sync enabled</button>
-        <button type="button" data-action="cal-need-help" style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:12px;color:#4b5563;background:none;font-family:inherit;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
-          Need help?
-          <span id="cal-help-chevron">&#9660;</span>
-        </button>
-        <div id="cal-troubleshoot" style="display:none;margin-top:12px;">
-          <div style="font-size:13px;font-weight:500;margin-bottom:10px;">Troubleshooting</div>
-          <ol style="margin:0;padding:0;list-style:none;">
-            <li style="display:flex;gap:8px;font-size:12px;color:#4b5563;line-height:1.55;margin-bottom:8px;">
-              <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">1.</span>
-              <span>Wait a minute — Calendar can take a moment to sync after adding a new feed.</span>
-            </li>
-            <li style="display:flex;gap:8px;font-size:12px;color:#4b5563;line-height:1.55;margin-bottom:8px;">
-              <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">2.</span>
-              <span>Open the Calendar app directly and pull down to refresh.</span>
-            </li>
-            <li style="display:flex;gap:8px;font-size:12px;color:#4b5563;line-height:1.55;margin-bottom:8px;">
-              <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">3.</span>
-              <span>Make sure the Plant Care calendar is visible — tap Calendars at the bottom and check it's enabled.</span>
-            </li>
-          </ol>
-          <div style="background:#f4f6f2;border-radius:8px;padding:12px 14px;margin-top:14px;">
-            <div class="manage-section-label" style="margin:0 0 6px;">WANT TO START OVER?</div>
-            <div style="font-size:12px;color:#4b5563;line-height:1.6;">
-              Remove the feed first: go to <strong>Settings &rarr; Calendar &rarr; Accounts</strong>, find the Plant Care feed, and tap <strong>Delete Account</strong> — this only removes the calendar feed, not your Plant Care account. Then come back here to subscribe again.
-            </div>
-          </div>
-        </div>`;
     }
 
     openSheet(`
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px;">
-        <div class="sheet-title" style="margin-bottom:0;">Sync to Calendar</div>
-        <button type="button" class="menu-close" data-action="close-sheet" aria-label="Close" style="position:static;">&#10005;</button>
-      </div>
+      ${headerRow(cameFromOptions)}
       <p style="font-size:13px;color:var(--text-muted);line-height:1.45;margin:0 0 18px;">Tasks appear as daily events in your calendar app.</p>
 
-      ${!subscribed ? `<div style="background:#eef7f1;border-radius:12px;padding:14px 14px 6px;">
+      <div style="background:#eef7f1;border-radius:12px;padding:14px 14px 6px;">
         <div class="manage-section-label" style="margin:0 0 10px;">Schedule time</div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
@@ -4657,7 +4747,7 @@ function openCalendarSyncSheet() {
           <span style="font-size:14px;font-weight:500;color:#1a2e1a;${weekendEnabled ? '' : 'opacity:0.35;'}" id="cal-weekend-label">Sat &amp; Sun</span>
           ${timeSelect('cal-weekend-time', weekendTime, !weekendEnabled)}
         </div>
-      </div>` : ''}
+      </div>
 
       <div style="margin-top:22px;">${feedBlock}</div>
     `);
@@ -4715,8 +4805,11 @@ function openCalendarSyncSheet() {
     });
 
     document.getElementById('cal-subscribe-btn')?.addEventListener('click', () => {
-      const webcalUrl = calScope === 'my' ? meWebcal : hhWebcal;
-      const subKey    = calScope === 'my' ? mySubKey : allSubKey;
+      // Configure view subscribes the toggled feed (calScope); Switch App view
+      // re-subscribes the card being switched (activeScope).
+      const scope     = view === 'switch' ? activeScope : calScope;
+      const webcalUrl = scope === 'my' ? meWebcal : hhWebcal;
+      const subKey    = scope === 'my' ? mySubKey : allSubKey;
       const googleUrl = `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(webcalUrl)}`;
       // iOS: user picks Apple (native webcal://) or Google (#373). Other platforms
       // (Android/desktop) have no webcal handler, so always route through Google
@@ -4724,6 +4817,9 @@ function openCalendarSyncSheet() {
       const useGoogle = isIOS() ? (calendarAppChoice === 'google') : true;
       window.open(useGoogle ? googleUrl : webcalUrl);
       localStorage.setItem(subKey, 'true');
+      setApp(scope, isIOS() ? calendarAppChoice : 'google');   // persist per-scope app (#432)
+      view = 'options';
+      cameFromOptions = false;
       render();
     });
 
@@ -4731,23 +4827,41 @@ function openCalendarSyncSheet() {
       btn.addEventListener('click', () => { calendarAppChoice = btn.dataset.app; render(); });
     });
 
-    document.getElementById('cal-confirm-btn')?.addEventListener('click', () => {
-      closeSheet();
-      if (currentMemberId) localStorage.setItem(`calendar_card_dismissed_${currentMemberId}`, '1');
-      renderHome();
-    });
-
     document.querySelectorAll('[data-action="cal-scope-toggle"]').forEach(btn => {
       btn.addEventListener('click', () => { calScope = btn.dataset.scope; render(); });
     });
 
-    document.querySelector('[data-action="cal-need-help"]')?.addEventListener('click', () => {
-      const section = document.getElementById('cal-troubleshoot');
-      const chevron = document.getElementById('cal-help-chevron');
-      if (!section) return;
-      const showing = section.style.display !== 'none';
-      section.style.display = showing ? 'none' : '';
-      if (chevron) chevron.innerHTML = showing ? '&#9660;' : '&#9650;';
+    // Options-screen navigation (#432). Each per-card action carries data-scope.
+    document.querySelector('[data-action="cal-back"]')?.addEventListener('click', () => {
+      view = 'options'; cameFromOptions = false; render();
+    });
+    document.querySelector('[data-action="cal-help"]')?.addEventListener('click', () => {
+      view = 'help'; render();
+    });
+    const toConfigure = (btn) => {
+      const scope = btn.dataset.scope;
+      activeScope = scope; calScope = scope; calendarAppChoice = getApp(scope);
+      view = 'configure'; cameFromOptions = true; render();
+    };
+    document.querySelectorAll('[data-action="cal-modify"]').forEach(btn =>
+      btn.addEventListener('click', () => toConfigure(btn)));
+    document.querySelectorAll('[data-action="cal-add"]').forEach(btn =>
+      btn.addEventListener('click', () => toConfigure(btn)));
+    document.querySelectorAll('[data-action="cal-switch"]').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const scope = btn.dataset.scope;
+        activeScope = scope; calendarAppChoice = getApp(scope);
+        view = 'switch'; render();
+      }));
+    document.querySelectorAll('[data-action="cal-unsub"]').forEach(btn =>
+      btn.addEventListener('click', () => {
+        activeScope = btn.dataset.scope; view = 'unsubscribe'; render();
+      }));
+    document.querySelector('[data-action="cal-unsub-confirm"]')?.addEventListener('click', (e) => {
+      const scope  = e.currentTarget.dataset.scope;
+      localStorage.removeItem(scope === 'my' ? mySubKey : allSubKey);
+      localStorage.removeItem(appKey(scope));
+      view = 'options'; render();
     });
   }
 
@@ -8118,7 +8232,7 @@ async function runOnboardingReset() {
   if (!currentMemberId) { showToast('No current member'); return false; }
   try {
     // 1. Local: clear onboarding-adjacent keys for THIS member only.
-    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_card_dismissed_', 'calendar_card_triggered_', 'calendar_subscribed_'];
+    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_card_dismissed_', 'calendar_card_triggered_', 'calendar_subscribed_', 'calendar_app_'];
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
       if (key && key.includes(currentMemberId) && resetPrefixes.some(p => key.startsWith(p))) {
@@ -8178,7 +8292,7 @@ async function seedEmpty({ resetOnboarding = false } = {}) {
     // Wipe onboarding + push-accepted state for ALL members on this browser, not
     // just the current one — clears every key starting with these prefixes so a
     // fresh Empty State produces a clean onboarding for whoever logs in next.
-    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_card_dismissed_', 'calendar_card_triggered_', 'calendar_subscribed_'];
+    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_card_dismissed_', 'calendar_card_triggered_', 'calendar_subscribed_', 'calendar_app_'];
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
       if (key && resetPrefixes.some(p => key.startsWith(p))) localStorage.removeItem(key);
@@ -8597,7 +8711,7 @@ async function seedRemindersTest() {
 
   // Clear onboarding + reminder state for ALL members on this browser (#314),
   // including calendar-subscribed flags, so both dialog sections read action-state.
-  const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_subscribed_'];
+  const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_subscribed_', 'calendar_app_'];
   for (let i = localStorage.length - 1; i >= 0; i--) {
     const key = localStorage.key(i);
     if (key && resetPrefixes.some(p => key.startsWith(p))) localStorage.removeItem(key);

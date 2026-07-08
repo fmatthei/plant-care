@@ -4474,6 +4474,9 @@ function openCalendarSyncSheet() {
   const allSubKey = `calendar_subscribed_all_tasks_${householdId}_${currentMemberId}`;
 
   let calScope = 'my';
+  // iOS-only calendar-app selection (#373). Local to this sheet session, not
+  // persisted — resets to Apple (iOS's actual default) each time the sheet opens.
+  let calendarAppChoice = 'apple';
 
   function render() {
     const m = membersCache.find(mm => mm.id === currentMemberId);
@@ -4508,6 +4511,27 @@ function openCalendarSyncSheet() {
     if (!subscribed) {
       const myActive = calScope === 'my';
 
+      // Calendar-app chooser is iOS-only (#373). Android/desktop keep #423's
+      // auto-route to Google, so their handoff copy stays "your Calendar app".
+      const showAppChooser = isIOS();
+      const appleActive    = calendarAppChoice === 'apple';
+      const chosenAppName  = appleActive ? 'Apple Calendar' : 'Google Calendar';
+      const handoffApp     = showAppChooser ? chosenAppName : 'your Calendar app';
+
+      const segStyle = (active) =>
+        `flex:1;border:none;border-radius:8px;padding:10px 8px;font-family:inherit;font-size:14px;font-weight:500;cursor:pointer;`
+        + `background:${active ? '#fff' : 'transparent'};color:${active ? '#2e7d51' : '#6b7280'};`
+        + `box-shadow:${active ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'};`;
+
+      const appChooserHtml = showAppChooser ? `
+        <div style="margin-bottom:16px;">
+          <div class="manage-section-label" style="margin:0 0 10px;">Calendar app</div>
+          <div style="display:flex;gap:6px;background:#f4f6f2;border-radius:10px;padding:4px;">
+            <button type="button" data-action="cal-app-toggle" data-app="apple" style="${segStyle(appleActive)}">Apple Calendar</button>
+            <button type="button" data-action="cal-app-toggle" data-app="google" style="${segStyle(!appleActive)}">Google Calendar</button>
+          </div>
+        </div>` : '';
+
       feedBlock = `
         <div style="margin-bottom:16px;">
           <div class="manage-section-label" style="margin:0 0 10px;">Choose a feed</div>
@@ -4534,8 +4558,9 @@ function openCalendarSyncSheet() {
             </div>
           </div>
         </div>
+        ${appChooserHtml}
         <div style="background:#f4f6f2;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text-muted);margin-bottom:16px;">
-          Tapping Subscribe will open your Calendar app. Tap Allow when prompted to add the feed.
+          Tapping Subscribe will open ${handoffApp}. Tap Allow when prompted to add the feed.
         </div>
         <button type="button" class="btn btn-primary" id="cal-subscribe-btn" style="width:100%;">Subscribe</button>`;
     } else {
@@ -4684,14 +4709,18 @@ function openCalendarSyncSheet() {
     document.getElementById('cal-subscribe-btn')?.addEventListener('click', () => {
       const webcalUrl = calScope === 'my' ? meWebcal : hhWebcal;
       const subKey    = calScope === 'my' ? mySubKey : allSubKey;
-      // iOS subscribes natively via webcal://; other platforms (Android/desktop)
-      // have no webcal handler, so route them through Google Calendar's render
-      // endpoint, which takes the same feed URL as its `cid` param.
-      window.open(isIOS()
-        ? webcalUrl
-        : `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(webcalUrl)}`);
+      const googleUrl = `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(webcalUrl)}`;
+      // iOS: user picks Apple (native webcal://) or Google (#373). Other platforms
+      // (Android/desktop) have no webcal handler, so always route through Google
+      // Calendar's render endpoint, which takes the same feed URL as its `cid`.
+      const useGoogle = isIOS() ? (calendarAppChoice === 'google') : true;
+      window.open(useGoogle ? googleUrl : webcalUrl);
       localStorage.setItem(subKey, 'true');
       render();
+    });
+
+    document.querySelectorAll('[data-action="cal-app-toggle"]').forEach(btn => {
+      btn.addEventListener('click', () => { calendarAppChoice = btn.dataset.app; render(); });
     });
 
     document.getElementById('cal-confirm-btn')?.addEventListener('click', () => {

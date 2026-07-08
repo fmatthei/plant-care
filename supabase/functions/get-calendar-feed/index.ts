@@ -5,6 +5,43 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ⚠️ HARDCODED-SANTIAGO CAVEAT (#427/#428). Event times are wall-clock values
+// (`calendar_time` = e.g. "20:00", no zone) and must be tagged with an explicit
+// TZID so timezone-aware clients render them correctly. Without a TZID, floating
+// DATE-TIMEs default to UTC in Google Calendar → a Santiago event at 20:00 shows
+// at 16:00 (the −4h bug); Apple treats them as local and happened to be correct.
+// The whole app already assumes America/Santiago (see todayStr() below), so we
+// hardcode that single zone here. If per-household/per-member timezones are ever
+// introduced, CALENDAR_TZID and VTIMEZONE_BLOCK must become dynamic together.
+const CALENDAR_TZID = 'America/Santiago';
+
+// Static RFC 5545 VTIMEZONE for America/Santiago. Chile keeps standard time
+// (−04:00) from the first Sunday on/after Apr 2 to the first Sunday on/after
+// Sep 2, and daylight time (−03:00) the rest of the year (tzdata "Chile"
+// 2019→max rules; transitions occur at 24:00 local Saturday = 00:00 Sunday).
+// BYMONTHDAY=2..8 + BYDAY=SU encodes "Sun>=2" exactly (a bare 1SU would be wrong
+// in years where the 1st is a Sunday). July (the current window) is standard
+// time, so a 20:00 event correctly resolves to 20:00 −04:00.
+const VTIMEZONE_BLOCK: string[] = [
+  'BEGIN:VTIMEZONE',
+  `TZID:${CALENDAR_TZID}`,
+  'BEGIN:DAYLIGHT',
+  'TZOFFSETFROM:-0400',
+  'TZOFFSETTO:-0300',
+  'TZNAME:-03',
+  'DTSTART:20250907T000000',
+  'RRULE:FREQ=YEARLY;BYMONTH=9;BYDAY=SU;BYMONTHDAY=2,3,4,5,6,7,8',
+  'END:DAYLIGHT',
+  'BEGIN:STANDARD',
+  'TZOFFSETFROM:-0300',
+  'TZOFFSETTO:-0400',
+  'TZNAME:-04',
+  'DTSTART:20250406T000000',
+  'RRULE:FREQ=YEARLY;BYMONTH=4;BYDAY=SU;BYMONTHDAY=2,3,4,5,6,7,8',
+  'END:STANDARD',
+  'END:VTIMEZONE',
+];
+
 function todayStr(): string {
   // Anchor to America/Santiago, NOT the runtime TZ. Supabase Edge runs with
   // TZ=UTC, so a bare toLocaleDateString('en-CA') rolls the date at 00:00 UTC
@@ -312,6 +349,8 @@ Deno.serve(async (req) => {
     'METHOD:PUBLISH',
     `X-WR-CALNAME:${escapeIcsText(calName)}`,
     `X-WR-CALDESC:${escapeIcsText(calDesc)}`,
+    // VTIMEZONE must precede any VEVENT that references its TZID (RFC 5545 §3.6.5).
+    ...VTIMEZONE_BLOCK,
   ];
 
   // Group tasks by occurrence date. Each task contributes every occurrence
@@ -372,8 +411,10 @@ Deno.serve(async (req) => {
     lines.push('BEGIN:VEVENT');
     lines.push(`UID:${icsDate(dateStr)}-${scope}@plantcare`);
     lines.push(`DTSTAMP:${dtStamp}`);
-    lines.push(`DTSTART:${dtStart}`);
-    lines.push(`DTEND:${dtEnd}`);
+    // TZID-qualified local time (no Z): dtStart/dtEnd are floating YYYYMMDDTHHmmss
+    // stamps; the ;TZID param binds them to America/Santiago via VTIMEZONE (#428).
+    lines.push(`DTSTART;TZID=${CALENDAR_TZID}:${dtStart}`);
+    lines.push(`DTEND;TZID=${CALENDAR_TZID}:${dtEnd}`);
     lines.push(`SUMMARY:${escapeIcsText(summary)}`);
     if (description !== null) lines.push(`DESCRIPTION:${escapeIcsText(description)}`);
     lines.push('BEGIN:VALARM');

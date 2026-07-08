@@ -1757,13 +1757,19 @@ body {
   color: var(--primary);
 }
 
-/* Show/hide interval vs weekdays sections */
+/* Show/hide interval vs weekdays vs yearly sections */
 #recurrence-container.recurrence-interval .recurrence-weekdays-section,
-#recurrence-container.recurrence-interval .recurrence-one-off-section { display: none; }
+#recurrence-container.recurrence-interval .recurrence-one-off-section,
+#recurrence-container.recurrence-interval .recurrence-yearly-section { display: none; }
 #recurrence-container.recurrence-weekdays .recurrence-interval-section,
-#recurrence-container.recurrence-weekdays .recurrence-one-off-section { display: none; }
+#recurrence-container.recurrence-weekdays .recurrence-one-off-section,
+#recurrence-container.recurrence-weekdays .recurrence-yearly-section { display: none; }
 #recurrence-container.recurrence-one-off .recurrence-interval-section,
-#recurrence-container.recurrence-one-off .recurrence-weekdays-section { display: none; }
+#recurrence-container.recurrence-one-off .recurrence-weekdays-section,
+#recurrence-container.recurrence-one-off .recurrence-yearly-section { display: none; }
+#recurrence-container.recurrence-yearly .recurrence-interval-section,
+#recurrence-container.recurrence-yearly .recurrence-weekdays-section,
+#recurrence-container.recurrence-yearly .recurrence-one-off-section { display: none; }
 
 /* ===== Weekday Picker ===== */
 .weekday-picker {

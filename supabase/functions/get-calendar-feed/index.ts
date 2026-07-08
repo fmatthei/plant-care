@@ -37,6 +37,22 @@ function nextWeekdayOccurrence(days: number[], skipToday = false, anchor = today
   return anchor;
 }
 
+// Returns the first yearly occurrence of month/day (1-based month) on or after
+// fromDate. Steps by calendar year via setFullYear (NOT addDays(·,365), which
+// drifts a day per leap year), so the month/day is preserved exactly. JS Date
+// normalizes an out-of-range day, so a Feb-29 anchor resolves to Mar 1 in
+// non-leap years. Noon-anchored, matching addDays()'s DST/UTC-safe convention.
+function nextYearlyOccurrence(month: number, day: number, fromDate = todayStr()): string {
+  const fromYear = Number(fromDate.slice(0, 4));
+  const occ = (y: number): string => {
+    const d = new Date(fromDate + 'T12:00:00');
+    d.setFullYear(y, month - 1, day);
+    return d.toISOString().split('T')[0];
+  };
+  const thisYear = occ(fromYear);
+  return thisYear >= fromDate ? thisYear : occ(fromYear + 1);
+}
+
 function computeNextDue(task: any): string | null {
   if (task.next_due_override) {
     const recType = task.recurrence?.type ?? 'interval';
@@ -47,6 +63,7 @@ function computeNextDue(task: any): string | null {
       }
       return nextWeekdayOccurrence(days, false, task.next_due_override);
     }
+    // yearly override is a literal date (like interval/one-off): return as-is.
     return task.next_due_override;
   }
   const recType = task.recurrence?.type ?? 'interval';
@@ -56,6 +73,18 @@ function computeNextDue(task: any): string | null {
   if (recType === 'weekdays') {
     const skipToday = task.last_done === todayStr();
     return nextWeekdayOccurrence(task.recurrence?.days ?? [], skipToday);
+  }
+  if (recType === 'yearly') {
+    // Once completed (last_done set), a yearly task always advances to the anchor
+    // in the year AFTER last_done's year — whether completion was before, on, or
+    // after this year's anchor (#401-8). With no last_done, use this year's anchor
+    // if it hasn't passed relative to today, else next year's (Build 1 behavior).
+    // Feb 29 → Mar 1 fallback comes from nextYearlyOccurrence in both paths.
+    if (task.last_done) {
+      const nextYear = Number(task.last_done.slice(0, 4)) + 1;
+      return nextYearlyOccurrence(task.recurrence?.month, task.recurrence?.day, `${nextYear}-01-01`);
+    }
+    return nextYearlyOccurrence(task.recurrence?.month, task.recurrence?.day);
   }
   if (!task.last_done) return todayStr();
   return addDays(task.last_done, task.recurrence?.every ?? 7);
@@ -81,6 +110,14 @@ function enumerateOccurrences(
 
   // one-off: a single occurrence, emitted iff inside the window. Never step.
   if (recType === 'one-off') {
+    return first <= until ? [first] : [];
+  }
+
+  // yearly: a single occurrence per year. `first` is already the next yearly
+  // occurrence (computeNextDue → nextYearlyOccurrence). Emit iff inside the
+  // window; the caller's windowStart post-filter handles the lower bound (as
+  // with one-off). Never step.
+  if (recType === 'yearly') {
     return first <= until ? [first] : [];
   }
 

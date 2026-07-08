@@ -584,6 +584,8 @@ async function loadFromSupabase() {
       frequencyDays:   t.recurrence?.every,
       recurrenceUnit:  t.recurrence?.unit  ?? 'days',
       weekdays:        t.recurrence?.days  ?? [],
+      recurrenceMonth: t.recurrence?.month ?? null,
+      recurrenceDay:   t.recurrence?.day   ?? null,
       lastDone:        t.last_done         ?? null,
       nextDueOverride: t.next_due_override ?? null,
       preCompletionLastDone:        t.pre_completion_last_done         ?? null,
@@ -766,6 +768,22 @@ function nextWeekdayOccurrence(days, skipToday = false, anchor = todayStr()) {
   return anchor;
 }
 
+// Returns the first yearly occurrence of month/day (1-based month) on or after
+// fromDate. Steps by calendar year via setFullYear (NOT addDays(·,365), which
+// drifts a day per leap year), so the month/day is preserved exactly. JS Date
+// normalizes an out-of-range day, so a Feb-29 anchor resolves to Mar 1 in
+// non-leap years. Noon-anchored, matching addDays()'s DST/UTC-safe convention.
+function nextYearlyOccurrence(month, day, fromDate = todayStr()) {
+  const fromYear = Number(fromDate.slice(0, 4));
+  const occ = (y) => {
+    const d = new Date(fromDate + 'T12:00:00');
+    d.setFullYear(y, month - 1, day);
+    return d.toISOString().split('T')[0];
+  };
+  const thisYear = occ(fromYear);
+  return thisYear >= fromDate ? thisYear : occ(fromYear + 1);
+}
+
 // Computes the next due date for a task (ignoring pause state)
 function computeNextDue(task) {
   if (task.nextDueOverride) {
@@ -777,6 +795,7 @@ function computeNextDue(task) {
       }
       return nextWeekdayOccurrence(days, false, task.nextDueOverride);
     }
+    // yearly override is a literal date (like interval/one-off): return as-is.
     return task.nextDueOverride;
   }
   const recType = task.recurrenceType ?? 'interval';
@@ -787,6 +806,18 @@ function computeNextDue(task) {
   if (recType === 'weekdays') {
     const skipToday = task.lastDone === todayStr();
     return nextWeekdayOccurrence(task.weekdays ?? [], skipToday);
+  }
+  if (recType === 'yearly') {
+    // Once completed (lastDone set), a yearly task always advances to the anchor
+    // in the year AFTER lastDone's year — whether completion was before, on, or
+    // after this year's anchor (#401-8). With no lastDone, use this year's anchor
+    // if it hasn't passed relative to today, else next year's (Build 1 behavior).
+    // Feb 29 → Mar 1 fallback comes from nextYearlyOccurrence in both paths.
+    if (task.lastDone) {
+      const nextYear = Number(task.lastDone.slice(0, 4)) + 1;
+      return nextYearlyOccurrence(task.recurrenceMonth, task.recurrenceDay, `${nextYear}-01-01`);
+    }
+    return nextYearlyOccurrence(task.recurrenceMonth, task.recurrenceDay);
   }
   if (!task.lastDone) return todayStr();
   return addDays(task.lastDone, task.frequencyDays);
@@ -806,6 +837,13 @@ function taskOccursOnDate(task, dateStr) {
     if (weekdays.length === 0) return false;
     const dow = new Date(dateStr + 'T12:00:00').getDay();
     return weekdays.includes(dow);
+  }
+  if (recType === 'yearly') {
+    // Occurs on dateStr iff it is the anchor's occurrence for dateStr's own year
+    // (leap-year fallback respected: Feb 29 → Mar 1 in non-leap years).
+    const year = dateStr.slice(0, 4);
+    const occ  = nextYearlyOccurrence(task.recurrenceMonth, task.recurrenceDay, `${year}-01-01`);
+    return occ === dateStr;
   }
   const interval = task.frequencyDays;
   if (!interval || interval <= 0) return false;
@@ -861,6 +899,10 @@ function recurrenceLabel(task) {
     const days = (task.weekdays ?? []).slice().sort(compareWeekdaysMonFirst);
     if (days.length === 0) return 'No days set';
     return days.map(d => WEEKDAY_NAMES[d]).join(', ');
+  }
+  if (recType === 'yearly') {
+    const m = task.recurrenceMonth, d = task.recurrenceDay;
+    return (m && d) ? `Every year on ${YEARLY_MONTH_NAMES[m - 1]} ${d}` : 'Every year';
   }
   return `Every ${task.frequencyDays} day${task.frequencyDays !== 1 ? 's' : ''}`;
 }
@@ -1134,6 +1176,44 @@ async function skipTask(plantId, taskId) {
       return;
     }
 
+    // Yearly tasks skip to next year's occurrence: step strictly past the date
+    // the task is currently sitting on (computeNextDue), so a skip never returns
+    // the same date. Feb 29 → Mar 1 fallback comes from nextYearlyOccurrence.
+    // Writes next_due_override the same way the interval branch does.
+    if ((task.recurrenceType ?? task.recurrence?.type) === 'yearly') {
+      if (task.recurrenceMonth == null || task.recurrenceDay == null) return;
+      const currentDue = computeNextDue(task);
+      if (!currentDue) return;
+      const newOverride = nextYearlyOccurrence(task.recurrenceMonth, task.recurrenceDay, addDays(currentDue, 1));
+      const cfg = getTaskConfig(task);
+      plant.careLog.unshift({
+        id: uid(),
+        date: today,
+        createdAt: new Date().toISOString(),
+        author: activeUser,
+        taskId: task.id,
+        taskName: cfg.name,
+        taskType: 'skipped',
+      });
+      plant.careLog = plant.careLog.slice(0, 50);
+
+      await updateTask(plantId, taskId, { nextDueOverride: newOverride });
+
+      await supabaseClient
+        .from('care_log')
+        .insert({
+          plant_id:            plantId,
+          task_id:             taskId,
+          household_member_id: currentMemberId,
+          task_name:           cfg.name,
+          task_type:           'skipped',
+          date:                today,
+        });
+
+      await loadActivityFeed();
+      return;
+    }
+
     const every = task.frequencyDays;
     if (!every || every < 1) return;
 
@@ -1209,10 +1289,12 @@ async function updateTask(plantId, taskId, updates) {
     dbUpdates.owner_id = member?.id ?? null;
   }
 
-  const recurrenceFields = ['recurrenceType', 'frequencyDays', 'recurrenceUnit', 'weekdays'];
+  const recurrenceFields = ['recurrenceType', 'frequencyDays', 'recurrenceUnit', 'weekdays', 'recurrenceMonth', 'recurrenceDay'];
   if (recurrenceFields.some(f => f in updates)) {
     dbUpdates.recurrence = task.recurrenceType === 'one-off'
       ? { type: 'one-off' }
+      : task.recurrenceType === 'yearly'
+      ? { type: 'yearly', month: task.recurrenceMonth, day: task.recurrenceDay }
       : { type: task.recurrenceType, every: task.frequencyDays, unit: task.recurrenceUnit ?? 'days', days: task.weekdays ?? [] };
   }
 
@@ -3028,6 +3110,10 @@ function renderSummaryTab(plant) {
       const abbrev = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       return dInts.length > 0 ? `Every ${dInts.map(d => abbrev[d]).join(', ')}` : 'Days of week';
     }
+    if (rt === 'yearly') {
+      const m = task.recurrenceMonth, d = task.recurrenceDay;
+      return (m && d) ? `Every year on ${YEARLY_MONTH_NAMES[m - 1]} ${d}` : 'Every year';
+    }
     const n = task.frequencyDays ?? 1;
     return `Every ${n} day${n !== 1 ? 's' : ''}`;
   };
@@ -3181,6 +3267,13 @@ function renderSummaryTab(plant) {
 
     if (rt === 'one-off') {
       if (first >= projectStart) allOccs.push({ date: first, task });
+      continue;
+    }
+
+    if (rt === 'yearly') {
+      // Single occurrence per year: `first` is already the next yearly occurrence
+      // (computeNextDue → nextYearlyOccurrence). Emit it iff it lands in the window.
+      if (first >= projectStart && first <= projectEnd) allOccs.push({ date: first, task });
       continue;
     }
 
@@ -3800,6 +3893,9 @@ function renderTaskRow(plantId, task) {
     const dInts  = (task.weekdays ?? []).slice().sort(compareWeekdaysMonFirst);
     const abbrev = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     recText = dInts.length > 0 ? `Every ${dInts.map(d => abbrev[d]).join(', ')}` : 'Days of week';
+  } else if (recType === 'yearly') {
+    const m = task.recurrenceMonth, d = task.recurrenceDay;
+    recText = (m && d) ? `Every year on ${YEARLY_MONTH_NAMES[m - 1]} ${d}` : 'Every year';
   } else {
     const n = task.frequencyDays ?? 1;
     recText = `Every ${n} day${n !== 1 ? 's' : ''}`;
@@ -4022,6 +4118,74 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
   const cfg     = getTaskConfig(task);
   const recType = task.recurrenceType ?? 'interval';
   if (recType === 'one-off') return;
+
+  // Yearly uses a simplified, text-only card (no 28-day grid — the next occurrence
+  // is ~a year out, off-grid). Two options share the overlay shell and the same
+  // reschedule-keep-original / reschedule-modify data-actions as interval/weekday.
+  // markTaskDone has already set lastDone=today (and cleared any override), so
+  // computeNextDue(task) here is the post-#401-8 next-year original anchor.
+  if (recType === 'yearly') {
+    const today       = todayStr();
+    const shiftMonth  = Number(today.slice(5, 7));   // completion-date month
+    const shiftDay    = Number(today.slice(8, 10));  // completion-date day
+    const shiftLabel  = formatDateShort(today);      // e.g. "Jul 8"
+    const keepNextDue = computeNextDue(task);         // next year's original anchor
+    const keepLabel   = keepNextDue ? formatDate(keepNextDue) : '—';
+    const anchorLabel = `${YEARLY_MONTH_NAMES[(task.recurrenceMonth ?? 1) - 1]} ${task.recurrenceDay ?? ''}`;
+    const isLate      = displacement > 0;   // #401-12: yearly is late when a prior cycle's anchor has already passed
+    const offsetDays  = Math.abs(displacement);
+    const headlineColor = isLate ? '#a32d2d' : '#2e6b28';   // red only for late, matching the interval branch
+    // formatFullDate is a const declared further down (interval/weekday path) —
+    // out of scope here (TDZ), so inline the same "Wkd, Mon D" format.
+    const todayFull   = new Date(today + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+    const yearlyCard = `
+      <div style="background:#ffffff;border-radius:20px;padding:24px 20px;max-width:390px;width:calc(100% - 32px);max-height:calc(100vh - 32px);overflow:auto;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:#f7f8f6;border-radius:12px;margin-bottom:16px;">
+          <div style="width:44px;height:44px;border-radius:10px;background:#e8f5e9;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">${cfg.icon}</div>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:#1a2e1a;margin:0 0 2px;">${escapeHtml(cfg.name)} · ${escapeHtml(plant.name)}</div>
+            <div style="font-size:12px;color:#6b7c6b;">Every year on ${escapeHtml(anchorLabel)}</div>
+          </div>
+        </div>
+        <div style="font-size:18px;font-weight:600;color:${headlineColor};text-align:center;margin-bottom:4px;">Running ${offsetDays} day${offsetDays === 1 ? '' : 's'} ${isLate ? 'late' : 'early'}</div>
+        <div style="font-size:12px;color:#888;text-align:center;margin-bottom:16px;">Today is ${todayFull}</div>
+        <div data-action="reschedule-keep-original" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${offsetDays}" style="background:#f7f8f6;border:1px solid #d8ddd4;border-radius:14px;padding:16px;cursor:pointer;margin-bottom:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div>
+              <div style="font-size:14px;font-weight:600;color:#4a5e4a;margin-bottom:2px;">Keep Original Schedule</div>
+              <div style="font-size:12px;color:#6b7c6b;">Next due: ${escapeHtml(keepLabel)}</div>
+            </div>
+            <div style="font-size:20px;font-weight:300;color:#aaaaaa;line-height:1;">›</div>
+          </div>
+        </div>
+        <div data-action="reschedule-modify" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${offsetDays}" style="background:#f0f7ec;border:2px solid #4a8c3f;border-radius:14px;padding:16px;cursor:pointer;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div>
+              <div style="font-size:14px;font-weight:700;color:#2e6b28;margin-bottom:2px;">Accept Modified Schedule</div>
+              <div style="font-size:12px;color:#2e6b28;">Move anchor to ${escapeHtml(shiftLabel)} every year</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="background:#c8e6c9;color:#1b5e20;font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;">&rarr; ${escapeHtml(shiftLabel)}</div>
+              <div style="font-size:20px;font-weight:300;color:#2e6b28;line-height:1;">›</div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    closeReschedulePrompt();
+    const overlay = document.createElement('div');
+    overlay.id = 'reschedule-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;overflow:hidden;';
+    // Stash the shifted anchor for reschedule-modify (yearly writes the anchor,
+    // not next_due_override — the override self-reverts on the next completion).
+    overlay.dataset.modifiedMonth = String(shiftMonth);
+    overlay.dataset.modifiedDay   = String(shiftDay);
+    overlay.innerHTML = yearlyCard;
+    overlay.addEventListener('click', handleEvent);
+    document.body.appendChild(overlay);
+    return;
+  }
 
   const isLate = displacement > 0;
   const absDays = Math.abs(displacement);
@@ -4396,11 +4560,13 @@ function openCalendarSyncSheet() {
         const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
         taskHintHtml = `${escapeHtml(closestPlant.emoji ?? '')}  ${escapeHtml(closestTask.name)} · ${escapeHtml(formattedDate)} at ${escapeHtml(to12h(calTime))}`;
       } else {
-        taskHintHtml = 'Open your Calendar app and look for upcoming Plant Care events.';
+        taskHintHtml = isIOS()
+          ? 'Open your Calendar app and look for upcoming Plant Care events.'
+          : 'Open Google Calendar and look for upcoming Plant Care events.';
       }
 
       feedBlock = `
-        <div style="font-size:16px;font-weight:500;color:#1a1a1a;margin-bottom:12px;">Check your Calendar app</div>
+        <div style="font-size:16px;font-weight:500;color:#1a1a1a;margin-bottom:12px;">${isIOS() ? 'Check your Calendar app' : 'Check Google Calendar'}</div>
         <div style="background:#eef7f1;border-radius:8px;padding:10px 12px;font-size:12px;color:#2e7d51;margin-bottom:16px;">${taskHintHtml}</div>
         <button type="button" class="btn btn-primary" id="cal-confirm-btn" style="width:100%;margin-bottom:12px;">Confirm Calendar Sync enabled</button>
         <button type="button" data-action="cal-need-help" style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:12px;color:#4b5563;background:none;font-family:inherit;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
@@ -4518,7 +4684,12 @@ function openCalendarSyncSheet() {
     document.getElementById('cal-subscribe-btn')?.addEventListener('click', () => {
       const webcalUrl = calScope === 'my' ? meWebcal : hhWebcal;
       const subKey    = calScope === 'my' ? mySubKey : allSubKey;
-      window.open(webcalUrl);
+      // iOS subscribes natively via webcal://; other platforms (Android/desktop)
+      // have no webcal handler, so route them through Google Calendar's render
+      // endpoint, which takes the same feed URL as its `cid` param.
+      window.open(isIOS()
+        ? webcalUrl
+        : `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(webcalUrl)}`);
       localStorage.setItem(subKey, 'true');
       render();
     });
@@ -4674,6 +4845,10 @@ function renderEditTaskSheet(plantId, taskId) {
     return `<button class="weekday-btn ${sel}" data-action="sheet-toggle-weekday" data-day="${d}">${WEEKDAY_NAMES[d]}</button>`;
   }).join('');
 
+  // Yearly anchor prefill: from the task if set, else today's month/day.
+  const yMonth = task.recurrenceMonth ?? (new Date().getMonth() + 1);
+  const yDay   = task.recurrenceDay   ?? new Date().getDate();
+
   const isCustom    = !TASK_CONFIG[task.id];
   const overrideDate = task.nextDueOverride && task.nextDueOverride >= todayStr() ? task.nextDueOverride : null;
 
@@ -4724,6 +4899,7 @@ function renderEditTaskSheet(plantId, taskId) {
         <div class="recurrence-type-toggle" style="margin-bottom:8px;">
           <div class="recurrence-option${recType === 'interval' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">Every X days</div>
           <div class="recurrence-option${recType === 'weekdays' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">Days of week</div>
+          <div class="recurrence-option${recType === 'yearly' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="yearly" style="font-size:12px;padding:5px 8px;">Yearly</div>
         </div>
         <div id="recurrence-container" class="recurrence-${isRepeating ? recType : 'one-off'}">
           <div class="recurrence-interval-section form-group" style="margin:0;">
@@ -4735,6 +4911,7 @@ function renderEditTaskSheet(plantId, taskId) {
           <div class="recurrence-weekdays-section form-group" style="margin:0;">
             <div class="weekday-picker">${weekdayBtns}</div>
           </div>
+          ${yearlySectionHtml(yMonth, yDay)}
           <div id="recurrence-summary" data-started="${task.lastDone ? 'true' : 'false'}" style="display:none;background:#eef3eb;border-radius:8px;padding:5px 8px;margin:8px 0 0;font-size:12px;color:#3a6b3a;"></div>
         </div>
       </div>
@@ -4766,6 +4943,7 @@ function renderEditTaskSheet(plantId, taskId) {
   attachRecurrenceSummaryListeners('task-override');
   applyCompactDateSelectStyles('task-override');
   relocateTaskDueField(isRepeating);
+  syncYearlyRecurrenceUI();
 }
 
 function renderAddTaskStep1(plantId) {
@@ -4825,6 +5003,10 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
   const weekdayBtns = [1, 2, 3, 4, 5, 6, 0].map((d) =>
     `<button class="weekday-btn" data-action="sheet-toggle-weekday" data-day="${d}">${WEEKDAY_NAMES[d]}</button>`
   ).join('');
+
+  // Yearly anchor default: today's month/day (yearly is never a default type).
+  const yMonth = new Date().getMonth() + 1;
+  const yDay   = new Date().getDate();
 
   const ownerPillsHtml = renderOwnerPills(defaultOwner);
 
@@ -4893,6 +5075,7 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
         <div class="recurrence-type-toggle" style="margin-bottom:8px;">
           <div class="recurrence-option${recType === 'interval' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">Every X days</div>
           <div class="recurrence-option${recType === 'weekdays' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">Days of week</div>
+          <div class="recurrence-option${recType === 'yearly' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="yearly" style="font-size:12px;padding:5px 8px;">Yearly</div>
         </div>
         <div id="recurrence-container" class="recurrence-${repeating ? recType : 'one-off'}">
           <div class="recurrence-interval-section form-group" style="margin:0;">
@@ -4904,6 +5087,7 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
           <div class="recurrence-weekdays-section form-group" style="margin:0;">
             <div class="weekday-picker">${weekdayBtns}</div>
           </div>
+          ${yearlySectionHtml(yMonth, yDay)}
           <div id="recurrence-summary" data-started="false" style="display:none;background:#eef3eb;border-radius:8px;padding:5px 8px;margin:8px 0 0;font-size:12px;color:#3a6b3a;"></div>
         </div>
       </div>
@@ -4923,6 +5107,7 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
   attachRecurrenceSummaryListeners('task-due-oneoff');
   applyCompactDateSelectStyles('task-due-oneoff');
   relocateTaskDueField(repeating);
+  syncYearlyRecurrenceUI();
 }
 
 function renderPostTaskNoteSheet(plantId, taskId) {
@@ -5881,10 +6066,12 @@ async function handleSaveNewTask() {
 
   const container = document.getElementById('recurrence-container');
   const recType = container?.classList.contains('recurrence-weekdays') ? 'weekdays'
+                : container?.classList.contains('recurrence-yearly')   ? 'yearly'
                 : container?.classList.contains('recurrence-one-off')  ? 'one-off'
                 : 'interval';
   let frequencyDays = 7;
   let weekdays = [];
+  let yearlyMonth = null, yearlyDay = null;
 
   if (recType === 'interval') {
     const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
@@ -5893,9 +6080,14 @@ async function handleSaveNewTask() {
   } else if (recType === 'weekdays') {
     weekdays = [...document.querySelectorAll('#sheet .weekday-btn.selected')].map(b => parseInt(b.dataset.day));
     if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
+  } else if (recType === 'yearly') {
+    yearlyMonth = parseInt(document.getElementById('yearly-month')?.value ?? '');
+    yearlyDay   = parseInt(document.getElementById('yearly-day')?.value ?? '');
+    if (!yearlyMonth || !yearlyDay) { alert('Please select a month and day.'); return; }
   }
 
-  const firstDueVal = getSelectDate('task-due-oneoff');
+  // Yearly is anchored by month/day; it has no first-due override.
+  const firstDueVal = recType === 'yearly' ? null : getSelectDate('task-due-oneoff');
 
   const selectedOwner = document.querySelector('#sheet .owner-pill.selected, #sheet .owner-option.selected');
   const owner = selectedOwner?.dataset.owner ?? Object.keys(USERS)[0];
@@ -5911,8 +6103,8 @@ async function handleSaveNewTask() {
     name,
     icon,
     type,
-    recurrence: recType === 'one-off'
-      ? { type: 'one-off' }
+    recurrence: recType === 'one-off' ? { type: 'one-off' }
+      : recType === 'yearly'          ? { type: 'yearly', month: yearlyMonth, day: yearlyDay }
       : { type: recType, every: frequencyDays, unit: 'days', days: weekdays },
     owner_id:         ownerMember?.id ?? null,
     paused:           false,
@@ -5947,6 +6139,8 @@ async function handleSaveNewTask() {
     frequencyDays,
     recurrenceUnit: 'days',
     weekdays,
+    recurrenceMonth: yearlyMonth,
+    recurrenceDay: yearlyDay,
     lastDone: null,
     nextDueOverride: firstDueVal,
     paused: false,
@@ -6420,11 +6614,24 @@ async function handleEvent(e) {
       const overlay = document.getElementById('reschedule-overlay');
       const newOverride = overlay?.dataset.modifiedFirstDate || null;
       const shiftedWeekdaysRaw = overlay?.dataset.modifiedWeekdays;
+      const modifiedMonth = overlay?.dataset.modifiedMonth;
+      const modifiedDay   = overlay?.dataset.modifiedDay;
       const direction = target.dataset.direction ?? null;
       const daysOffset = Number(target.dataset.days ?? 0);
       const task = getTask(plantId, taskId);
       const recurrenceType = task?.recurrenceType ?? 'interval';
-      if (task && newOverride) {
+      if (task && recurrenceType === 'yearly' && modifiedMonth && modifiedDay) {
+        // Yearly shift is a PERMANENT anchor change (mirrors weekday's `weekdays`
+        // write) — writing next_due_override would self-revert on the next
+        // completion (markTaskDone clears it, then computeNextDue falls back to
+        // the old month/day). No override needed: the new anchor's this-year
+        // occurrence is the completion date, already done, so next due rolls to
+        // next year's new anchor via #401-8.
+        await updateTask(plantId, taskId, {
+          recurrenceMonth: Number(modifiedMonth),
+          recurrenceDay:   Number(modifiedDay),
+        });
+      } else if (task && newOverride) {
         const updates = { nextDueOverride: newOverride };
         if (recurrenceType === 'weekdays' && shiftedWeekdaysRaw) {
           try { updates.weekdays = JSON.parse(shiftedWeekdaysRaw); } catch {}
@@ -6924,6 +7131,7 @@ async function handleEvent(e) {
       if (container) container.className = `recurrence-${rtype}`;
       document.querySelectorAll('#sheet .recurrence-option').forEach(o => o.classList.remove('selected'));
       target.classList.add('selected');
+      syncYearlyRecurrenceUI();
       updateTaskDueLabel();
       updateRecurrenceSummary();
       break;
@@ -6992,11 +7200,14 @@ async function handleEvent(e) {
 
       const container = document.getElementById('recurrence-container');
       const recType = container?.classList.contains('recurrence-weekdays') ? 'weekdays'
+                    : container?.classList.contains('recurrence-yearly')   ? 'yearly'
                     : container?.classList.contains('recurrence-one-off')  ? 'one-off'
                     : 'interval';
 
       let frequencyDays = getTask(pid, tid)?.frequencyDays ?? 1;
       let weekdays = [];
+      let yearlyMonth = getTask(pid, tid)?.recurrenceMonth ?? null;
+      let yearlyDay   = getTask(pid, tid)?.recurrenceDay ?? null;
 
       if (recType === 'interval') {
         const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
@@ -7005,6 +7216,10 @@ async function handleEvent(e) {
       } else if (recType === 'weekdays') {
         weekdays = [...document.querySelectorAll('#sheet .weekday-btn.selected')].map(b => parseInt(b.dataset.day));
         if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
+      } else if (recType === 'yearly') {
+        yearlyMonth = parseInt(document.getElementById('yearly-month')?.value ?? '');
+        yearlyDay   = parseInt(document.getElementById('yearly-day')?.value ?? '');
+        if (!yearlyMonth || !yearlyDay) { alert('Please select a month and day.'); return; }
       }
 
       const selectedOwner = document.querySelector('#sheet .owner-pill.selected, #sheet .owner-option.selected');
@@ -7015,8 +7230,11 @@ async function handleEvent(e) {
         recurrenceType: recType,
         frequencyDays,
         weekdays,
+        recurrenceMonth: yearlyMonth,
+        recurrenceDay: yearlyDay,
         owner: selectedOwner?.dataset.owner ?? 'Matu',
-        nextDueOverride: overrideVal || null,
+        // Yearly is anchored by month/day; clear any first-due override.
+        nextDueOverride: recType === 'yearly' ? null : (overrideVal || null),
       };
       if (lastDoneEl) taskUpdates.lastDone = lastDoneEl.value || null;
       const pauseToggleEl = document.getElementById('pause-toggle');
@@ -7539,6 +7757,57 @@ function attachFutureDateSelectListeners(prefix) {
 // Sets the "Due date" label on the shared task-due field according to current
 // recurrence state: one-off → "Due date", interval → "First due date",
 // weekdays → "Start from".
+// ===== Yearly recurrence UI helpers (Add/Edit Task sheet) =====
+const YEARLY_MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+const YEARLY_MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Max selectable day per 1-based month. February is 29 so a Feb 29 anchor is
+// pickable; the engine (Build 1) resolves it to Mar 1 in non-leap years.
+const YEARLY_MONTH_MAXDAY = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function yearlyMaxDay(month) { return YEARLY_MONTH_MAXDAY[(month || 1) - 1] ?? 31; }
+
+function yearlyMonthOptionsHtml(selMonth) {
+  return YEARLY_MONTH_NAMES
+    .map((n, i) => `<option value="${i + 1}"${i + 1 === selMonth ? ' selected' : ''}>${n}</option>`)
+    .join('');
+}
+function yearlyDayOptionsHtml(month, selDay) {
+  const max = yearlyMaxDay(month);
+  let out = '';
+  for (let d = 1; d <= max; d++) out += `<option value="${d}"${d === selDay ? ' selected' : ''}>${d}</option>`;
+  return out;
+}
+// The Yearly input section: month + day selects (no year field). Mirrors the
+// container/section pattern of the interval/weekday sections.
+function yearlySectionHtml(selMonth, selDay) {
+  return `<div class="recurrence-yearly-section form-group" style="margin:0;">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select id="yearly-month" class="form-input" style="flex:1.6;font-size:13px;padding:6px 8px;">${yearlyMonthOptionsHtml(selMonth)}</select>
+              <select id="yearly-day" class="form-input" style="flex:0.8;font-size:13px;padding:6px 8px;">${yearlyDayOptionsHtml(selMonth, selDay)}</select>
+            </div>
+          </div>`;
+}
+// Rebuild day options when the month changes, clamping a now-out-of-range day.
+function rebuildYearlyDayOptions() {
+  const ym = document.getElementById('yearly-month');
+  const yd = document.getElementById('yearly-day');
+  if (!ym || !yd) return;
+  const month = parseInt(ym.value) || 1;
+  let day = parseInt(yd.value) || 1;
+  const max = yearlyMaxDay(month);
+  if (day > max) day = max;
+  yd.innerHTML = yearlyDayOptionsHtml(month, day);
+}
+// Yearly is anchored purely by month/day and has no first-due-date field, so
+// hide the shared task-due field whenever the yearly section is active.
+function syncYearlyRecurrenceUI() {
+  const container = document.getElementById('recurrence-container');
+  const field = document.getElementById('task-due-field');
+  if (!field) return;
+  field.style.display = container?.classList.contains('recurrence-yearly') ? 'none' : '';
+}
+
 function updateTaskDueLabel() {
   const label = document.getElementById('task-due-label');
   if (!label) return;
@@ -7546,6 +7815,8 @@ function updateTaskDueLabel() {
   const isOn = toggleBtn?.getAttribute('aria-checked') === 'true';
   if (!isOn) { label.textContent = 'Due date'; return; }
   const container = document.getElementById('recurrence-container');
+  // Yearly has no first-due-date field (it's hidden), so nothing to relabel.
+  if (container?.classList.contains('recurrence-yearly')) return;
   const rtype = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
   label.textContent = rtype === 'weekdays' ? 'Start from' : 'First due date';
 }
@@ -7577,13 +7848,27 @@ function updateRecurrenceSummary() {
   const isOn = toggleBtn?.getAttribute('aria-checked') === 'true';
   if (!isOn) { el.style.display = 'none'; return; }
 
+  const container = document.getElementById('recurrence-container');
+
+  // Yearly summary is anchored purely by the month/day selects — independent of
+  // the (hidden) first-due-date field. Feb 29 gets the leap-year special copy.
+  if (container?.classList.contains('recurrence-yearly')) {
+    const month = parseInt(document.getElementById('yearly-month')?.value ?? '');
+    const day   = parseInt(document.getElementById('yearly-day')?.value ?? '');
+    if (!month || !day) { el.style.display = 'none'; return; }
+    el.textContent = (month === 2 && day === 29)
+      ? 'Recurs every year on Feb 29 (Mar 1 in non-leap years)'
+      : `Recurs every year on ${YEARLY_MONTH_SHORT[month - 1]} ${day}`;
+    el.style.display = '';
+    return;
+  }
+
   const prefix = document.getElementById('task-override-day') ? 'task-override'
                : document.getElementById('task-due-oneoff-day') ? 'task-due-oneoff'
                : null;
   const firstDue = prefix ? getSelectDate(prefix) : null;
   if (!firstDue) { el.style.display = 'none'; return; }
 
-  const container = document.getElementById('recurrence-container');
   const rtype = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
   const fmtDow = (d) => new Date(d + 'T12:00:00')
     .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -7631,6 +7916,9 @@ function attachRecurrenceSummaryListeners(datePrefix) {
   ['day', 'month', 'year'].forEach(part => {
     document.getElementById(`${datePrefix}-${part}`)?.addEventListener('change', update);
   });
+  // Yearly selects: month change rebuilds day options (clamping), then re-summarizes.
+  document.getElementById('yearly-month')?.addEventListener('change', () => { rebuildYearlyDayOptions(); update(); });
+  document.getElementById('yearly-day')?.addEventListener('change', update);
   update();
 }
 

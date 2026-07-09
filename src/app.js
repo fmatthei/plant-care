@@ -4161,12 +4161,12 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
         </div>
         <div data-action="reschedule-modify" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${offsetDays}" style="background:#f0f7ec;border:2px solid #4a8c3f;border-radius:14px;padding:16px;cursor:pointer;">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-            <div>
+            <div style="min-width:0;">
               <div style="font-size:14px;font-weight:700;color:#2e6b28;margin-bottom:2px;">Accept Modified Schedule</div>
               <div style="font-size:12px;color:#2e6b28;">Move anchor to ${escapeHtml(shiftLabel)} every year</div>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <div style="background:#c8e6c9;color:#1b5e20;font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;">&rarr; ${escapeHtml(shiftLabel)}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+              <div style="background:#c8e6c9;color:#1b5e20;font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;white-space:nowrap;flex-shrink:0;">&rarr; ${escapeHtml(shiftLabel)}</div>
               <div style="font-size:20px;font-weight:300;color:#2e6b28;line-height:1;">›</div>
             </div>
           </div>
@@ -4560,7 +4560,6 @@ function openCalendarSyncSheet() {
         #cal-sync-body .sub-actions{display:flex;gap:8px;padding-top:12px;border-top:1px solid #eef1ee;}
         #cal-sync-body .sub-action{flex:1;text-align:center;font-size:12.5px;font-weight:700;color:#2e7d51;background:#f4f6f2;border-radius:8px;padding:8px 4px;cursor:pointer;}
         #cal-sync-body .sub-action.danger{color:#b13a3a;}
-        #cal-sync-body .add-sync-row{font-size:12.5px;color:#a8b5a8;text-align:center;padding:8px 0 4px;font-style:italic;cursor:pointer;}
         #cal-sync-body .option-card{display:flex;align-items:center;gap:14px;padding:16px;border:1.5px solid #e0e5e0;border-radius:14px;margin-bottom:10px;cursor:pointer;}
         #cal-sync-body .option-icon{font-size:20px;width:36px;height:36px;background:#f4f6f2;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
         #cal-sync-body .option-title{font-size:15px;font-weight:700;color:#1a2e1a;}
@@ -4582,12 +4581,28 @@ function openCalendarSyncSheet() {
             <div class="sub-action danger" data-action="cal-unsub" data-scope="${scope}">Unsubscribe</div>
           </div>
         </div>`;
+      const scopeBlurb = (scope) => scope === 'all'
+        ? 'Every task across your household.'
+        : 'Only tasks assigned to you.';
+      const addCardFor = (scope) => `
+        <div class="sub-card">
+          <div class="sub-card-top">
+            <div class="sub-dot" style="background:#c5ccc5;"></div>
+            <div>
+              <div class="sub-title">${scopeName(scope)}</div>
+              <div class="sub-sub">${scopeBlurb(scope)}</div>
+            </div>
+          </div>
+          <div class="sub-actions">
+            <div class="sub-action" data-action="cal-add" data-scope="${scope}">Subscribe</div>
+          </div>
+        </div>`;
       const cards = [];
       if (mySub)  cards.push(cardFor('my'));
       if (allSub) cards.push(cardFor('all'));
       const addRows = [];
-      if (!mySub)  addRows.push(`<div class="add-sync-row" data-action="cal-add" data-scope="my">+ Add &ldquo;My tasks&rdquo; to your calendar</div>`);
-      if (!allSub) addRows.push(`<div class="add-sync-row" data-action="cal-add" data-scope="all">+ Add &ldquo;All household tasks&rdquo; to your calendar</div>`);
+      if (!mySub)  addRows.push(addCardFor('my'));
+      if (!allSub) addRows.push(addCardFor('all'));
       body = `${styleBlock}
         <div class="section-label">ACTIVE SYNCS</div>
         ${cards.join('') || `<p style="font-size:13px;color:var(--text-muted);margin:0 0 4px;">No calendar syncs yet — add one below.</p>`}
@@ -4615,6 +4630,10 @@ function openCalendarSyncSheet() {
           <li style="display:flex;gap:8px;font-size:12.5px;color:#4b5563;line-height:1.55;margin-bottom:10px;">
             <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">3.</span>
             <span>Make sure the Plant Care calendar is visible — tap Calendars at the bottom and check it's enabled.</span>
+          </li>
+          <li style="display:flex;gap:8px;font-size:12.5px;color:#4b5563;line-height:1.55;margin-bottom:10px;">
+            <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">4.</span>
+            <span>If you don't see events after subscribing, check that the calendar is checked/visible in your calendar app's list.</span>
           </li>
         </ol>`;
     } else if (view === 'switch') {

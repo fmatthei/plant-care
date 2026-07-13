@@ -53,9 +53,11 @@ async function handleLogin() {
 }
 
 // Decide where to go after we have a user: admins reach the dashboard,
-// everyone else is denied and signed out immediately.
+// everyone else is denied and signed out immediately. is_admin is read from
+// app_metadata — the single source the main app (src/app.js) and the
+// set-admin-status / reset-household Edge Functions all trust.
 async function gate(user) {
-  if (!user || user.user_metadata?.is_admin !== true) {
+  if (!user || user.app_metadata?.is_admin !== true) {
     await supabaseClient.auth.signOut();
     renderAccessDenied();
     return;
@@ -205,6 +207,7 @@ function renderHouseholds() {
         ? `<button class="btn btn-sm" data-action="hh-edit-confirm" data-id="${esc(h.id)}">Confirm</button>
            <button class="btn btn-sm btn-secondary" data-action="hh-edit-cancel">Cancel</button>`
         : `<button class="btn btn-sm btn-secondary" data-action="hh-edit" data-id="${esc(h.id)}">Edit</button>
+           <button class="btn btn-sm" style="background:#b45309;color:#fff;border-color:#b45309;" data-action="hh-reset" data-id="${esc(h.id)}">Reset</button>
            <button class="btn btn-sm btn-danger" data-action="hh-delete" data-id="${esc(h.id)}">Delete</button>`;
       return `<tr>
         <td>${nameCell}</td>
@@ -388,6 +391,7 @@ function onAction(e) {
     case 'hh-edit':          ui.hhError = ''; ui.hhEditId = id; renderHouseholds(); break;
     case 'hh-edit-cancel':   ui.hhEditId = null; renderHouseholds(); break;
     case 'hh-edit-confirm':  confirmRenameHousehold(id); break;
+    case 'hh-reset':         openResetDialog(id); break;
     case 'hh-delete':        deleteHousehold(id); break;
     case 'mem-edit':         ui.memberError = ''; ui.memberEditId = id; renderUsers(); break;
     case 'mem-edit-cancel':  ui.memberEditId = null; renderUsers(); break;
@@ -602,6 +606,10 @@ async function removeMember(id) {
 // write-only: there is no current-state indicator, only Grant/Revoke actions.
 const SET_ADMIN_STATUS_URL = 'https://kmkfywdzoitgdtbttxaa.supabase.co/functions/v1/set-admin-status';
 
+// Service-role reset endpoint (see supabase/functions/reset-household). Verifies the
+// caller is an admin, then does preview counts (GET) or the reset itself (POST).
+const RESET_HOUSEHOLD_URL = 'https://kmkfywdzoitgdtbttxaa.supabase.co/functions/v1/reset-household';
+
 // Minimal transient toast (no styling deps — inline-styled so style.css is untouched).
 function showToast(message) {
   const el = document.createElement('div');
@@ -647,6 +655,134 @@ async function toggleAdminStatus(memberId, userId, isAdmin) {
     ui.memberError = e?.message || String(e);
     renderUsers();
   }
+}
+
+// ---- Household reset (plant data only; never members/name) ----
+//
+// A modal appended to document.body (not to a section) so reload()'s innerHTML
+// swaps don't wipe it. All work goes through the reset-household Edge Function
+// with the admin's bearer token — the anon key + RLS can't read or delete another
+// household's plant data. Two depths: shallow (soft-delete plants) / deep (hard
+// cascade + storage). A typed household-name confirmation gates the action.
+
+async function resetAuthToken() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  return session?.access_token || null;
+}
+
+function closeResetDialog() {
+  document.getElementById('reset-modal-overlay')?.remove();
+  document.removeEventListener('keydown', onResetKey);
+}
+
+function onResetKey(e) {
+  if (e.key === 'Escape') closeResetDialog();
+}
+
+async function openResetDialog(householdId) {
+  const h = cachedHouseholds.find(x => x.id === householdId);
+  if (!h) return;
+  closeResetDialog(); // guard against a stray existing modal
+
+  const overlay = document.createElement('div');
+  overlay.id = 'reset-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:9998;padding:16px;';
+  overlay.innerHTML = `
+    <div id="reset-modal" style="background:#fff;border-radius:10px;max-width:460px;width:100%;padding:20px;box-shadow:0 8px 30px rgba(0,0,0,0.3);font-size:14px;line-height:1.45;box-sizing:border-box;">
+      <h3 style="margin:0 0 12px;">Reset &ldquo;${esc(h.name)}&rdquo;</h3>
+      <div id="reset-counts" style="margin-bottom:14px;color:#555;background:#f5f5f5;border-radius:6px;padding:10px 12px;">Loading counts…</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;">
+        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
+          <input type="radio" name="reset-mode" value="shallow" checked style="margin-top:3px;">
+          <span><strong>Shallow</strong> — soft-delete plants only. Tasks, notes, care log and photos stay in the database (hidden). Reversible.</span>
+        </label>
+        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
+          <input type="radio" name="reset-mode" value="deep" style="margin-top:3px;">
+          <span><strong>Deep</strong> — permanently delete all plants, tasks, notes, care log, photos and their storage files. <strong style="color:#b71c1c;">Irreversible.</strong></span>
+        </label>
+      </div>
+      <label style="display:block;margin-bottom:12px;">
+        <span style="display:block;margin-bottom:4px;color:#555;">Type <strong>${esc(h.name)}</strong> to confirm:</span>
+        <input id="reset-confirm-name" type="text" autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #c8c8c8;border-radius:6px;">
+      </label>
+      <p id="reset-error" class="error" style="display:none;margin:0 0 12px;"></p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-sm btn-secondary" id="reset-cancel">Cancel</button>
+        <button class="btn btn-sm btn-danger" id="reset-submit" disabled>Reset household</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const nameInput = document.getElementById('reset-confirm-name');
+  const submitBtn = document.getElementById('reset-submit');
+  const errEl = document.getElementById('reset-error');
+  const showErr = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeResetDialog(); });
+  document.getElementById('reset-cancel').addEventListener('click', closeResetDialog);
+  document.addEventListener('keydown', onResetKey);
+
+  // Enable the action only once the typed name matches exactly.
+  nameInput.addEventListener('input', () => {
+    submitBtn.disabled = nameInput.value.trim() !== h.name;
+  });
+  nameInput.focus();
+
+  // Preview counts.
+  try {
+    const token = await resetAuthToken();
+    if (!token) { document.getElementById('reset-counts').textContent = 'Session expired — sign in again.'; return; }
+    const res = await fetch(`${RESET_HOUSEHOLD_URL}?household_id=${encodeURIComponent(householdId)}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const payload = await res.json();
+    const countsEl = document.getElementById('reset-counts');
+    if (!countsEl) return; // dialog closed while loading
+    if (!res.ok) { countsEl.textContent = payload.error || `Preview failed (${res.status}).`; return; }
+    const c = payload.counts;
+    countsEl.innerHTML = `This will affect:<br>
+      <strong>${c.plants_active}</strong> active plants (${c.plants} total),
+      <strong>${c.tasks}</strong> tasks,
+      <strong>${c.care_log}</strong> care-log entries,
+      <strong>${c.notes}</strong> notes,
+      <strong>${c.plant_photos}</strong> photos,
+      <strong>${c.storage_objects}</strong> storage files.`;
+  } catch (e) {
+    const countsEl = document.getElementById('reset-counts');
+    if (countsEl) countsEl.textContent = e?.message || String(e);
+  }
+
+  submitBtn.addEventListener('click', async () => {
+    errEl.style.display = 'none';
+    const mode = overlay.querySelector('input[name="reset-mode"]:checked')?.value;
+    const confirm_name = nameInput.value.trim();
+    if (confirm_name !== h.name) { showErr('Confirmation name does not match.'); return; }
+    submitBtn.disabled = true;
+    const origLabel = submitBtn.textContent;
+    submitBtn.textContent = 'Resetting…';
+    try {
+      const token = await resetAuthToken();
+      if (!token) { showErr('Session expired — sign in again.'); submitBtn.disabled = false; submitBtn.textContent = origLabel; return; }
+      const res = await fetch(RESET_HOUSEHOLD_URL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ household_id: householdId, mode, confirm_name }),
+      });
+      const payload = await res.json();
+      if (!res.ok) { showErr(payload.error || `Reset failed (${res.status}).`); submitBtn.disabled = false; submitBtn.textContent = origLabel; return; }
+      const c = payload.counts;
+      const msg = payload.mode === 'shallow'
+        ? `Shallow reset: ${c.plants} plant${c.plants === 1 ? '' : 's'} soft-deleted.`
+        : `Deep reset: deleted ${c.plants} plants, ${c.tasks} tasks, ${c.notes} notes, ${c.care_log} care-log, ${c.plant_photos} photos, ${c.storage_objects} storage files.`;
+      closeResetDialog();
+      showToast(msg);
+      await reload();
+    } catch (e) {
+      showErr(e?.message || String(e));
+      submitBtn.disabled = false;
+      submitBtn.textContent = origLabel;
+    }
+  });
 }
 
 function formatDate(iso) {

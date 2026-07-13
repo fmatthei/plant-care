@@ -8197,6 +8197,7 @@ function showDevToolsConfirm(scenario, label) {
 // Seeds are destructive — only ever run against known throwaway test households.
 const SEED_ALLOWED_HOUSEHOLDS = [
   'b3b5aeb6-ddcc-47c2-bb5e-b2e67d59f635', // Test Household 2
+  'e296ba61-2fd7-4bfb-a8c2-d273abd234af', // Sweet Home Paderewsky
 ];
 
 async function runDevSeed(scenario) {

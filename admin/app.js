@@ -277,6 +277,7 @@ function renderMemberRow(m, h) {
     <td>${esc(m.role) || '<span class="muted">—</span>'}${adminStatusMap[m.user_id] === true ? ' <span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:#fff3cd;color:#92400e;font-size:11px;font-weight:600;white-space:nowrap;">🔑 App admin</span>' : ''}</td>
     <td class="actions">
       <button class="btn btn-sm btn-secondary" data-action="mem-edit" data-id="${esc(m.id)}">Edit</button>
+      <button class="btn btn-sm" style="background:#b45309;color:#fff;border-color:#b45309;" data-action="mem-reset" data-id="${esc(m.id)}">Reset</button>
       <button class="btn btn-sm btn-danger" data-action="mem-remove" data-id="${esc(m.id)}">Remove</button>
       <button class="btn btn-sm" style="background:#2e7d32;color:#fff;border-color:#2e7d32;" data-action="mem-grant-admin" data-id="${esc(m.id)}" data-user="${esc(m.user_id || '')}">Grant admin</button>
       <button class="btn btn-sm btn-danger" data-action="mem-revoke-admin" data-id="${esc(m.id)}" data-user="${esc(m.user_id || '')}">Revoke admin</button>
@@ -337,10 +338,14 @@ function renderUsers() {
       const rows = mem.length
         ? mem.map(m => renderMemberRow(m, h)).join('')
         : `<tr><td colspan="4" class="empty">No members.</td></tr>`;
+      const resetAllControl = mem.length
+        ? `<button class="btn btn-sm" style="background:#b45309;color:#fff;border-color:#b45309;" data-action="mem-reset-all" data-hh="${esc(h.id)}">Reset All Users</button>`
+        : '';
       return `<div class="hh-block">
         <div class="hh-block-head">
           <h3>${esc(h.name)} <span class="muted">(${mem.length})</span></h3>
           ${addControl}
+          ${resetAllControl}
         </div>
         <table>
           <thead><tr><th>Display name</th><th>Color</th><th>Role</th><th>Actions</th></tr></thead>
@@ -396,6 +401,8 @@ function onAction(e) {
     case 'mem-edit':         ui.memberError = ''; ui.memberEditId = id; renderUsers(); break;
     case 'mem-edit-cancel':  ui.memberEditId = null; renderUsers(); break;
     case 'mem-edit-confirm': confirmEditMember(id); break;
+    case 'mem-reset':        openUserResetDialog({ memberId: id }); break;
+    case 'mem-reset-all':    openUserResetDialog({ householdId: hh, all: true }); break;
     case 'mem-remove':       removeMember(id); break;
     case 'mem-grant-admin':  toggleAdminStatus(id, user, true); break;
     case 'mem-revoke-admin': toggleAdminStatus(id, user, false); break;
@@ -606,9 +613,10 @@ async function removeMember(id) {
 // write-only: there is no current-state indicator, only Grant/Revoke actions.
 const SET_ADMIN_STATUS_URL = 'https://kmkfywdzoitgdtbttxaa.supabase.co/functions/v1/set-admin-status';
 
-// Service-role reset endpoint (see supabase/functions/reset-household). Verifies the
-// caller is an admin, then does preview counts (GET) or the reset itself (POST).
+// Service-role reset endpoints (see supabase/functions/reset-household and
+// reset-user). Both verify the caller is an admin, then preview (GET) or reset (POST).
 const RESET_HOUSEHOLD_URL = 'https://kmkfywdzoitgdtbttxaa.supabase.co/functions/v1/reset-household';
+const RESET_USER_URL = 'https://kmkfywdzoitgdtbttxaa.supabase.co/functions/v1/reset-user';
 
 // Minimal transient toast (no styling deps — inline-styled so style.css is untouched).
 function showToast(message) {
@@ -774,6 +782,142 @@ async function openResetDialog(householdId) {
       const msg = payload.mode === 'shallow'
         ? `Shallow reset: ${c.plants} plant${c.plants === 1 ? '' : 's'} soft-deleted.`
         : `Deep reset: deleted ${c.plants} plants, ${c.tasks} tasks, ${c.notes} notes, ${c.care_log} care-log, ${c.plant_photos} photos, ${c.storage_objects} storage files.`;
+      closeResetDialog();
+      showToast(msg);
+      await reload();
+    } catch (e) {
+      showErr(e?.message || String(e));
+      submitBtn.disabled = false;
+      submitBtn.textContent = origLabel;
+    }
+  });
+}
+
+// ---- User reset (per-member onboarding/notification/calendar state) ----
+//
+// Single (one member) or bulk (every active member in a household). Never touches
+// plant data, the member row itself, role, or auth.users — only clears server-side
+// onboarding/notification/calendar fields + push subscriptions, via the reset-user
+// Edge Function. Reuses the reset-modal overlay + close/Esc helpers above.
+
+const USER_RESET_FIELDS_HTML = `
+  <div style="margin-bottom:12px;color:#555;">This will set, per user:
+    <ul style="margin:6px 0 0;padding-left:20px;">
+      <li>onboarding &rarr; not completed</li>
+      <li>notifications &rarr; off (push subscription deleted)</li>
+      <li>calendar time &rarr; 8:00&nbsp;PM default, weekend time &rarr; none</li>
+    </ul>
+  </div>
+  <p style="margin:0 0 14px;padding:8px 10px;background:#fff7ed;border:1px solid #fdba74;border-radius:6px;color:#7c2d12;font-size:13px;">
+    This clears server-side state only. The user must also clear their app&rsquo;s local storage
+    or reinstall the app on their own device for a fully fresh first-run experience.
+  </p>`;
+
+async function openUserResetDialog({ memberId = null, householdId = null, all = false } = {}) {
+  const single = !!memberId;
+  // Confirmation target name comes from the local cache so the typed field works
+  // before the preview request resolves; the preview fills in current values.
+  const targetName = single
+    ? (cachedMembers.find(m => m.id === memberId)?.display_name ?? '')
+    : (cachedHouseholds.find(h => h.id === householdId)?.name ?? '');
+  const title = single
+    ? `Reset user &ldquo;${esc(targetName)}&rdquo;`
+    : `Reset ALL users in &ldquo;${esc(targetName)}&rdquo;`;
+  const confirmLabel = single
+    ? `Type the display name <strong>${esc(targetName)}</strong> to confirm:`
+    : `Type the household name <strong>${esc(targetName)}</strong> to confirm:`;
+
+  closeResetDialog(); // reuse the single reset-modal slot
+
+  const overlay = document.createElement('div');
+  overlay.id = 'reset-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:9998;padding:16px;';
+  overlay.innerHTML = `
+    <div id="reset-modal" style="background:#fff;border-radius:10px;max-width:480px;width:100%;padding:20px;box-shadow:0 8px 30px rgba(0,0,0,0.3);font-size:14px;line-height:1.45;box-sizing:border-box;max-height:90vh;overflow:auto;">
+      <h3 style="margin:0 0 12px;">${title}</h3>
+      <div id="reset-counts" style="margin-bottom:14px;color:#555;background:#f5f5f5;border-radius:6px;padding:10px 12px;">Loading current state…</div>
+      ${USER_RESET_FIELDS_HTML}
+      <label style="display:block;margin-bottom:12px;">
+        <span style="display:block;margin-bottom:4px;color:#555;">${confirmLabel}</span>
+        <input id="reset-confirm-name" type="text" autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #c8c8c8;border-radius:6px;">
+      </label>
+      <p id="reset-error" class="error" style="display:none;margin:0 0 12px;"></p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-sm btn-secondary" id="reset-cancel">Cancel</button>
+        <button class="btn btn-sm btn-danger" id="reset-submit" disabled>${single ? 'Reset user' : 'Reset all users'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const nameInput = document.getElementById('reset-confirm-name');
+  const submitBtn = document.getElementById('reset-submit');
+  const errEl = document.getElementById('reset-error');
+  const showErr = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeResetDialog(); });
+  document.getElementById('reset-cancel').addEventListener('click', closeResetDialog);
+  document.addEventListener('keydown', onResetKey);
+  nameInput.addEventListener('input', () => { submitBtn.disabled = nameInput.value.trim() !== targetName; });
+  nameInput.focus();
+
+  // Preview current values.
+  try {
+    const token = await resetAuthToken();
+    if (!token) { document.getElementById('reset-counts').textContent = 'Session expired — sign in again.'; return; }
+    const qs = single
+      ? `household_member_id=${encodeURIComponent(memberId)}`
+      : `household_id=${encodeURIComponent(householdId)}&all=true`;
+    const res = await fetch(`${RESET_USER_URL}?${qs}`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const payload = await res.json();
+    const countsEl = document.getElementById('reset-counts');
+    if (!countsEl) return; // dialog closed while loading
+    if (!res.ok) { countsEl.textContent = payload.error || `Preview failed (${res.status}).`; return; }
+    const yn = b => b ? 'yes' : 'no';
+    if (single) {
+      const m = payload.member;
+      countsEl.innerHTML = `Current state for <strong>${esc(m.display_name || '—')}</strong>:<br>
+        onboarding completed: <strong>${yn(m.onboarding_completed)}</strong>,
+        notifications: <strong>${m.notifications_enabled ? 'on' : 'off'}</strong>,
+        push subscriptions: <strong>${m.push_subscriptions}</strong>,
+        calendar: <strong>${esc(m.calendar_time ?? '—')}</strong>${m.calendar_weekend_time ? ` / weekend ${esc(m.calendar_weekend_time)}` : ''}.`;
+    } else {
+      const ms = payload.members || [];
+      const onboarded = ms.filter(m => m.onboarding_completed).length;
+      const notif = ms.filter(m => m.notifications_enabled).length;
+      const push = ms.reduce((n, m) => n + (m.push_subscriptions || 0), 0);
+      const names = ms.map(m => esc(m.display_name || '—')).join(', ');
+      countsEl.innerHTML = `<strong>${payload.count}</strong> member${payload.count === 1 ? '' : 's'}: ${names || '—'}.<br>
+        ${onboarded} completed onboarding, ${notif} with notifications on, ${push} push subscription${push === 1 ? '' : 's'} total.`;
+    }
+  } catch (e) {
+    const countsEl = document.getElementById('reset-counts');
+    if (countsEl) countsEl.textContent = e?.message || String(e);
+  }
+
+  submitBtn.addEventListener('click', async () => {
+    errEl.style.display = 'none';
+    const confirm_name = nameInput.value.trim();
+    if (confirm_name !== targetName) { showErr('Confirmation name does not match.'); return; }
+    submitBtn.disabled = true;
+    const origLabel = submitBtn.textContent;
+    submitBtn.textContent = 'Resetting…';
+    try {
+      const token = await resetAuthToken();
+      if (!token) { showErr('Session expired — sign in again.'); submitBtn.disabled = false; submitBtn.textContent = origLabel; return; }
+      const reqBody = single
+        ? { household_member_id: memberId, confirm_name }
+        : { household_id: householdId, all: true, confirm_name };
+      const res = await fetch(RESET_USER_URL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(reqBody),
+      });
+      const payload = await res.json();
+      if (!res.ok) { showErr(payload.error || `Reset failed (${res.status}).`); submitBtn.disabled = false; submitBtn.textContent = origLabel; return; }
+      const names = (payload.members || []).map(n => n || '—').join(', ');
+      const msg = single
+        ? `Reset ${names || 'member'} (${payload.push_deleted} push sub${payload.push_deleted === 1 ? '' : 's'} removed).`
+        : `Reset ${payload.reset} user${payload.reset === 1 ? '' : 's'}: ${names || '—'} (${payload.push_deleted} push sub${payload.push_deleted === 1 ? '' : 's'} removed).`;
       closeResetDialog();
       showToast(msg);
       await reload();

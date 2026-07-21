@@ -7939,6 +7939,26 @@ async function handleEvent(e) {
       if (container) container.className = `recurrence-${rtype}`;
       document.querySelectorAll('#sheet .recurrence-option').forEach(o => o.classList.remove('selected'));
       target.classList.add('selected');
+      // #437: switching to Yearly seeds month/day from the sheet's current date
+      // field, so the previously chosen date carries over instead of resetting to
+      // the build-time default. Always seed on switch-to-Yearly (no gate); leave
+      // the selects untouched when no date resolves. Runs before the summary
+      // refresh so the preview reflects the seeded values.
+      if (rtype === 'yearly') {
+        const prefix = document.getElementById('task-override-day') ? 'task-override'
+                     : document.getElementById('task-due-oneoff-day') ? 'task-due-oneoff' : null;
+        const iso = prefix ? getSelectDate(prefix) : null;
+        if (iso) {
+          const [, m, d] = iso.split('-').map(Number);
+          const ym = document.getElementById('yearly-month');
+          const yd = document.getElementById('yearly-day');
+          if (ym && yd) {
+            ym.value = String(m);
+            const day = Math.min(d, yearlyMaxDay(m));
+            yd.innerHTML = yearlyDayOptionsHtml(m, day);
+          }
+        }
+      }
       syncYearlyRecurrenceUI();
       updateTaskDueLabel();
       updateRecurrenceSummary();

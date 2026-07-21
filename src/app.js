@@ -15,7 +15,612 @@ const TASK_CONFIG = {
   'rotate':       { name: 'Rotate',                    icon: '🔄', type: 'rotate' },
 };
 
-const WEEKDAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+// ── Shared date-name sources (Brief #44a) ───────────────────────────────────
+// Single source of truth for weekday/month names. Sunday-indexed (index 0 = Sun)
+// to match JS Date.getDay(). English values for now; Phase-2 i18n makes these
+// locale-aware. Do NOT re-inline these arrays elsewhere — reference these consts.
+const WEEKDAY_NAMES      = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];         // 2-letter (min)
+const WEEKDAY_NAMES_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];  // 3-letter
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+// ── i18n foundation (Brief #44a) ────────────────────────────────────────────
+// Minimal translation shell. `t(key, vars)` looks up `key` in the active-locale
+// dictionary and substitutes {var} placeholders from `vars`. A missing key
+// returns the key itself (a visible fallback that never throws), so gaps surface
+// obviously in the UI instead of blanking out.
+//
+// CONVENTION: every NEW user-facing UI string added in future briefs MUST route
+// through t() with a dot-namespaced key (e.g. t('task.overdue', { n })) rather
+// than being hardcoded inline. Existing strings are migrated separately in a
+// later phase — this brief only builds the mechanism; do not retrofit here.
+const TRANSLATIONS = {
+  en: {
+    // ── Onboarding flow (Brief #44b-1) ──────────────────────────────────────
+    'onboarding.nameCapture.title':       "What should we call you?",
+    'onboarding.nameCapture.subtitle':    "This is how you'll appear to your household.",
+    'onboarding.nameCapture.placeholder': "Your first name",
+    'onboarding.nameCapture.cta':         "Let's go",
+
+    'onboarding.step.counter': "Step {step} of 3",
+
+    'onboarding.banner.label':    "Get started",
+    'onboarding.banner.step1':    "Add a plant to get started.",
+    'onboarding.banner.step1Cta': "+ Add Plant",
+    'onboarding.banner.step2':    "Create a task to water your plant every 3 days.",
+    'onboarding.banner.step2Cta': "Create a task →",
+    'onboarding.banner.step3':    "Tap ✓ Done below to complete your setup ↓",
+
+    'onboarding.inlineTask.markDone': "Mark as Done",
+
+    'onboarding.reminders.noteText':          "You can enable notifications any time from the menu.",
+    'onboarding.reminders.blockedTitle':      "Notifications are turned off",
+    'onboarding.reminders.blockedBody':       "To turn them on: <strong>{path}</strong>.",
+    'onboarding.reminders.blockedPathIos':    "iPhone Settings &rarr; Plant Care &rarr; Notifications",
+    'onboarding.reminders.blockedPathAndroid':"Android Settings &rarr; Apps &rarr; Plant Care &rarr; Notifications",
+    'onboarding.reminders.title':             "Stay in sync with your household",
+    'onboarding.reminders.subtitle':          "Get a heads-up when someone completes a care task.",
+    'onboarding.reminders.enable':            "Enable notifications",
+
+    'onboarding.card.maybeLater': "Maybe later",
+
+    'onboarding.calendarCard.noteText':  "You can sync your tasks to your Calendar app anytime from the menu.",
+    'onboarding.calendarCard.title':     "See your tasks in your calendar",
+    'onboarding.calendarCard.subtitle':  "Your plant care tasks will appear automatically as calendar events (a single event per day).",
+    'onboarding.calendarCard.subscribe': "Set up Calendar Sync",
+
+    'onboarding.coachmark.demoRow':   "{name} watered {plant} · just now",
+    'onboarding.coachmark.feedTitle': "This is your household's activity feed",
+    'onboarding.coachmark.feedBody':  "Every care action appears here in real time. No more guessing who did what — your whole household stays in sync automatically.",
+    'onboarding.coachmark.gotIt':     "Got it",
+    // Coach-mark render fallbacks (renderCoachMark) — Brief #44-extract-final
+    'onboarding.coachmark.youFallback':   "You",
+    'onboarding.coachmark.plantFallback': "your plant",
+
+    'onboarding.caringCoachmark.title': "Your daily tasks live here",
+    'onboarding.caringCoachmark.body':  "See what needs attention today and what's coming up this week.",
+
+    'onboarding.tasksBanner.step3': "Tap ✓ Done below to complete your setup",
+
+    'onboarding.addTask.label':       "Your care task",
+    'onboarding.addTask.instruction': "We've pre-filled a watering task for you. Adjust it or tap Add task to continue.",
+
+    // ── Task create/edit sheets (Brief #44b-2) ──────────────────────────────
+    'taskSheet.step1.title':               "Add Task",
+    'taskSheet.step2.addButton':           "Add Task", // same text as step1.title, distinct UI role (title vs primary action)
+    'taskSheet.type.added':                "Added",
+    'taskSheet.type.custom':               "Custom",
+    'taskSheet.customTask.header':         "Custom Task",
+    'taskSheet.field.taskName':            "Task name",
+    'taskSheet.field.taskNamePlaceholder': "e.g. Mist leaves",
+    'taskSheet.field.owner':               "Owner",
+    'taskSheet.field.dueDate':             "Due date",
+    'taskSheet.field.startFrom':           "Start from",
+    'taskSheet.field.firstDueDate':        "First due date",
+    'taskSheet.field.repeating':           "Repeating task",
+    'taskSheet.icon.tapToChange':          "tap icon to change",
+    'taskSheet.recurrence.interval':       "Every X days",
+    'taskSheet.recurrence.weekdays':       "Days of week",
+    'taskSheet.recurrence.yearly':         "Yearly",
+    'taskSheet.recurrence.daysBetween':    "days between tasks",
+    'taskSheet.pause.label':               "Pause task",
+    'taskSheet.pause.subtitle':            "Skip until resumed",
+    'taskSheet.delete':                    "Delete task",
+    'taskSheet.cancel':                    "Cancel",
+    'taskSheet.back':                      "Back",
+    'taskSheet.saveChanges':               "Save Changes",
+    // Live recurrence-summary preview (updateRecurrenceSummary) — Brief #44-extract-final
+    'taskSheet.recSummary.yearlyLeap':     "Recurs every year on Feb 29 (Mar 1 in non-leap years)",
+    'taskSheet.recSummary.yearlyOn':       "Recurs every year on {month} {day}",
+    'taskSheet.recSummary.everyDays.one':   "recurs every {n} day",
+    'taskSheet.recSummary.everyDays.other': "recurs every {n} days",
+    'taskSheet.recSummary.everyWeekdays':  "recurs every {days}",
+    'taskSheet.recSummary.started':        "Started",
+    'taskSheet.recSummary.starts':         "Starts",
+    'taskSheet.recSummary.firstOccurrence':"First occurrence:",
+    // Overdue-task action sheet (openOverdueActionSheet) — reuses home.aria.markDone + taskSheet.cancel
+    'taskSheet.overdueSheet.skip':         "Skip this time",
+    'taskSheet.overdueSheet.editTask':     "Edit task",
+
+    // ── Add-plant wizard (Brief #44b-3) ─────────────────────────────────────
+    // Reuses taskSheet.cancel ("Cancel") and taskSheet.back ("Back") for the
+    // shared button labels rather than duplicating — see flag in brief notes.
+    'addPlant.step1.title':           "Pick an icon",
+    'addPlant.step1.subtitle':        "Choose something that looks like yours",
+    'addPlant.tab.all':               "All (35)",
+    'addPlant.tab.foliage':           "🌿 Foliage",
+    'addPlant.tab.flowers':           "🌸 Flowers",
+    'addPlant.tab.edibles':           "🍋 Edibles",
+    'addPlant.photo.divider':         "none of these look like yours?",
+    'addPlant.photo.added':           "Photo added",
+    'addPlant.photo.usedAsIcon':      "This will be used as your plant icon",
+    'addPlant.photo.remove':          "Remove",
+    'addPlant.photo.addInstead':      "Add a photo instead",
+    'addPlant.photo.later':           "You can also do this later from the plant page",
+    'addPlant.done':                  "Done",
+    'addPlant.next':                  "Next →",
+    'addPlant.step2.heading':         "Give it a name",
+    'addPlant.step2.subtext':         "You can always change this later",
+    'addPlant.step2.nameLabel':       "Name",
+    'addPlant.step2.namePlaceholder': "e.g. Monstera",
+    'addPlant.step2.nameHint':        "My green one, The big one…",
+    'addPlant.step3.heading':         "When did {name} arrive home?",
+    'addPlant.step3.subtext':         "We'll show you how long you've cared for it.",
+    'addPlant.arrivalDate.label':     "Arrival date",
+    'addPlant.arrivalDate.optional':  "Optional — you can skip this",
+    'addPlant.step3.addButton':       "Add {name}",
+    // Duplicate-name nudge (attachAddPlantNameListener) — Brief #44-extract-final
+    'addPlant.duplicate.title':          "You already have a {name}",
+    'addPlant.duplicate.body':           "Give this one a different name so you can tell them apart — or skip and we'll call it '{name} 2'.",
+    'addPlant.duplicate.altPlaceholder': "Alternative name…",
+
+    // ── Auth / login / password reset (Brief #44b-4) ────────────────────────
+    // Note: the app-brand "Plant Care" <h2> on the login screen is intentionally
+    // left un-extracted (product name, consistent with #44b-1's name-capture h1).
+    // auth.error.noHousehold / notMember are rendered by renderAuthErrorScreen but
+    // passed in from call sites in loadFromSupabase — see brief notes.
+    'auth.error.title':                      "Can't load household",
+    'auth.error.signOut':                    "Sign out",
+    'auth.error.noHousehold':                "Your account isn't associated with a household. Contact your household admin.",
+    'auth.error.notMember':                  "You aren't listed as a member of this household.",
+    'auth.login.emailPlaceholder':           "Email",
+    'auth.login.passwordPlaceholder':        "Password",
+    'auth.login.signIn':                     "Sign In",
+    'auth.reset.title':                      "Set New Password",
+    'auth.reset.newPasswordPlaceholder':     "New password",
+    'auth.reset.confirmPasswordPlaceholder': "Confirm new password",
+    'auth.reset.save':                       "Save",
+    'auth.reset.errorTooShort':              "Password must be at least 6 characters.",
+    'auth.reset.errorMismatch':              "Passwords do not match.",
+    'auth.reset.successTitle':               "Password Updated",
+    'auth.reset.successBody':                "Your password has been updated. Redirecting to sign in…",
+
+    // ── iOS PWA install takeover (Brief #44b-5) ─────────────────────────────
+    // Inline HTML (pill spans, SVG share icon, <img>, <br>) is injected via
+    // {placeholder} substitution — never embedded in a value — so HTML/SVG
+    // structure stays untouched. Pill labels are their own keys (iOS UI names).
+    'install.takeover.title':           "Install Plant Care",
+    'install.takeover.lead':            "Add it to your Home Screen to get started.",
+    'install.steps.tapShare':           "Tap the {share} button in the bottom toolbar. If you don't see it, tap {more} first.",
+    'install.steps.shareLabel':         "Share",
+    'install.steps.viewMore':           "Tap {label}",
+    'install.steps.viewMoreLabel':      "View More",
+    'install.steps.addToHome':          "Scroll down to {label}",
+    'install.steps.addToHomeLabel':     "Add to Home Screen ➕",
+    'install.steps.tapAdd':             "Tap {label}",
+    'install.steps.addLabel':           "Add",
+    'install.steps.openApp':            "Close Safari and open {icon} Plant Care from your Home Screen like a normal app",
+    'install.openInSafari.title':       "Open in Safari",
+    'install.openInSafari.lead':        "Plant Care can only be installed from Safari. To continue:",
+    'install.openInSafari.copyLink':    "Copy this link:",
+    'install.openInSafari.openSafari':  "Open the {label} app",
+    'install.openInSafari.safariLabel': "Safari",
+    'install.openInSafari.paste':       "Paste the link, then follow the install steps",
+    'install.openInSafari.footer':      "This screen stays until the app is installed.",
+
+    // ── Menu panel, notifications sheet, change-password, toasts (Brief #44b-6) ─
+    // Reuses across namespaces (see brief notes): taskSheet.cancel ("Cancel"),
+    // auth.reset.save ("Save"), auth.reset.errorMismatch ("Passwords do not
+    // match."), and onboarding.reminders.blockedBody/blockedPath* for the shared
+    // "notifications blocked" instruction. All toasts live under menu.toast.*.
+    'menu.section.profile':                 "Profile",
+    'menu.section.reminders':               "Reminders & Notifications",
+    'menu.section.account':                 "Account",
+    'menu.item.syncCalendar':               "Sync to Calendar",
+    'menu.item.changePassword':             "Change Password",
+    'menu.item.signOut':                    "Sign Out",
+
+    'menu.notifications.label':             "Notifications",
+    'menu.notifications.blocked':           "Blocked",
+    'menu.notifications.on':                "On",
+    'menu.notifications.off':               "Off",
+    'menu.notifications.body':              "Get a heads-up on your phone whenever someone in your household completes a care task.",
+    'menu.notifications.enable':            "Enable",
+
+    'menu.changePassword.newLabel':         "New password",
+    'menu.changePassword.newPlaceholder':   "At least 8 characters",
+    'menu.changePassword.confirmLabel':     "Confirm password",
+    'menu.changePassword.confirmPlaceholder':"Repeat new password",
+    'menu.changePassword.errorTooShort':    "Password must be at least 8 characters.",
+
+    'menu.toast.markedDone':                "{task} done",
+    'menu.toast.addNotePrompt':             "Add a note?",
+    'menu.toast.undo':                      "Undo",
+    'menu.toast.noteAdded':                 "Note added",
+    'menu.toast.couldNotSaveTapRetry':      "Could not save — tap Save to retry",
+    'menu.toast.couldNotSavePleaseRetry':   "Could not save — please try again",
+    'menu.toast.householdNameUpdated':      "&#10003; Household name updated",
+    'menu.toast.passwordUpdated':           "&#128274; Password updated!",
+    'menu.toast.couldNotLoadImage':         "Could not load that image",
+    'menu.toast.photoLimitReached':         "Photo limit reached — manage photos first",
+    'menu.toast.couldNotSavePhoto':         "Could not save photo",
+    'menu.toast.couldNotFindPhoto':         "Could not find photo",
+    'menu.toast.plantSaved':                "✅ Plant saved!",
+    'menu.toast.plantAdded':                "🌱 Plant added!",
+    'menu.toast.taskAdded':                 "✅ Task added!",
+    'menu.toast.taskSaved':                 "✅ Task saved!",
+    'menu.toast.taskDeleted':               "🗑️ Task deleted!",
+    'menu.toast.plantDeleted':              "{name} deleted",
+    'menu.toast.notificationsEnabled':      "Notifications enabled",
+    'menu.toast.notificationsEnabledBang':  "🔔 Notifications enabled!",
+    'menu.toast.notificationsNotEnabled':   "Notifications weren't enabled",
+
+    // ── Calendar sync sheet (Brief #44e) ────────────────────────────────────
+    // The sheet header title reuses menu.item.syncCalendar ("Sync to Calendar").
+    // removeFeed.* keep inline <strong>/&rarr; in-value (multiple static bold
+    // segments). handoffNotice/{app} and schedule/{time} slots are runtime vars.
+    'calendarSync.intro':                 "Tasks appear as daily events in your calendar app.",
+    'calendarSync.scope.my':              "My tasks",
+    'calendarSync.scope.all':             "All household tasks",
+    'calendarSync.scope.myBlurb':         "Only tasks assigned to you.",
+    'calendarSync.scope.allBlurb':        "Every task across your household.",
+    'calendarSync.app.google':            "Google Calendar",
+    'calendarSync.app.apple':             "Apple Calendar",
+    'calendarSync.schedule.daily':        "Daily at {time}",
+    'calendarSync.schedule.split':        "Weekdays {weekday} · Weekends {weekend}",
+    'calendarSync.action.subscribe':      "Subscribe",
+    'calendarSync.action.modify':         "Modify",
+    'calendarSync.action.switchApp':      "Switch App",
+    'calendarSync.action.unsubscribe':    "Unsubscribe",
+    'calendarSync.handoffNotice':         "Tapping Subscribe will open {app}. Tap Allow when prompted to add the feed.",
+    'calendarSync.state1.chooseFeed':     "Choose a feed",
+    'calendarSync.state1.calendarAppLabel':"Calendar app",
+    'calendarSync.state1.yourCalendarApp':"your Calendar app",
+    'calendarSync.state1.scheduleTime':   "Schedule time",
+    'calendarSync.state1.weekdaysLabel':  "Mon &ndash; Fri",
+    'calendarSync.state1.allDaysLabel':   "All days",
+    'calendarSync.state1.weekendToggle':  "Different time on weekends",
+    'calendarSync.state1.weekendLabel':   "Sat &amp; Sun",
+    'calendarSync.options.activeSyncs':   "ACTIVE SYNCS",
+    'calendarSync.options.noSyncs':       "No calendar syncs yet — add one below.",
+    'calendarSync.options.getHelp':       "Get Help",
+    'calendarSync.options.getHelpSub':    "Troubleshooting &amp; tips",
+    'calendarSync.getHelp.title':         "Troubleshooting",
+    'calendarSync.getHelp.item1':         "Wait a minute — Calendar can take a moment to sync after adding a new feed.",
+    'calendarSync.getHelp.item2':         "Open the Calendar app directly and pull down to refresh.",
+    'calendarSync.getHelp.item3':         "Make sure the Plant Care calendar is visible — tap Calendars at the bottom and check it's enabled.",
+    'calendarSync.getHelp.item4':         "If you don't see events after subscribing, check that the calendar is checked/visible in your calendar app's list.",
+    'calendarSync.switch.title':          "Switch calendar app",
+    'calendarSync.switch.intro':          "First remove the current {scope} feed from {app}, then pick the new app and subscribe again.",
+    'calendarSync.unsubscribe.body':      "To stop these events, remove the feed from your calendar app:",
+    'calendarSync.unsubscribe.confirm':   "I've removed it",
+    'calendarSync.removeFeed.google':     "In Google Calendar, open <strong>Settings &rarr; the Plant Care calendar</strong> and choose <strong>Unsubscribe</strong>. This only removes the calendar feed, not your Plant Care account.",
+    'calendarSync.removeFeed.apple':      "Go to <strong>Settings &rarr; Calendar &rarr; Accounts</strong>, find the Plant Care feed, and tap <strong>Delete Account</strong> — this only removes the calendar feed, not your Plant Care account.",
+    'calendarSync.copied':                "Copied!",
+    'calendarSync.toast.loading':         "Loading household data… please try again in a moment.",
+    'calendarSync.aria.back':             "Back",
+    'calendarSync.aria.close':            "Close",
+
+    // ── Home & Caring shell (Brief #44c-1a) ─────────────────────────────────
+    // The "Undo" aria-label reuses menu.toast.undo. Status-count pills
+    // ("{n} overdue" / "{n} due today") and the "{plant} · {n} days late" /
+    // "due today" subtitles are intentionally left for #44c-2 (status/plural).
+    'home.householdFallback': "My Household",
+    'home.yourHouseholds':    "Your households",
+    'home.manageHouseholds':  "Manage households",
+    'home.tabPlants':         "My Plants",
+    'home.tabCaring':         "Caring",
+    'home.emptyTitle':        "Your plants live here",
+    'home.emptySub':          "Add a plant to start tracking its care.",
+    'home.myPlants':          "My plants",
+    'home.allGood':           "All good",
+    'home.moreTasksAria':     "{n} more",
+    'home.addPlant':          "Add Plant",
+    'home.needsAttention':    "Needs Attention Today",
+    'home.allDoneToday':      "All done for today!",
+    'home.recentActivity':    "Recent activity",
+    'home.viewMore':          "View more",
+    'home.activityEmpty':     "Care actions will appear here",
+    'home.aria.reportBug':    "Report a bug",
+    'home.aria.markDone':     "Mark done",
+    'home.aria.addNote':      "Add note",
+    'home.aria.resume':       "Resume",
+    'home.aria.dismiss':      "Dismiss",
+    // Last-care line (lastCareLabel) + rendered fallbacks — Brief #44-extract-final
+    'home.lastCare':          "Last care:",
+    'home.unnamedHousehold':  "Household",
+    'home.unknownAuthor':     "Unknown",
+    'home.authorFallback':    "Someone",
+    'home.taskFallback':      "task",
+    'home.careFallback':      "care",
+
+    'caring.doneToday':       "Done today",
+    'caring.emptyTitle':      "Where care happens",
+    'caring.emptySub':        "Overdue and upcoming tasks will appear here.",
+    'caring.upcoming':        "Upcoming",
+    'caring.allClear':        "All clear",
+    'caring.noTasksToday':    "No tasks today",
+
+    // ── Plant detail & task cards (Brief #44c-1b) ───────────────────────────
+    // Reuses (see brief notes): home.aria.reportBug/addNote/markDone,
+    // home.recentActivity/viewMore/allDoneToday, caring.allClear/noTasksToday/
+    // upcoming, addPlant.step3.heading, menu.toast.undo/noteAdded. Status/
+    // recurrence/relative labels and the verb-map assembly are left untouched.
+    'plantDetail.aria.editPlant':       "Edit plant",
+    'plantDetail.tabSummary':           "Summary",
+    'plantDetail.tabTasks':             "Tasks",
+    'plantDetail.tabNotes':             "Notes",
+    'plantDetail.tabCareLog':           "Care Log",
+    'plantDetail.addTask':              "Add task",
+    'plantDetail.aria.addFab':          "Add",
+    'plantDetail.summary.homeTitle':    "Your {name} is home",
+    'plantDetail.summary.emptySub':     "Add a task to start tracking its care. Your progress will show up here.",
+    'plantDetail.summary.daysOfCare':   "days of care",
+    'plantDetail.summary.homeSince':    "Home since {date}",
+    'plantDetail.summary.arrivalPromptSub': "Set an arrival date to start tracking days of care.",
+    'plantDetail.summary.photoTimeline':"Photo timeline",
+    'plantDetail.summary.photoCount':   "{n} photos · tap to view",
+    'plantDetail.summary.needsAttention':"Needs attention today",
+    'plantDetail.summary.noUpcoming':   "No upcoming tasks",
+    'plantDetail.summary.noActivity':   "No activity yet",
+    'plantDetail.tasks.emptyTitle':     "No tasks yet",
+    'plantDetail.tasks.emptySub':       "Add a care task to start tracking what your {name} needs.",
+    'plantDetail.tasks.noneForFilter':  "No tasks for selected users",
+    'plantDetail.tasks.listHeader':     "Task list",
+    'plantDetail.notes.emptyTitle':     "No notes yet",
+    'plantDetail.notes.emptySub':       "Jot down observations about your {name} — growth, health, anything worth remembering. Tap the button below to add one.",
+    'plantDetail.notes.noneForFilter':  "No notes for selected users",
+    'plantDetail.careLog.emptyTitle':   "Your plant's care history",
+    'plantDetail.careLog.emptySub':     "Your completed tasks and notes will appear here.",
+    'plantDetail.careLog.skipped':      "Skipped",
+
+    'taskCard.paused':   "Paused",
+    'taskCard.done':     "Done",
+    'taskCard.plusNote': "+ Note",
+    'taskCard.resume':   "Resume",
+
+    // ── Manage households & household activity (Brief #44c-1c) ───────────────
+    // Reuses (see brief notes): home.householdFallback, taskSheet.cancel/back,
+    // auth.reset.save, plantDetail.careLog.skipped, menu.toast.noteAdded.
+    // The "{n} member(s)" count keeps its plural ternary — reserved for #44c-2.
+    'manageHouseholds.title':              "Manage Households",
+    'manageHouseholds.yourHousehold':      "Your household",
+    'manageHouseholds.editName':           "Edit Name",
+    'manageHouseholds.membersLabel':       "Members",
+    'manageHouseholds.unknownMember':      "Unknown",
+    'manageHouseholds.role':               "Member",
+    'manageHouseholds.youBadge':           "YOU",
+    'manageHouseholds.activityTitle':      "Household activity",
+    'manageHouseholds.noActivity':         "No activity yet.",
+    'manageHouseholds.noActivityFiltered': "No activity yet for selected users.",
+    'manageHouseholds.careFallback':       "Care",
+
+    // ── Note & photo sheets (Brief #44c-1d) ─────────────────────────────────
+    // Reuses (see brief notes): addPlant.photo.added/remove, taskSheet.cancel/
+    // back/saveChanges, auth.reset.save. The photo-count "{n} photo(s)" plural
+    // ternary is left for #44c-2.
+    'notes.postTask.title':   "Add a note",
+    'notes.optional':         "Optional",
+    'notes.placeholder':      "Describe what you observed...",
+    'notes.addPhoto':         "Add photo",
+    'notes.postTask.skip':    "Skip",
+    'notes.saveNote':         "Save note",
+    'notes.addNote.title':    "Add Note",
+    'notes.coach.title':      "Match your last photo",
+    'notes.coach.body':       "Use the same angle/distance. Helps to see progress!",
+    'notes.coach.bodyAlt':    "Same angle helps track progress!",
+    'notes.editNote.subtitle':"Edit note",
+    'notes.deleteNote':       "Delete note",
+    // Note card / note-edit + Add-Note save state — Brief #44-extract-final
+    // (Cancel reuses taskSheet.cancel; Save reuses auth.reset.save; Delete tooltip reuses photos.delete)
+    'notes.noteTaskMeta':     "after {task}",
+    'notes.saving':           "Saving…",
+    'notes.editTooltip':      "Edit",
+
+    'photos.tapToChange':     "Tap to change",
+    'photos.lastPhoto':       "Last photo",
+    'photos.aria.close':      "Close",
+    'photos.aria.previous':   "Previous",
+    'photos.aria.next':       "Next",
+    'photos.slideshow.noteLabel': "NOTE",
+    'photos.slideshow.count': "{current} of {total}",
+    'photos.noNote':          "No note added.",
+    'photos.cap.title':       "Photo limit reached",
+    'photos.cap.body':        "Each plant can have up to {cap} photos. To add a new one, you'll need to remove an existing photo first.",
+    'photos.cap.deleteOldest':"Delete oldest photo",
+    'photos.managePhotos':    "Manage photos",
+    'photos.loading':         "Loading…",
+    'photos.noPhotos':        "No photos yet.",
+    'photos.delete':          "Delete",
+
+    // ── Edit plant & emoji picker (Brief #44c-1e) ───────────────────────────
+    // Reuses: plantDetail.aria.editPlant ("Edit plant" sheet title), taskSheet.
+    // cancel. The edit-plant "change icon" screen reuses renderAddPlantStep1Html
+    // (addPlant.tab.*/done, taskSheet.cancel — already migrated in #44b-3).
+    // The inline delete-confirm body is a custom sheet element, not a native
+    // confirm() dialog, so it is in scope here.
+    'editPlant.setDate':           "Set date",
+    'editPlant.sublabelPhoto':     "Tap Change to retake, pick a new one, or use an icon",
+    'editPlant.sublabelEmoji':     "Tap Change to pick a new icon or add a photo",
+    'editPlant.iconLabel':         "PLANT ICON",
+    'editPlant.plantIcon':         "Plant icon",
+    'editPlant.change':            "Change",
+    'editPlant.nameLabel':         "NAME",
+    'editPlant.namePlaceholder':   "Plant name",
+    'editPlant.arrivalDateLabel':  "ARRIVAL DATE",
+    'editPlant.whenArrive':        "When did it arrive home?",
+    'editPlant.deletePlant':       "Delete plant",
+    'editPlant.deleteConfirmBody': "This will permanently delete the plant and all its tasks, notes, and care history. This cannot be undone.",
+    'editPlant.deleteConfirmYes':  "Yes, delete forever",
+    'editPlant.saveChanges':       "Save changes",
+
+    'emojiPicker.pastePlaceholder': "Or paste custom emoji",
+
+    // ── Status / recurrence / lastDone (Brief #44c-2a) ──────────────────────
+    // Plural pairs use tn() (.one/.other). Reuses: caring.doneToday ("Done
+    // today"), taskCard.paused ("Paused"). The summary due-status reuses
+    // status.badge.daysOverdue/dueToday with {manual:''} (subset case).
+    'status.recurrence.oneOff':        "One-off",
+    'status.recurrence.noDaysSet':     "No days set",
+    'status.recurrence.daysOfWeek':    "Days of week",
+    'status.recurrence.everyWeekdays': "Every {days}",
+    'status.recurrence.everyYearOn':   "Every year on {month} {day}",
+    'status.recurrence.everyYear':     "Every year",
+    'status.recurrence.everyDays.one':   "Every {n} day",
+    'status.recurrence.everyDays.other': "Every {n} days",
+
+    'status.badge.done':               "Done",
+    'status.badge.inDaysOneOff.one':   "In {n} day — one-off",
+    'status.badge.inDaysOneOff.other': "In {n} days — one-off",
+    'status.badge.dueTodayOneOff':     "Due today — one-off",
+    'status.badge.overdueOneOff':      "Overdue — one-off",
+    'status.badge.dueTodayNeverDone':  "Due today — never done",
+    'status.badge.daysOverdue.one':    "{n} day overdue{manual}",
+    'status.badge.daysOverdue.other':  "{n} days overdue{manual}",
+    'status.badge.dueToday':           "Due today{manual}",
+    'status.badge.dueTomorrow':        "Due tomorrow{manual}",
+    'status.badge.inDays':             "In {n} days{manual}",
+    'status.badge.manualSuffix':       " (manual)",
+
+    'status.lastDone.never':     "Never done",
+    'status.lastDone.yesterday': "Done yesterday",
+    'status.lastDone.daysAgo':   "Done {n} days ago",
+
+    'status.home.daysLate.one':   "{n} day late",
+    'status.home.daysLate.other': "{n} days late",
+    'status.home.dueToday':       "due today",
+
+    'status.pill.overdue':  "{n} overdue",
+    'status.pill.dueToday': "{n} due today",
+
+    'status.row.doneToday':   "✓ done today",
+    'status.row.done':        "✓ done",
+    'status.row.dueDate':     "due {date}",
+    'status.row.dueTomorrow': "due tomorrow",
+    'status.row.dueToday':    "due today",
+    'status.row.overdue':     "overdue",
+    'status.row.dueInDays':   "due in {n} days",
+
+    'manageHouseholds.memberCount.one':   "{n} member",
+    'manageHouseholds.memberCount.other': "{n} members",
+
+    // ── Relative time (Brief #44c-2b) ───────────────────────────────────────
+    // relativeDaysLabel() (lastCareLabel + Summary) and formatActivityTime()
+    // are distinct formats — day-granularity vs minute/hour. daysAgo.one is
+    // reachable only via a hypothetical caller; the day-granularity path maps
+    // diff===1 to "Yesterday", so "1 day ago" is never displayed today.
+    'relativeTime.today':              "Today",
+    'relativeTime.yesterday':          "Yesterday",
+    'relativeTime.someTimeAgo':        "some time ago",
+    'relativeTime.daysAgo.one':        "{n} day ago",
+    'relativeTime.daysAgo.other':      "{n} days ago",
+    'relativeTime.activity.justNow':   "Just now",
+    'relativeTime.activity.minutesAgo':"{n}m ago",
+    'relativeTime.activity.hoursAgo':  "{n}h ago",
+    // reserved for a future arrival-age label (former relativeArrivalLabel, removed #44-followup-2b)
+    // Reuses relativeTime.today/.yesterday/.daysAgo for the day-granularity
+    // branches; week/month/year branches below. The "{n}" plural branches are
+    // only ever reached with n >= 2 (e.g. weeks = round(days/7) for 14..29 days),
+    // so .one is a never-displayed safety form kept for tn() symmetry.
+    'relativeTime.arrival.aboutAWeek':   "About a week ago",
+    'relativeTime.arrival.weeksAgo.one':   "{n} week ago",
+    'relativeTime.arrival.weeksAgo.other': "{n} weeks ago",
+    'relativeTime.arrival.aboutAMonth':  "About a month ago",
+    'relativeTime.arrival.monthsAgo.one':   "{n} month ago",
+    'relativeTime.arrival.monthsAgo.other': "{n} months ago",
+    'relativeTime.arrival.aboutAYear':   "About a year ago",
+    'relativeTime.arrival.yearsAgo.one':   "About {n} year ago",
+    'relativeTime.arrival.yearsAgo.other': "About {n} years ago",
+
+    // ── Reschedule / occurrence prompt (Brief #44c-2c) ──────────────────────
+    // Reuses relativeTime.today for the "Today" legend chips. NOTE: pre-existing
+    // pluralization inconsistency preserved verbatim — the yearly headline and
+    // the delta pill are plural-aware (tn), while the interval/weekday headline
+    // and interval recurrence summary are always "days" (fixed, byte-identical).
+    'reschedule.keepOriginal.title':      "Keep Original Schedule",
+    'reschedule.acceptModified.title':    "Accept Modified Schedule",
+    'reschedule.todayIs':                 "Today is {date}",
+    'reschedule.nextDue':                 "Next due: {date}",
+    'reschedule.summaryDue':              "due {date}",
+    'reschedule.recurrenceEveryDays.one':   "Every {n} day",
+    'reschedule.recurrenceEveryDays.other': "Every {n} days",
+    'reschedule.runningLate.one':           "Running {n} day late",
+    'reschedule.runningLate.other':         "Running {n} days late",
+    'reschedule.daysEarly.one':             "{n} day early",
+    'reschedule.daysEarly.other':           "{n} days early",
+    'reschedule.deltaLater.one':          "→ {n} day later",
+    'reschedule.deltaLater.other':        "→ {n} days later",
+    'reschedule.deltaEarlier.one':        "← {n} day earlier",
+    'reschedule.deltaEarlier.other':      "← {n} days earlier",
+    'reschedule.legend.missed':           "Missed",
+    'reschedule.legend.nextOccurrences':  "Next occurrences",
+    'reschedule.yearly.everyYearOn':      "Every year on {anchor}",
+    'reschedule.yearly.runningLate.one':  "Running {n} day late",
+    'reschedule.yearly.runningLate.other':"Running {n} days late",
+    'reschedule.yearly.runningEarly.one': "Running {n} day early",
+    'reschedule.yearly.runningEarly.other':"Running {n} days early",
+    'reschedule.yearly.moveAnchor':       "Move anchor to {date} every year",
+
+    // ── Native confirm()/alert() dialogs (Brief #44-dialogs) ────────────────
+    // Plain text only (native dialogs don't render HTML). No interpolation.
+    'dialog.confirmDeleteTask':       "Permanently delete this task? This cannot be undone.",
+    'dialog.confirmDeleteNote':       "Delete this note?",
+    'dialog.confirmDeletePhoto':      "Delete this photo?",
+    'dialog.confirmRemoveRecurrence': "This will remove the recurrence schedule. The task will become a one-off. Continue?",
+    'dialog.alertNoteOrPhoto':        "Please add a note or photo.",
+    'dialog.alertNoteEmpty':          "Note cannot be empty.",
+    'dialog.alertPlantNameRequired':  "Please enter a plant name.",
+    'dialog.alertTaskNameRequired':   "Please enter a task name.",
+    'dialog.alertFrequencyInvalid':   "Please enter a valid frequency (minimum 1 day).",
+    'dialog.alertWeekdayRequired':    "Please select at least one day of the week.",
+    'dialog.alertMonthDayRequired':   "Please select a month and day.",
+
+    // ── Activity-feed verb map & sentence frames (Brief #44-verbmap) ─────────
+    // careVerb.* is keyed by task type and resolved via careVerb() so #44f can
+    // supply conjugated Spanish verbs (regó/abonó/…). These are 3rd-person
+    // singular past-tense, actor-subject — no gender agreement needed.
+    // #44f notes: (a) "checked pests on" bakes its preposition into the verb,
+    // like Spanish "revisó plagas en" can; (b) activityFeed.noteOn's "{actor} on
+    // {plant}" frame may read awkwardly in Spanish and could need reordering.
+    'careVerb.water':     "watered",
+    'careVerb.refill':    "refilled",
+    'careVerb.fertilize': "fertilized",
+    'careVerb.check':     "checked",
+    'careVerb.repot':     "repotted",
+    'careVerb.prune':     "pruned",
+    'careVerb.pest':      "checked pests on",
+    'careVerb.rotate':    "rotated",
+    // Sentence frames — shared by the Home and Summary-tab activity feeds.
+    'activityFeed.care':      "{actor} {verb} {plant}",
+    'activityFeed.careSelf':  "You completed {task}",
+    'activityFeed.skipped':   "{actor} skipped {task}",
+    'activityFeed.careOther': "{actor} · {task} — {plant}",
+    'activityFeed.noteOn':    "{actor} on {plant}",
+    'activityFeed.noteAdded': "{actor} added a note",
+  },
+};
+let activeLocale = 'en';
+
+function t(key, vars) {
+  const dict = TRANSLATIONS[activeLocale] ?? TRANSLATIONS.en;
+  let str = dict[key];
+  if (str === undefined) return key; // visible fallback — never throws
+  if (vars) {
+    for (const [name, value] of Object.entries(vars)) {
+      str = str.replaceAll(`{${name}}`, String(value));
+    }
+  }
+  return str;
+}
+
+// Pluralized lookup (Brief #44c-2a). Picks `${key}.one` / `${key}.other` via
+// Intl.PluralRules for the active locale (English/Spanish are both one/other,
+// so a manual .one/.other pair per string is sufficient — no CLDR few/many).
+// `{n}` is auto-injected; extra `vars` merge in. Non-finite n falls to 'other'.
+function tn(key, n, vars) {
+  const form = (typeof n === 'number' && Number.isFinite(n))
+    ? new Intl.PluralRules(activeLocale).select(n)
+    : 'other';
+  return t(`${key}.${form}`, { n, ...(vars || {}) });
+}
+
+// BCP-47 locale for on-screen date/time formatting (Brief #44c-2d). Maps the
+// active app locale to the tag passed to toLocale*/Intl.DateTimeFormat. 'en'
+// resolves to 'en-US' — byte-identical to the prior hardcoded value. Storage/
+// compute formatting (todayStr → en-CA) intentionally does NOT route through here.
+function displayLocale() {
+  return activeLocale === 'en' ? 'en-US' : activeLocale;
+}
 
 // Canonical display order is Monday-first, Sunday last (matches the weekday
 // selector's [1,2,3,4,5,6,0]). JS getDay() uses 0=Sun, so Sunday sorts to 7.
@@ -30,16 +635,14 @@ const FOREGROUND_RELOAD_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 // #418: cadence of the visibility-gated ambient activity-feed poll.
 const POLL_INTERVAL_MS = 45 * 1000; // 45 seconds
 
-const CARE_VERB = {
-  water:     'watered',
-  refill:    'refilled',
-  fertilize: 'fertilized',
-  check:     'checked',
-  repot:     'repotted',
-  prune:     'pruned',
-  pest:      'checked pests on',
-  rotate:    'rotated',
-};
+// Care-action verbs keyed by task type (Brief #44-verbmap). Resolved through the
+// dictionary (careVerb.*) so #44f can supply conjugated Spanish verbs without a
+// code change. Returns undefined for task types with no verb, which preserves the
+// activity-feed "{actor} · {task} — {plant}" fallback frame branching.
+const CARE_VERB_TYPES = ['water', 'refill', 'fertilize', 'check', 'repot', 'prune', 'pest', 'rotate'];
+function careVerb(taskType) {
+  return CARE_VERB_TYPES.includes(taskType) ? t(`careVerb.${taskType}`) : undefined;
+}
 
 const CARE_ICON = {
   water:     '💧',
@@ -178,10 +781,10 @@ async function routeAfterAuth() {
 function renderAuthErrorScreen(message) {
   document.getElementById('app').innerHTML = `
     <div class="user-select-screen">
-      <h2>Can't load household</h2>
+      <h2>${t('auth.error.title')}</h2>
       <p style="color:var(--text-muted);font-size:14px;text-align:center;line-height:1.5;max-width:320px;margin:0 auto;">${escapeHtml(message)}</p>
       <div class="user-select-buttons" style="margin-top:20px;">
-        <button class="btn btn-primary" data-action="menu-sign-out" style="width:100%;padding:14px;font-size:15px;">Sign out</button>
+        <button class="btn btn-primary" data-action="menu-sign-out" style="width:100%;padding:14px;font-size:15px;">${t('auth.error.signOut')}</button>
       </div>
     </div>`;
 }
@@ -227,14 +830,14 @@ function renderInstallStepsHTML() {
     <div class="user-select-screen ios-install">
       <div class="ios-install-card">
         <img src="/icons/plant-care-icon-192.png" alt="Plant Care" style="width:64px;height:64px;border-radius:14px;display:block;margin:0 auto 8px;">
-        <h2>Install Plant Care</h2>
-        <p class="ios-install-lead">Add it to your Home Screen to get started.</p>
+        <h2>${t('install.takeover.title')}</h2>
+        <p class="ios-install-lead">${t('install.takeover.lead')}</p>
         <ol class="ios-install-steps">
-          <li><span class="ios-step-num">1</span><span class="ios-step-text">Tap the <span class="ios-step-pill">${IOS_SHARE_ICON} Share</span> button in the bottom toolbar. If you don't see it, tap <span class="ios-step-pill">•••</span> first.</span></li>
-          <li><span class="ios-step-num">2</span><span class="ios-step-text">Tap <span class="ios-step-pill">View More</span></span></li>
-          <li><span class="ios-step-num">3</span><span class="ios-step-text">Scroll down to <span class="ios-step-pill">Add to Home Screen ➕</span></span></li>
-          <li><span class="ios-step-num">4</span><span class="ios-step-text">Tap <span class="ios-step-pill">Add</span></span></li>
-          <li class="ios-install-step--highlight" style="background:#eef7f1;border-radius:8px;padding:7px 8px;border:0.5px solid #b8ddc8;"><span class="ios-step-num" style="background:#1e5c3a;">5</span><span class="ios-step-text">Close Safari and open <img src="/icons/plant-care-icon-192.png" alt="" style="width:18px;height:18px;border-radius:4px;vertical-align:middle;margin:0 2px;"> Plant Care from your Home Screen like a normal app</span></li>
+          <li><span class="ios-step-num">1</span><span class="ios-step-text">${t('install.steps.tapShare', { share: `<span class="ios-step-pill">${IOS_SHARE_ICON} ${t('install.steps.shareLabel')}</span>`, more: `<span class="ios-step-pill">•••</span>` })}</span></li>
+          <li><span class="ios-step-num">2</span><span class="ios-step-text">${t('install.steps.viewMore', { label: `<span class="ios-step-pill">${t('install.steps.viewMoreLabel')}</span>` })}</span></li>
+          <li><span class="ios-step-num">3</span><span class="ios-step-text">${t('install.steps.addToHome', { label: `<span class="ios-step-pill">${t('install.steps.addToHomeLabel')}</span>` })}</span></li>
+          <li><span class="ios-step-num">4</span><span class="ios-step-text">${t('install.steps.tapAdd', { label: `<span class="ios-step-pill">${t('install.steps.addLabel')}</span>` })}</span></li>
+          <li class="ios-install-step--highlight" style="background:#eef7f1;border-radius:8px;padding:7px 8px;border:0.5px solid #b8ddc8;"><span class="ios-step-num" style="background:#1e5c3a;">5</span><span class="ios-step-text">${t('install.steps.openApp', { icon: `<img src="/icons/plant-care-icon-192.png" alt="" style="width:18px;height:18px;border-radius:4px;vertical-align:middle;margin:0 2px;">` })}</span></li>
         </ol>
       </div>
     </div>`;
@@ -245,14 +848,14 @@ function renderOpenInSafariHTML() {
     <div class="user-select-screen ios-install">
       <div class="ios-install-card">
         <div class="ios-install-emoji">🧭</div>
-        <h2>Open in Safari</h2>
-        <p class="ios-install-lead">Plant Care can only be installed from Safari. To continue:</p>
+        <h2>${t('install.openInSafari.title')}</h2>
+        <p class="ios-install-lead">${t('install.openInSafari.lead')}</p>
         <ol class="ios-install-steps">
-          <li><span class="ios-step-num">1</span><span class="ios-step-text">Copy this link:<br><span class="ios-step-link">${escapeHtml(window.location.href)}</span></span></li>
-          <li><span class="ios-step-num">2</span><span class="ios-step-text">Open the <span class="ios-step-pill">Safari</span> app</span></li>
-          <li><span class="ios-step-num">3</span><span class="ios-step-text">Paste the link, then follow the install steps</span></li>
+          <li><span class="ios-step-num">1</span><span class="ios-step-text">${t('install.openInSafari.copyLink')}<br><span class="ios-step-link">${escapeHtml(window.location.href)}</span></span></li>
+          <li><span class="ios-step-num">2</span><span class="ios-step-text">${t('install.openInSafari.openSafari', { label: `<span class="ios-step-pill">${t('install.openInSafari.safariLabel')}</span>` })}</span></li>
+          <li><span class="ios-step-num">3</span><span class="ios-step-text">${t('install.openInSafari.paste')}</span></li>
         </ol>
-        <p class="ios-install-footer">This screen stays until the app is installed.</p>
+        <p class="ios-install-footer">${t('install.openInSafari.footer')}</p>
       </div>
     </div>`;
 }
@@ -262,9 +865,9 @@ function renderLoginScreen(errorMsg) {
     <div class="user-select-screen">
       <h2>Plant Care</h2>
       <div class="user-select-buttons">
-        <input class="form-input" type="email" id="login-email" placeholder="Email" autocomplete="email">
-        <input class="form-input" type="password" id="login-password" placeholder="Password" autocomplete="current-password">
-        <button class="btn btn-primary" data-action="login" style="width:100%;padding:16px;font-size:16px;">Sign In</button>
+        <input class="form-input" type="email" id="login-email" placeholder="${t('auth.login.emailPlaceholder')}" autocomplete="email">
+        <input class="form-input" type="password" id="login-password" placeholder="${t('auth.login.passwordPlaceholder')}" autocomplete="current-password">
+        <button class="btn btn-primary" data-action="login" style="width:100%;padding:16px;font-size:16px;">${t('auth.login.signIn')}</button>
         ${errorMsg ? `<p style="color:var(--due);font-size:14px;text-align:center;margin:0;">${errorMsg}</p>` : ''}
       </div>
     </div>`;
@@ -291,11 +894,11 @@ async function handleLogin() {
 function renderPasswordResetScreen(errorMsg) {
   document.getElementById('app').innerHTML = `
     <div class="user-select-screen">
-      <h2>Set New Password</h2>
+      <h2>${t('auth.reset.title')}</h2>
       <div class="user-select-buttons">
-        <input class="form-input" type="password" id="reset-password" placeholder="New password" autocomplete="new-password">
-        <input class="form-input" type="password" id="reset-password-confirm" placeholder="Confirm new password" autocomplete="new-password">
-        <button class="btn btn-primary" data-action="save-new-password" style="width:100%;padding:16px;font-size:16px;">Save</button>
+        <input class="form-input" type="password" id="reset-password" placeholder="${t('auth.reset.newPasswordPlaceholder')}" autocomplete="new-password">
+        <input class="form-input" type="password" id="reset-password-confirm" placeholder="${t('auth.reset.confirmPasswordPlaceholder')}" autocomplete="new-password">
+        <button class="btn btn-primary" data-action="save-new-password" style="width:100%;padding:16px;font-size:16px;">${t('auth.reset.save')}</button>
         ${errorMsg ? `<p style="color:var(--due);font-size:14px;text-align:center;margin:0;">${errorMsg}</p>` : ''}
       </div>
     </div>`;
@@ -308,11 +911,11 @@ async function handlePasswordReset() {
   const password = document.getElementById('reset-password').value;
   const confirm  = document.getElementById('reset-password-confirm').value;
   if (password.length < 6) {
-    renderPasswordResetScreen('Password must be at least 6 characters.');
+    renderPasswordResetScreen(t('auth.reset.errorTooShort'));
     return;
   }
   if (password !== confirm) {
-    renderPasswordResetScreen('Passwords do not match.');
+    renderPasswordResetScreen(t('auth.reset.errorMismatch'));
     return;
   }
   const { error } = await supabaseClient.auth.updateUser({ password });
@@ -322,8 +925,8 @@ async function handlePasswordReset() {
   }
   document.getElementById('app').innerHTML = `
     <div class="user-select-screen">
-      <h2>Password Updated</h2>
-      <p style="color:var(--text-muted);font-size:15px;text-align:center;">Your password has been updated. Redirecting to sign in…</p>
+      <h2>${t('auth.reset.successTitle')}</h2>
+      <p style="color:var(--text-muted);font-size:15px;text-align:center;">${t('auth.reset.successBody')}</p>
     </div>`;
   await supabaseClient.auth.signOut();
   inRecovery = false;
@@ -338,10 +941,10 @@ function renderNameCaptureScreen() {
       </div>
       <div class="name-capture-body">
         <div class="name-capture-emoji">🌿</div>
-        <h2 class="name-capture-heading">What should we call you?</h2>
-        <p class="name-capture-sub">This is how you'll appear to your household.</p>
-        <input class="form-input" type="text" id="name-capture-input" placeholder="Your first name" autocomplete="given-name" maxlength="50">
-        <button class="btn btn-primary name-capture-btn" id="name-capture-btn" data-action="save-name" disabled>Let's go</button>
+        <h2 class="name-capture-heading">${t('onboarding.nameCapture.title')}</h2>
+        <p class="name-capture-sub">${t('onboarding.nameCapture.subtitle')}</p>
+        <input class="form-input" type="text" id="name-capture-input" placeholder="${t('onboarding.nameCapture.placeholder')}" autocomplete="given-name" maxlength="50">
+        <button class="btn btn-primary name-capture-btn" id="name-capture-btn" data-action="save-name" disabled>${t('onboarding.nameCapture.cta')}</button>
       </div>
     </div>`;
   const input = document.getElementById('name-capture-input');
@@ -415,7 +1018,7 @@ async function loadFromSupabase() {
     .eq('user_id', user.id);
 
   if (!userMemberRows || userMemberRows.length === 0) {
-    renderAuthErrorScreen("Your account isn't associated with a household. Contact your household admin.");
+    renderAuthErrorScreen(t('auth.error.noHousehold'));
     return;
   }
 
@@ -429,7 +1032,7 @@ async function loadFromSupabase() {
   )];
 
   if (householdIds.length === 0) {
-    renderAuthErrorScreen("Your account isn't associated with a household. Contact your household admin.");
+    renderAuthErrorScreen(t('auth.error.noHousehold'));
     return;
   }
 
@@ -440,7 +1043,7 @@ async function loadFromSupabase() {
 
   userHouseholds = householdIds.map(id => ({
     id,
-    name: householdRows?.find(h => h.id === id)?.name || 'Household'
+    name: householdRows?.find(h => h.id === id)?.name || t('home.unnamedHousehold')
   }));
 
   const validIds = userHouseholds.map(h => h.id);
@@ -470,7 +1073,7 @@ async function loadFromSupabase() {
 
   householdName = householdRow?.name ?? null;
   const headerNameEl = document.getElementById('header-household-name');
-  if (headerNameEl) headerNameEl.textContent = householdName ?? 'My Household';
+  if (headerNameEl) headerNameEl.textContent = householdName ?? t('home.householdFallback');
 
   if (!plantRows) return;
 
@@ -481,7 +1084,7 @@ async function loadFromSupabase() {
   // Resolve current member from cache by user_id — replaces the legacy "Who are you" selector
   const meInCache = membersCache.find(m => m.user_id === currentUserId);
   if (!meInCache) {
-    renderAuthErrorScreen("You aren't listed as a member of this household.");
+    renderAuthErrorScreen(t('auth.error.notMember'));
     return;
   }
   currentMemberId = meInCache.id;
@@ -569,7 +1172,7 @@ async function loadFromSupabase() {
     id:        r.id,
     plantId:   r.plant_id,
     memberId:  r.household_member_id,
-    author:    ownerMap[r.household_member_id] ?? 'Unknown',
+    author:    ownerMap[r.household_member_id] ?? t('home.unknownAuthor'),
     note:      r.note,
     createdAt: r.created_at,
     taskId:    r.task_id ?? null,
@@ -605,7 +1208,8 @@ async function loadFromSupabase() {
       id:        r.id,
       date:      r.date,
       createdAt: r.created_at,
-      author:    ownerMap[r.household_member_id] ?? 'Unknown',
+      author:    ownerMap[r.household_member_id] ?? t('home.unknownAuthor'),
+      memberId:  r.household_member_id,
       taskId:    r.task_id,
       taskName:  r.task_name,
       taskType:  r.task_type,
@@ -694,6 +1298,7 @@ function buildActivityFeed(careRows, noteRows, plantMap, ownerMap) {
     taskName:  r.task_name,
     taskType:  r.task_type,
     member:    ownerMap[r.household_member_id] ?? '',
+    memberId:  r.household_member_id,
   }));
 
   const noteItems = (noteRows ?? []).map(r => ({
@@ -721,9 +1326,8 @@ function lastCareLabel(plant) {
   if (!entry) return '';
   const dateStr = entry.date ?? (entry.createdAt ? entry.createdAt.split('T')[0] : null);
   if (!dateStr) return '';
-  const diff = daysBetween(dateStr, todayStr());
-  const when = diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff} days ago`;
-  return `<div class="last-care-line">Last care: ${escapeHtml(entry.taskName)} · ${when}</div>`;
+  const when = relativeDaysLabel(dateStr);
+  return `<div class="last-care-line">${t('home.lastCare')} ${escapeHtml(entry.taskName)} · ${when}</div>`;
 }
 
 function todayStr() {
@@ -743,13 +1347,26 @@ function formatActivityTime(isoStr) {
   const diffMs = Date.now() - date.getTime();
   const diffMins  = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
-  if (diffMins < 60)  return diffMins <= 1 ? 'Just now' : `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffMins < 60)  return diffMins <= 1 ? t('relativeTime.activity.justNow') : t('relativeTime.activity.minutesAgo', { n: diffMins });
+  if (diffHours < 24) return t('relativeTime.activity.hoursAgo', { n: diffHours });
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const entry = new Date(date); entry.setHours(0, 0, 0, 0);
   const dayDiff = Math.round((today - entry) / 86400000);
-  if (dayDiff === 1) return 'Yesterday';
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (dayDiff === 1) return t('relativeTime.yesterday');
+  return date.toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric' });
+}
+
+// Canonical day-granularity relative label (Brief #44c-2b). Consolidates the
+// prior true-duplicate copies in lastCareLabel and the Summary tab (whose
+// two-step lowercase-then-remap produced the same displayed strings). Returns
+// "Today" / "Yesterday" / "{n} days ago" / "some time ago" (null/NaN).
+function relativeDaysLabel(dateStr) {
+  if (!dateStr) return t('relativeTime.someTimeAgo');
+  const diff = daysBetween(dateStr, todayStr());
+  if (isNaN(diff)) return t('relativeTime.someTimeAgo');
+  if (diff <= 0)  return t('relativeTime.today');
+  if (diff === 1) return t('relativeTime.yesterday');
+  return tn('relativeTime.daysAgo', diff);
 }
 
 function addDays(dateStr, n) {
@@ -865,65 +1482,85 @@ function isDue(task) {
 
 function dueLabelAndClass(task) {
   const days = daysUntilDue(task);
-  const manual = task.nextDueOverride ? ' (manual)' : '';
+  const manual = task.nextDueOverride ? t('status.badge.manualSuffix') : '';
   const recType = task.recurrenceType ?? 'interval';
   if (recType === 'one-off') {
-    if (days === Infinity) return { label: 'Done', cls: 'ok' };
-    if (days > 0)  return { label: `In ${days} day${days !== 1 ? 's' : ''} \u2014 one-off`, cls: 'upcoming' };
-    if (days === 0) return { label: 'Due today \u2014 one-off', cls: 'due' };
-    return { label: 'Overdue \u2014 one-off', cls: 'due' };
+    if (days === Infinity) return { label: t('status.badge.done'), cls: 'ok' };
+    if (days > 0)  return { label: tn('status.badge.inDaysOneOff', days), cls: 'upcoming' };
+    if (days === 0) return { label: t('status.badge.dueTodayOneOff'), cls: 'due' };
+    return { label: t('status.badge.overdueOneOff'), cls: 'due' };
   }
   // "never done" only makes sense for interval tasks with no override
   if (recType === 'interval' && !task.lastDone && !task.nextDueOverride) {
-    return { label: 'Due today \u2014 never done', cls: 'due' };
+    return { label: t('status.badge.dueTodayNeverDone'), cls: 'due' };
   }
-  if (days < 0)   return { label: `${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''} overdue${manual}`, cls: 'due' };
-  if (days === 0) return { label: `Due today${manual}`, cls: 'due' };
-  if (days === 1) return { label: `Due tomorrow${manual}`, cls: 'soon' };
-  if (days <= 3)  return { label: `In ${days} days${manual}`, cls: 'soon' };
-  return { label: `In ${days} days${manual}`, cls: 'ok' };
+  if (days < 0)   return { label: tn('status.badge.daysOverdue', Math.abs(days), { manual }), cls: 'due' };
+  if (days === 0) return { label: t('status.badge.dueToday', { manual }), cls: 'due' };
+  if (days === 1) return { label: t('status.badge.dueTomorrow', { manual }), cls: 'soon' };
+  if (days <= 3)  return { label: t('status.badge.inDays', { n: days, manual }), cls: 'soon' };
+  return { label: t('status.badge.inDays', { n: days, manual }), cls: 'ok' };
 }
 
 function lastDoneLabel(task) {
-  if (!task.lastDone) return 'Never done';
+  if (!task.lastDone) return t('status.lastDone.never');
   const diff = daysBetween(task.lastDone, todayStr());
-  if (diff === 0) return 'Done today';
-  if (diff === 1) return 'Done yesterday';
-  return `Done ${diff} days ago`;
+  if (diff === 0) return t('caring.doneToday');
+  if (diff === 1) return t('status.lastDone.yesterday');
+  return t('status.lastDone.daysAgo', { n: diff });
 }
 
-function recurrenceLabel(task) {
+// Consolidated recurrence label (Brief #44c-2a). `opts` selects the display
+// variant so both prior copies stay byte-identical:
+//   • compact (default): 2-letter weekdays ("Su, We"), no prefix, "No days set"
+//     empty — used by task cards/rows/carelog.
+//   • verbose: 3-letter ("Every Sun, Wed"), "Days of week" empty, invalid-day
+//     filter, interval default 1 — used by the Summary tab + task-row meta.
+function recurrenceLabel(task, opts = {}) {
+  const {
+    weekdayStyle     = 'min',                         // 'min' → WEEKDAY_NAMES; 'abbr' → WEEKDAY_NAMES_ABBR
+    everyPrefix      = false,                          // wrap weekday list in "Every {days}"
+    weekdaysEmptyKey = 'status.recurrence.noDaysSet',
+    filterInvalid    = false,                          // drop null/NaN/out-of-range weekday values
+    freqFallback     = undefined,                      // interval frequency default (verbose passes 1)
+  } = opts;
   const recType = task.recurrenceType ?? 'interval';
-  if (recType === 'one-off') return 'One-off';
+  if (recType === 'one-off') return t('status.recurrence.oneOff');
   if (recType === 'weekdays') {
-    const days = (task.weekdays ?? []).slice().sort(compareWeekdaysMonFirst);
-    if (days.length === 0) return 'No days set';
-    return days.map(d => WEEKDAY_NAMES[d]).join(', ');
+    let days = task.weekdays ?? [];
+    if (filterInvalid) days = days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6);
+    days = days.slice().sort(compareWeekdaysMonFirst);
+    if (days.length === 0) return t(weekdaysEmptyKey);
+    const arr = weekdayStyle === 'abbr' ? WEEKDAY_NAMES_ABBR : WEEKDAY_NAMES;
+    const list = days.map(d => arr[d]).join(', ');
+    return everyPrefix ? t('status.recurrence.everyWeekdays', { days: list }) : list;
   }
   if (recType === 'yearly') {
     const m = task.recurrenceMonth, d = task.recurrenceDay;
-    return (m && d) ? `Every year on ${YEARLY_MONTH_NAMES[m - 1]} ${d}` : 'Every year';
+    return (m && d) ? t('status.recurrence.everyYearOn', { month: YEARLY_MONTH_NAMES[m - 1], day: d }) : t('status.recurrence.everyYear');
   }
-  return `Every ${task.frequencyDays} day${task.frequencyDays !== 1 ? 's' : ''}`;
+  return tn('status.recurrence.everyDays', task.frequencyDays ?? freqFallback);
 }
+
+// Verbose-variant opts, shared by the Summary tab and task-row meta line.
+const RECURRENCE_VERBOSE_OPTS = { weekdayStyle: 'abbr', everyPrefix: true, weekdaysEmptyKey: 'status.recurrence.daysOfWeek', filterInvalid: true, freqFallback: 1 };
 
 function formatDate(dateStr) {
   if (!dateStr) return '\u2014';
   const d = new Date(dateStr + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function formatDateShort(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric' });
 }
 
 function formatNoteDate(isoStr) {
   if (!isoStr) return '';
   const d = new Date(isoStr);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString(displayLocale(), { hour: 'numeric', minute: '2-digit' });
 }
 
 // Returns the ISO date string of the Monday of the week containing dateStr
@@ -981,6 +1618,21 @@ function getTaskConfig(task) {
 // ACTIONS
 // ============================================================
 
+// Fire-and-forget coordination push via the notify-care-log Edge Function.
+// `payload` carries an event_type discriminator ('task_done' | 'note_added' |
+// 'task_reassigned') plus the fields that event needs. Recipient resolution and
+// actor/owner exclusion happen server-side, keyed on household_member_id.
+function notifyPush(payload) {
+  fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/notify-care-log`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ household_id: householdId, ...payload }),
+  }).catch(() => {});
+}
+
 async function markTaskDone(plantId, taskId) {
   if (isSaving) return;
   isSaving = true;
@@ -1006,19 +1658,20 @@ async function markTaskDone(plantId, taskId) {
   task.preCompletionNextDueOverride = preCompletionOverride;
 
   const taskCfg = getTaskConfig(task);
+  const member = membersCache.find(m => m.display_name === task.owner);
+
   plant.careLog.unshift({
     id: uid(),
     date: todayStr(),
     createdAt: new Date().toISOString(),
     author: task.owner,
+    memberId: member?.id ?? null,
     taskId: task.id,
     taskName: taskCfg.name,
     taskType: taskCfg.type,
   });
 
   plant.careLog = plant.careLog.slice(0, 50);
-
-  const member = membersCache.find(m => m.display_name === task.owner);
   await supabaseClient
     .from('tasks')
     .update({
@@ -1056,12 +1709,14 @@ async function markTaskDone(plantId, taskId) {
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify({
-          care_log_id:  null,
-          plant_name:   plant.name,
-          task_name:    taskCfg.name,
-          task_type:    taskCfg.type,
-          actor_name:   activeUser,
-          household_id: householdId,
+          event_type:      'task_done',
+          care_log_id:     null,
+          plant_name:      plant.name,
+          task_name:       taskCfg.name,
+          task_type:       taskCfg.type,
+          actor_name:      activeUser,
+          actor_member_id: currentMemberId,
+          household_id:    householdId,
         }),
       }).catch(() => {});
     });
@@ -1129,7 +1784,17 @@ async function reassignTask(plantId, taskId) {
     .from('tasks')
     .update({ owner_id: member?.id ?? null })
     .eq('id', taskId)
-    .then(({ error }) => { if (error) console.error('reassignTask error:', error); });
+    .then(({ error }) => {
+      if (error) { console.error('reassignTask error:', error); return; }
+      if (member?.id) {
+        notifyPush({
+          event_type:          'task_reassigned',
+          plant_name:          getPlant(plantId)?.name,
+          task_name:           task.name,
+          recipient_member_id: member.id,
+        });
+      }
+    });
 }
 
 async function skipTask(plantId, taskId) {
@@ -1273,6 +1938,7 @@ async function skipTask(plantId, taskId) {
 async function updateTask(plantId, taskId, updates) {
   const task = getTask(plantId, taskId);
   if (!task) return;
+  const prevOwner = task.owner; // capture before mutation to detect a real reassignment
   Object.assign(task, updates);
 
   const dbUpdates = {};
@@ -1284,9 +1950,13 @@ async function updateTask(plantId, taskId, updates) {
   if ('name'            in updates) dbUpdates.name              = updates.name;
   if ('icon'            in updates) dbUpdates.icon              = updates.icon;
 
+  // Fire a reassignment push only when the owner actually changed — the sheet
+  // save always includes `owner`, so an unchanged owner must not notify.
+  let reassignMember = null;
   if ('owner' in updates) {
     const member = membersCache.find(m => m.display_name === updates.owner);
     dbUpdates.owner_id = member?.id ?? null;
+    if (updates.owner !== prevOwner && member?.id) reassignMember = member;
   }
 
   const recurrenceFields = ['recurrenceType', 'frequencyDays', 'recurrenceUnit', 'weekdays', 'recurrenceMonth', 'recurrenceDay'];
@@ -1304,7 +1974,17 @@ async function updateTask(plantId, taskId, updates) {
     .from('tasks')
     .update(dbUpdates)
     .eq('id', taskId)
-    .then(({ error }) => { if (error) console.error('updateTask error:', error); });
+    .then(({ error }) => {
+      if (error) { console.error('updateTask error:', error); return; }
+      if (reassignMember) {
+        notifyPush({
+          event_type:          'task_reassigned',
+          plant_name:          getPlant(plantId)?.name,
+          task_name:           task.name,
+          recipient_member_id: reassignMember.id,
+        });
+      }
+    });
 }
 
 async function pauseTask(plantId, taskId) {
@@ -1386,6 +2066,12 @@ async function addNote(plantId, noteText, taskId, photoUrl = null) {
       .select()
       .single();
     if (error) { console.error('addNote error:', error); return null; }
+    notifyPush({
+      event_type:      'note_added',
+      plant_name:      getPlant(plantId)?.name,
+      actor_name:      activeUser,
+      actor_member_id: currentMemberId,
+    });
     const newNote = {
       id:        inserted.id,
       plantId:   inserted.plant_id,
@@ -1562,7 +2248,7 @@ async function runSaveNoteFlow(plantId) {
   console.log('[saveNote] ENTER', { plantId, sheetData: state.sheetData, isSaving });
   const textEl = document.getElementById('sheet-note-text');
   const text = (textEl?.value ?? state.sheetData?.pendingText ?? '').trim();
-  if (!text && !state.sheetData?.pendingPhoto) { alert('Please add a note or photo.'); return; }
+  if (!text && !state.sheetData?.pendingPhoto) { alert(t('dialog.alertNoteOrPhoto')); return; }
   state.sheetData.pendingText = text;
 
   const pendingPhoto = state.sheetData?.pendingPhoto;
@@ -1585,7 +2271,7 @@ async function runSaveNoteFlow(plantId) {
   }
 
   const saveBtn = document.querySelector('#sheet [data-action="sheet-save-note"]');
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = t('notes.saving'); }
 
   try {
     let photoUrl = null;
@@ -1622,18 +2308,18 @@ async function runSaveNoteFlow(plantId) {
     closeSheet();
     if (state.view === 'home') {
       renderHome();
-      showToast('Note added');
+      showToast(t('menu.toast.noteAdded'));
     } else if (state.view === 'plant' && plantDetailTab === 'tasks') {
       renderPlantDetail(plantId);
-      showToast('Note added');
+      showToast(t('menu.toast.noteAdded'));
     } else {
       renderPlantDetail(plantId);
     }
     console.log('[saveNote] DONE');
   } catch (err) {
     console.error('[saveNote] FAILED', err);
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
-    showToast('Could not save — tap Save to retry');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = t('auth.reset.save'); }
+    showToast(t('menu.toast.couldNotSaveTapRetry'));
   }
 }
 
@@ -1674,14 +2360,14 @@ function showToast(message, opts = {}) {
 
 function showDoneToast(plantId, taskId, taskName) {
   showToast(
-    `&#10003; ${escapeHtml(taskName)} done &middot; <span class="toast-link">Add a note?</span>`,
+    `&#10003; ${t('menu.toast.markedDone', { task: escapeHtml(taskName) })} &middot; <span class="toast-link">${t('menu.toast.addNotePrompt')}</span>`,
     { interactive: true, duration: 4000, data: { action: 'toast-add-note', plant: plantId, task: taskId } }
   );
 }
 
 function showUndoDoneToast(plantId, taskId, taskName, plantName) {
   showToast(
-    `&#10003; ${escapeHtml(taskName)} &middot; ${escapeHtml(plantName)} &middot; <span class="toast-link">Undo</span>`,
+    `&#10003; ${escapeHtml(taskName)} &middot; ${escapeHtml(plantName)} &middot; <span class="toast-link">${t('menu.toast.undo')}</span>`,
     { interactive: true, duration: 4000, data: { action: 'caring-undo-done', plant: plantId, task: taskId } }
   );
 }
@@ -1710,7 +2396,7 @@ function renderEmojiPickerHtml(currentEmoji) {
   return `
     <div class="emoji-picker-grid">${gridItems}</div>
     <div class="emoji-custom-row">
-      <input type="text" class="form-input" id="sheet-plant-emoji" placeholder="Or paste custom emoji" autocomplete="off" value="${escapeHtml(customVal)}">
+      <input type="text" class="form-input" id="sheet-plant-emoji" placeholder="${t('emojiPicker.pastePlaceholder')}" autocomplete="off" value="${escapeHtml(customVal)}">
     </div>`;
 }
 
@@ -1747,29 +2433,29 @@ function renderAddPlantStep1Html(activeTab, selectedEmoji, pendingPhoto) {
     <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #e5e5e5;border-radius:10px;margin-top:12px;">
       <img loading="lazy" src="${escapeHtml(pendingPhoto.previewUrl)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:1.5px solid #c8c8c8;flex-shrink:0;" />
       <div style="flex:1;min-width:0;">
-        <div style="font-weight:600;font-size:15px;">Photo added</div>
-        <div style="color:#6b7280;font-size:13px;margin-top:2px;">This will be used as your plant icon</div>
+        <div style="font-weight:600;font-size:15px;">${t('addPlant.photo.added')}</div>
+        <div style="color:#6b7280;font-size:13px;margin-top:2px;">${t('addPlant.photo.usedAsIcon')}</div>
       </div>
-      <button type="button" data-action="add-plant-remove-photo" style="flex-shrink:0;padding:8px 12px;background:#fff5f5;border:0.5px solid #f0c0c0;color:#c0392b;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;">Remove</button>
+      <button type="button" data-action="add-plant-remove-photo" style="flex-shrink:0;padding:8px 12px;background:#fff5f5;border:0.5px solid #f0c0c0;color:#c0392b;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;">${t('addPlant.photo.remove')}</button>
     </div>` : `
     <div data-action="add-plant-pick-photo" style="display:flex;align-items:center;gap:12px;padding:12px;background:#eef5ee;border:1px solid #a8c4a8;border-radius:10px;margin-top:12px;cursor:pointer;">
       <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">📷</div>
       <div style="flex:1;min-width:0;">
-        <div style="font-weight:600;font-size:15px;">Add a photo instead</div>
-        <div style="color:#6b7280;font-size:13px;margin-top:2px;">You can also do this later from the plant page</div>
+        <div style="font-weight:600;font-size:15px;">${t('addPlant.photo.addInstead')}</div>
+        <div style="color:#6b7280;font-size:13px;margin-top:2px;">${t('addPlant.photo.later')}</div>
       </div>
       <div style="flex-shrink:0;color:#9ca3af;font-size:20px;">›</div>
     </div>`;
 
   return `
     ${renderAddPlantProgressDots(1)}
-    <div class="sheet-title">Pick an icon</div>
-    <div class="add-plant-subtitle">Choose something that looks like yours</div>
+    <div class="sheet-title">${t('addPlant.step1.title')}</div>
+    <div class="add-plant-subtitle">${t('addPlant.step1.subtitle')}</div>
     <div class="emoji-cat-tabs" style="${grayedStyle}">
-      <button class="emoji-cat-tab${activeTab === 'all' ? ' active' : ''}" data-action="add-plant-tab" data-tab="all">All (35)</button>
-      <button class="emoji-cat-tab${activeTab === 'foliage' ? ' active' : ''}" data-action="add-plant-tab" data-tab="foliage">🌿 Foliage</button>
-      <button class="emoji-cat-tab${activeTab === 'flowers' ? ' active' : ''}" data-action="add-plant-tab" data-tab="flowers">🌸 Flowers</button>
-      <button class="emoji-cat-tab${activeTab === 'edibles' ? ' active' : ''}" data-action="add-plant-tab" data-tab="edibles">🍋 Edibles</button>
+      <button class="emoji-cat-tab${activeTab === 'all' ? ' active' : ''}" data-action="add-plant-tab" data-tab="all">${t('addPlant.tab.all')}</button>
+      <button class="emoji-cat-tab${activeTab === 'foliage' ? ' active' : ''}" data-action="add-plant-tab" data-tab="foliage">${t('addPlant.tab.foliage')}</button>
+      <button class="emoji-cat-tab${activeTab === 'flowers' ? ' active' : ''}" data-action="add-plant-tab" data-tab="flowers">${t('addPlant.tab.flowers')}</button>
+      <button class="emoji-cat-tab${activeTab === 'edibles' ? ' active' : ''}" data-action="add-plant-tab" data-tab="edibles">${t('addPlant.tab.edibles')}</button>
     </div>
     <div class="add-plant-emoji-grid" id="add-plant-emoji-grid" style="${gridGrayedStyle}">
       ${renderAddPlantEmojiItems(emojis, selectedEmoji)}
@@ -1777,19 +2463,19 @@ function renderAddPlantStep1Html(activeTab, selectedEmoji, pendingPhoto) {
     ${showPhotoUI ? `
     <div style="display:flex;align-items:center;gap:10px;margin-top:14px;color:#9ca3af;font-size:13px;${dividerGrayedStyle}">
       <div style="flex:1;height:1px;background:#e5e5e5;"></div>
-      <div>none of these look like yours?</div>
+      <div>${t('addPlant.photo.divider')}</div>
       <div style="flex:1;height:1px;background:#e5e5e5;"></div>
     </div>
     ${photoRowHtml}
     <input type="file" id="add-plant-file-input" accept="image/*" hidden />` : ''}
     ${isEditFlow ? `
     <div class="sheet-actions" style="margin-top:16px;display:flex;gap:8px;">
-      <button class="btn btn-ghost" data-action="edit-plant-change-cancel" style="flex:1;">Cancel</button>
-      <button class="btn btn-primary" data-action="add-plant-next" style="flex:1;">Done</button>
+      <button class="btn btn-ghost" data-action="edit-plant-change-cancel" style="flex:1;">${t('taskSheet.cancel')}</button>
+      <button class="btn btn-primary" data-action="add-plant-next" style="flex:1;">${t('addPlant.done')}</button>
     </div>` : `
     <div class="sheet-actions" style="margin-top:16px;display:flex;gap:8px;">
-      <button class="btn btn-ghost" data-action="sheet-cancel" style="flex:1;">Cancel</button>
-      <button class="btn btn-primary" data-action="add-plant-next" style="flex:1;">Next →</button>
+      <button class="btn btn-ghost" data-action="sheet-cancel" style="flex:1;">${t('taskSheet.cancel')}</button>
+      <button class="btn btn-primary" data-action="add-plant-next" style="flex:1;">${t('addPlant.next')}</button>
     </div>`}`;
 }
 
@@ -1797,16 +2483,16 @@ function renderAddPlantStep2Html(selectedEmoji) {
   return `
     ${renderAddPlantProgressDots(2)}
     <div class="add-plant-step-emoji-tile">${escapeHtml(selectedEmoji)}</div>
-    <div class="add-plant-step-heading">Give it a name</div>
-    <div class="add-plant-step-subtext">You can always change this later</div>
-    <div class="ap2-field-label">Name</div>
-    <input type="text" class="form-input" id="sheet-plant-name" placeholder="e.g. Monstera" autocomplete="off">
-    <div class="ap2-input-hint">My green one, The big one…</div>
+    <div class="add-plant-step-heading">${t('addPlant.step2.heading')}</div>
+    <div class="add-plant-step-subtext">${t('addPlant.step2.subtext')}</div>
+    <div class="ap2-field-label">${t('addPlant.step2.nameLabel')}</div>
+    <input type="text" class="form-input" id="sheet-plant-name" placeholder="${t('addPlant.step2.namePlaceholder')}" autocomplete="off">
+    <div class="ap2-input-hint">${t('addPlant.step2.nameHint')}</div>
     <div id="add-plant-duplicate-nudge" class="duplicate-nudge" style="display:none;margin-bottom:12px;"></div>
     <div class="sheet-actions" style="margin-top:16px;">
-      <button class="btn btn-primary" data-action="add-plant-to-step3" id="ap2-next-btn" style="flex:1;opacity:0.4;" disabled>Next →</button>
+      <button class="btn btn-primary" data-action="add-plant-to-step3" id="ap2-next-btn" style="flex:1;opacity:0.4;" disabled>${t('addPlant.next')}</button>
     </div>
-    <button class="add-plant-back-link" data-action="add-plant-back">← Back</button>`;
+    <button class="add-plant-back-link" data-action="add-plant-back">← ${t('taskSheet.back')}</button>`;
 }
 
 function renderAddPlantStep3Html(selectedEmoji, plantName) {
@@ -1814,22 +2500,22 @@ function renderAddPlantStep3Html(selectedEmoji, plantName) {
   return `
     ${renderAddPlantProgressDots(3)}
     <div class="add-plant-step-emoji-tile">${escapeHtml(selectedEmoji)}</div>
-    <div class="add-plant-step-heading">When did ${escapeHtml(plantName || '')} arrive home?</div>
-    <div class="add-plant-step-subtext">We'll show you how long you've cared for it.</div>
+    <div class="add-plant-step-heading">${t('addPlant.step3.heading', { name: escapeHtml(plantName || '') })}</div>
+    <div class="add-plant-step-subtext">${t('addPlant.step3.subtext')}</div>
     <div class="ap3-arrival-card" id="ap3-arrival-card">
       <div class="ap3-arrival-top-row">
         <span class="ap3-arrival-card-icon">📅</span>
         <div>
-          <div class="ap3-arrival-card-title">Arrival date</div>
-          <div class="ap3-arrival-card-optional">Optional — you can skip this</div>
+          <div class="ap3-arrival-card-title">${t('addPlant.arrivalDate.label')}</div>
+          <div class="ap3-arrival-card-optional">${t('addPlant.arrivalDate.optional')}</div>
         </div>
       </div>
       ${renderDateSelectHtml('arrival', null, 2000, curYear)}
     </div>
     <div class="sheet-actions" style="margin-top:auto;">
-      <button class="btn btn-primary" data-action="sheet-save-new-plant" style="flex:1;">Add ${escapeHtml(plantName || '')}</button>
+      <button class="btn btn-primary" data-action="sheet-save-new-plant" style="flex:1;">${t('addPlant.step3.addButton', { name: escapeHtml(plantName || '') })}</button>
     </div>
-    <button class="add-plant-back-link" data-action="add-plant-back">← Back</button>`;
+    <button class="add-plant-back-link" data-action="add-plant-back">← ${t('taskSheet.back')}</button>`;
 }
 
 function attachAddPlantNameListener() {
@@ -1870,9 +2556,9 @@ function attachAddPlantNameListener() {
     if (isDuplicate) {
       nudge.style.display = '';
       nudge.innerHTML = `
-        <div class="duplicate-nudge-title">You already have a ${escapeHtml(val)}</div>
-        <div class="duplicate-nudge-body">Give this one a different name so you can tell them apart — or skip and we'll call it '${escapeHtml(val)} 2'.</div>
-        <input type="text" class="form-input" id="sheet-plant-alt-name" placeholder="Alternative name…" autocomplete="off" style="margin-top:8px;">`;
+        <div class="duplicate-nudge-title">${t('addPlant.duplicate.title', { name: escapeHtml(val) })}</div>
+        <div class="duplicate-nudge-body">${t('addPlant.duplicate.body', { name: escapeHtml(val) })}</div>
+        <input type="text" class="form-input" id="sheet-plant-alt-name" placeholder="${t('addPlant.duplicate.altPlaceholder')}" autocomplete="off" style="margin-top:8px;">`;
     } else {
       nudge.style.display = 'none';
       nudge.innerHTML = '';
@@ -1893,63 +2579,6 @@ function attachAddPlantStep2State() {
   update();
 }
 
-function relativeArrivalLabel(dateStr) {
-  const today   = new Date(todayStr() + 'T12:00:00');
-  const arrived = new Date(dateStr + 'T12:00:00');
-  const days    = Math.round((today - arrived) / 86400000);
-  if (days <= 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days < 7)   return `${days} days ago`;
-  if (days < 14)  return 'About a week ago';
-  if (days < 30)  return `${Math.round(days / 7)} weeks ago`;
-  if (days < 60)  return 'About a month ago';
-  if (days < 365) return `${Math.round(days / 30)} months ago`;
-  if (days < 730) return 'About a year ago';
-  return `About ${Math.round(days / 365)} years ago`;
-}
-
-function attachAddPlantStep3Listener() {
-  const input = document.getElementById('sheet-acquired-date');
-  if (!input) return;
-
-  // Set max once at init — outside any handler to avoid spurious change events.
-  input.max = todayStr();
-
-  let userPickedDate = false;
-
-  function openPicker() {
-    userPickedDate = true;
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
-    } else {
-      input.click();
-    }
-  }
-
-  document.getElementById('ap3-arrival-set-btn')?.addEventListener('click', e => { e.preventDefault(); openPicker(); });
-  // Entire confirmed-state row is tappable (Bug 2).
-  document.getElementById('ap3-arrival-after')?.addEventListener('click',   e => { e.preventDefault(); openPicker(); });
-
-  input.addEventListener('change', function() {
-    if (!userPickedDate) return;
-    if (!this.value) return;
-    const date      = new Date(this.value + 'T12:00:00');
-    const formatted = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-    const card   = document.getElementById('ap3-arrival-card');
-    const before = document.getElementById('ap3-arrival-before');
-    const after  = document.getElementById('ap3-arrival-after');
-    if (card)   card.classList.add('has-date');
-    if (before) before.style.display = 'none';
-    if (after)  after.style.display  = 'flex';
-
-    const arrivedLabel    = document.getElementById('ap3-arrived-label');
-    const arrivedRelative = document.getElementById('ap3-arrived-relative');
-    if (arrivedLabel)    arrivedLabel.textContent    = `Arrived ${formatted}`;
-    if (arrivedRelative) arrivedRelative.textContent = relativeArrivalLabel(this.value);
-  });
-}
-
 // ============================================================
 // RENDER: HOME
 // ============================================================
@@ -1965,7 +2594,7 @@ function renderHeaderRight() {
   const initial      = (activeUser ?? '?')[0].toUpperCase();
   return `
     <div class="header-right">
-      <button class="header-flag-btn" data-action="feedback" aria-label="Report a bug">🚩</button>
+      <button class="header-flag-btn" data-action="feedback" aria-label="${t('home.aria.reportBug')}">🚩</button>
       <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
     </div>`;
 }
@@ -1998,14 +2627,14 @@ function renderHomeDueToday() {
     const plantNamesHtml = caredNames.map(n => escapeHtml(n)).join(' · ');
     return `<div class="home-section-header">
     <div class="home-section-header-accent" style="background:#2e7d32;"></div>
-    <span class="home-section-header-text" style="color:#2e7d32;">Needs Attention Today</span>
+    <span class="home-section-header-text" style="color:#2e7d32;">${t('home.needsAttention')}</span>
   </div>
   <div class="home-activity-feed">
     <div class="needs-attention-list">
       <div class="attention-done-row">
         <span class="attention-done-tile">🏆</span>
         <span class="home-due-today-info">
-          <span style="font-size:13px;font-weight:500;color:#2e7d32;">All done for today!</span>
+          <span style="font-size:13px;font-weight:500;color:#2e7d32;">${t('home.allDoneToday')}</span>
           <span style="font-size:11px;color:#5a8c58;">${plantNamesHtml}</span>
         </span>
       </div>
@@ -2021,7 +2650,7 @@ function renderHomeDueToday() {
 
   let html = `<div class="home-section-header">
     <div class="home-section-header-accent" style="background:#e24b4a;"></div>
-    <span class="home-section-header-text">Needs Attention Today</span>
+    <span class="home-section-header-text">${t('home.needsAttention')}</span>
   </div>`;
 
   html += `<div class="home-activity-feed"><div class="needs-attention-list">`;
@@ -2034,8 +2663,8 @@ function renderHomeDueToday() {
     const daysLate = Math.abs(days);
     const urgencyRowCls = overdue ? 'attention-row--overdue' : 'attention-row--duetoday';
     const subtitleHtml = overdue
-      ? `<span style="color:#c0392b;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${daysLate} day${daysLate !== 1 ? 's' : ''} late</span>`
-      : `<span style="color:#b07a2a;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · due today</span>`;
+      ? `<span style="color:#c0392b;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${tn('status.home.daysLate', daysLate)}</span>`
+      : `<span style="color:#b07a2a;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${t('status.home.dueToday')}</span>`;
     const rowAction = overdue ? 'caring-overdue-row-tap' : 'caring-open-edit-task';
 
     html += `<div class="activity-row home-due-today-row attention-row ${urgencyRowCls}" data-action="${rowAction}" data-plant="${plant.id}" data-task="${task.id}">
@@ -2049,7 +2678,7 @@ function renderHomeDueToday() {
         ${subtitleHtml}
       </span>
       <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:4px;">${escapeHtml(ownerInitial)}</span>
-      <button class="attention-check-circle" data-action="home-mark-done" data-plant="${plant.id}" data-task="${task.id}" aria-label="Mark done">
+      <button class="attention-check-circle" data-action="home-mark-done" data-plant="${plant.id}" data-task="${task.id}" aria-label="${t('home.aria.markDone')}">
         <span class="attention-check-icon">✓</span>
       </button>
     </div>`;
@@ -2080,7 +2709,7 @@ function renderCaringDoneToday() {
 
   let html = `<div class="home-section-header">
     <div class="home-section-header-accent" style="background:#2e7d51;"></div>
-    <span class="home-section-header-text">Done today</span>
+    <span class="home-section-header-text">${t('caring.doneToday')}</span>
   </div>
   <div class="home-activity-feed"><div class="needs-attention-list">`;
 
@@ -2097,9 +2726,9 @@ function renderCaringDoneToday() {
         <span class="home-due-today-task" style="text-decoration:line-through;text-decoration-color:#aab09f;color:#6b7c61;">${escapeHtml(cfg.name)}</span>
         <span style="color:#8a9180;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${escapeHtml(task.owner ?? '')}</span>
       </span>
-      <button data-action="add-note" data-plant="${plant.id}" style="width:26px;height:26px;border-radius:50%;border:0.5px solid #dde0d9;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;cursor:pointer;padding:0;" aria-label="Add note"><svg viewBox="0 0 16 16" fill="none" stroke="#8a9180" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg></button>
+      <button data-action="add-note" data-plant="${plant.id}" style="width:26px;height:26px;border-radius:50%;border:0.5px solid #dde0d9;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;cursor:pointer;padding:0;" aria-label="${t('home.aria.addNote')}"><svg viewBox="0 0 16 16" fill="none" stroke="#8a9180" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg></button>
       <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:#fff;font-size:11px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInitial)}</span>
-      <button data-action="caring-undo-done" data-plant="${plant.id}" data-task="${task.id}" style="width:26px;height:26px;border-radius:50%;border:none;background:#3b6d11;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;cursor:pointer;padding:0;" aria-label="Undo">✓</button>
+      <button data-action="caring-undo-done" data-plant="${plant.id}" data-task="${task.id}" style="width:26px;height:26px;border-radius:50%;border:none;background:#3b6d11;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;cursor:pointer;padding:0;" aria-label="${t('menu.toast.undo')}">✓</button>
     </div>`;
   }
 
@@ -2113,13 +2742,13 @@ function renderHomeActivityFeed() {
     return `
   <div class="home-section-header">
     <div class="home-section-header-accent" style="background:var(--primary);"></div>
-    <span class="home-section-header-text">Recent activity</span>
-    <button class="summary-view-all-link" style="margin-left:auto;" data-action="open-household-activity">View more</button>
+    <span class="home-section-header-text">${t('home.recentActivity')}</span>
+    <button class="summary-view-all-link" style="margin-left:auto;" data-action="open-household-activity">${t('home.viewMore')}</button>
   </div>
   <div class="home-activity-feed"><div class="activity-list">
     <div class="activity-row activity-row--home">
       <span class="activity-icon" style="opacity:0.3;">💧</span>
-      <span class="activity-text" style="color:#bbb;">Care actions will appear here</span>
+      <span class="activity-text" style="color:#bbb;">${t('home.activityEmpty')}</span>
     </div>
   </div></div>`;
   }
@@ -2127,8 +2756,8 @@ function renderHomeActivityFeed() {
   let html = `
   <div class="home-section-header">
     <div class="home-section-header-accent" style="background:var(--primary);"></div>
-    <span class="home-section-header-text">Recent activity</span>
-    <button class="summary-view-all-link" style="margin-left:auto;" data-action="open-household-activity">View more</button>
+    <span class="home-section-header-text">${t('home.recentActivity')}</span>
+    <button class="summary-view-all-link" style="margin-left:auto;" data-action="open-household-activity">${t('home.viewMore')}</button>
   </div>
   <div class="home-activity-feed"><div class="activity-list">`;
 
@@ -2139,13 +2768,16 @@ function renderHomeActivityFeed() {
     const time = formatActivityTime(item.sortKey);
     if (item.type === 'care') {
       const isSkipped = item.taskType === 'skipped';
-      const verb = CARE_VERB[item.taskType];
+      const verb = careVerb(item.taskType);
       const icon = CARE_ICON[item.taskType] ?? '🌿';
+      const isSelf = !!currentMemberId && item.memberId === currentMemberId;
       const text = isSkipped
-        ? `${escapeHtml(item.member)} skipped ${escapeHtml(item.taskName)}`
-        : verb
-          ? `${escapeHtml(item.member)} ${escapeHtml(verb)} ${escapeHtml(item.plantName)}`
-          : `${escapeHtml(item.member)} · ${escapeHtml(item.taskName)} — ${escapeHtml(item.plantName)}`;
+        ? t('activityFeed.skipped', { actor: escapeHtml(item.member), task: escapeHtml(item.taskName) })
+        : isSelf
+          ? t('activityFeed.careSelf', { task: escapeHtml(item.taskName) })
+          : verb
+            ? t('activityFeed.care', { actor: escapeHtml(item.member), verb: escapeHtml(verb), plant: escapeHtml(item.plantName) })
+            : t('activityFeed.careOther', { actor: escapeHtml(item.member), task: escapeHtml(item.taskName), plant: escapeHtml(item.plantName) });
       html += `
       <div class="activity-row activity-row--home${isSkipped ? ' activity-row-skipped' : ''}">
         <span class="activity-icon${isSkipped ? ' activity-icon-skipped' : ''}">${icon}</span>
@@ -2165,7 +2797,7 @@ function renderHomeActivityFeed() {
       html += `
       <div class="activity-row activity-row--home">
         <span class="activity-icon">💬</span>
-        <span class="activity-text">${escapeHtml(item.member)} on ${escapeHtml(item.plantName)} · <span class="activity-note-preview">${escapeHtml(item.note)}</span></span>
+        <span class="activity-text">${t('activityFeed.noteOn', { actor: escapeHtml(item.member), plant: escapeHtml(item.plantName) })} · <span class="activity-note-preview">${escapeHtml(item.note)}</span></span>
         ${thumbSlot}
         <span class="activity-time">${time}</span>
       </div>`;
@@ -2250,7 +2882,7 @@ function renderOnboardingInlineTaskCard() {
             <div style="font-size:12px;color:#888;">${escapeHtml(cardSub)}</div>
           </div>
         </div>
-        <button class="btn btn-primary" style="width:100%;" data-action="mark-done" data-plant="${onboardingPlantId}" data-task="${onboardingTaskId}">&#10003; Mark as Done</button>
+        <button class="btn btn-primary" style="width:100%;" data-action="mark-done" data-plant="${onboardingPlantId}" data-task="${onboardingTaskId}">&#10003; ${t('onboarding.inlineTask.markDone')}</button>
       </div>
     </div>`;
 }
@@ -2271,21 +2903,21 @@ function renderOnboardingBanner() {
 
   let instruction, ctaHtml;
   if (step === 1) {
-    instruction = 'Add a plant to get started.';
-    ctaHtml = `<button style="${ctaStyle}" data-action="add-plant">+ Add Plant</button>`;
+    instruction = t('onboarding.banner.step1');
+    ctaHtml = `<button style="${ctaStyle}" data-action="add-plant">${t('onboarding.banner.step1Cta')}</button>`;
   } else if (step === 2) {
-    instruction = 'Create a task to water your plant every 3 days.';
-    ctaHtml = `<button style="${ctaStyle}" data-action="onboarding-open-plant" data-plant="${onboardingPlantId ?? ''}">Create a task →</button>`;
+    instruction = t('onboarding.banner.step2');
+    ctaHtml = `<button style="${ctaStyle}" data-action="onboarding-open-plant" data-plant="${onboardingPlantId ?? ''}">${t('onboarding.banner.step2Cta')}</button>`;
   } else {
-    instruction = 'Tap ✓ Done below to complete your setup ↓';
+    instruction = t('onboarding.banner.step3');
     ctaHtml = '';
   }
 
   return `
     <div class="onboarding-banner">
       <div class="onboarding-banner-top">
-        <span class="onboarding-label">Get started</span>
-        <span style="font-size:11px;font-weight:500;color:#3a6b3a;">Step ${step} of 3</span>
+        <span class="onboarding-label">${t('onboarding.banner.label')}</span>
+        <span style="font-size:11px;font-weight:500;color:#3a6b3a;">${t('onboarding.step.counter', { step })}</span>
       </div>
       <p class="onboarding-instruction" style="margin-bottom:${ctaHtml ? '8px' : '0'};">${instruction}</p>
       ${ctaHtml}
@@ -2309,8 +2941,8 @@ function renderRemindersCard() {
     return `
     <div class="reminders-card-note">
       <span class="reminders-card-note-bell" aria-hidden="true">🔔</span>
-      <span class="reminders-card-note-text">You can enable notifications any time from the menu.</span>
-      <button class="reminders-card-note-close" data-action="reminders-note-dismiss" aria-label="Dismiss">&#10005;</button>
+      <span class="reminders-card-note-text">${t('onboarding.reminders.noteText')}</span>
+      <button class="reminders-card-note-close" data-action="reminders-note-dismiss" aria-label="${t('home.aria.dismiss')}">&#10005;</button>
     </div>`;
   }
 
@@ -2319,19 +2951,19 @@ function renderRemindersCard() {
   if ('Notification' in window && Notification.permission === 'denied') {
     return `
     <div class="reminders-card-blocked">
-      <button class="reminders-card-blocked-close" data-action="reminders-note-dismiss" aria-label="Dismiss">&#10005;</button>
-      <div class="reminders-card-blocked-title">Notifications are turned off</div>
-      <div class="reminders-card-blocked-body">To turn them on: <strong>${isIOS() ? 'iPhone Settings &rarr; Plant Care &rarr; Notifications' : 'Android Settings &rarr; Apps &rarr; Plant Care &rarr; Notifications'}</strong>.</div>
+      <button class="reminders-card-blocked-close" data-action="reminders-note-dismiss" aria-label="${t('home.aria.dismiss')}">&#10005;</button>
+      <div class="reminders-card-blocked-title">${t('onboarding.reminders.blockedTitle')}</div>
+      <div class="reminders-card-blocked-body">${t('onboarding.reminders.blockedBody', { path: isIOS() ? t('onboarding.reminders.blockedPathIos') : t('onboarding.reminders.blockedPathAndroid') })}</div>
     </div>`;
   }
 
   return `
     <div class="reminders-card">
       <div class="reminders-card-icon" aria-hidden="true">🔔</div>
-      <div class="reminders-card-title">Stay in sync with your household</div>
-      <div class="reminders-card-subtitle">Get a heads-up when someone completes a care task.</div>
-      <button class="btn btn-primary reminders-card-btn" data-action="reminders-enable">Enable notifications</button>
-      <button class="reminders-card-later" data-action="reminders-maybe-later">Maybe later</button>
+      <div class="reminders-card-title">${t('onboarding.reminders.title')}</div>
+      <div class="reminders-card-subtitle">${t('onboarding.reminders.subtitle')}</div>
+      <button class="btn btn-primary reminders-card-btn" data-action="reminders-enable">${t('onboarding.reminders.enable')}</button>
+      <button class="reminders-card-later" data-action="reminders-maybe-later">${t('onboarding.card.maybeLater')}</button>
     </div>`;
 }
 
@@ -2350,19 +2982,19 @@ function renderCalendarCard() {
     return `
     <div class="reminders-card-note">
       <span class="reminders-card-note-bell" aria-hidden="true">📅</span>
-      <span class="reminders-card-note-text">You can sync your tasks to your Calendar app anytime from the menu.</span>
-      <button class="reminders-card-note-close" data-action="cal-card-dismiss" aria-label="Dismiss">&#10005;</button>
+      <span class="reminders-card-note-text">${t('onboarding.calendarCard.noteText')}</span>
+      <button class="reminders-card-note-close" data-action="cal-card-dismiss" aria-label="${t('home.aria.dismiss')}">&#10005;</button>
     </div>`;
   }
 
   return `
     <div style="position:relative;display:grid;grid-template-columns:40px 1fr;grid-template-areas:'icon title' 'icon subtitle' 'btn btn' 'later later';column-gap:12px;align-items:start;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:11px 36px 11px 12px;margin:12px 16px 0;">
-      <button type="button" data-action="cal-card-dismiss" aria-label="Dismiss" style="position:absolute;top:8px;right:8px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:none;border:none;font-size:17px;color:#6b7c6b;cursor:pointer;padding:0;">&#10005;</button>
+      <button type="button" data-action="cal-card-dismiss" aria-label="${t('home.aria.dismiss')}" style="position:absolute;top:8px;right:8px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:none;border:none;font-size:17px;color:#6b7c6b;cursor:pointer;padding:0;">&#10005;</button>
       <div style="grid-area:icon;align-self:center;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:20px;background:#eef3fb;border-radius:10px;" aria-hidden="true">📅</div>
-      <div style="grid-area:title;font-size:12px;font-weight:500;color:#1c2b1c;">See your tasks in your calendar</div>
-      <div style="grid-area:subtitle;font-size:11px;color:#6b7c6b;line-height:1.4;margin-top:2px;">Your plant care tasks will appear automatically as calendar events (a single event per day).</div>
-      <button class="btn btn-primary" data-action="cal-card-subscribe" style="grid-area:btn;width:100%;padding:10px 14px;font-size:14px;margin-top:8px;height:38px;min-height:38px;line-height:1;">Set up Calendar Sync</button>
-      <button type="button" data-action="cal-card-maybe-later" style="grid-area:later;justify-self:center;margin-top:8px;background:none;border:none;font-size:13px;color:#2e7d51;cursor:pointer;padding:6px;font-family:inherit;">Maybe later</button>
+      <div style="grid-area:title;font-size:12px;font-weight:500;color:#1c2b1c;">${t('onboarding.calendarCard.title')}</div>
+      <div style="grid-area:subtitle;font-size:11px;color:#6b7c6b;line-height:1.4;margin-top:2px;">${t('onboarding.calendarCard.subtitle')}</div>
+      <button class="btn btn-primary" data-action="cal-card-subscribe" style="grid-area:btn;width:100%;padding:10px 14px;font-size:14px;margin-top:8px;height:38px;min-height:38px;line-height:1;">${t('onboarding.calendarCard.subscribe')}</button>
+      <button type="button" data-action="cal-card-maybe-later" style="grid-area:later;justify-self:center;margin-top:8px;background:none;border:none;font-size:13px;color:#2e7d51;cursor:pointer;padding:6px;font-family:inherit;">${t('onboarding.card.maybeLater')}</button>
     </div>`;
 }
 
@@ -2372,13 +3004,13 @@ function renderHome() {
   let html = `
     <div class="app-header app-header--home">
       <button class="household-pill" data-action="toggle-household-switcher" aria-expanded="false">
-        <span id="header-household-name" class="header-household-name">${escapeHtml(householdName ?? 'My Household')}</span>
+        <span id="header-household-name" class="header-household-name">${escapeHtml(householdName ?? t('home.householdFallback'))}</span>
         <span class="header-chevron" aria-hidden="true">▾</span>
       </button>
       ${renderHeaderRight()}
       <div class="household-switcher" id="household-switcher" role="menu">
         <div class="household-switcher-inner">
-          <div class="household-switcher-label">Your households</div>
+          <div class="household-switcher-label">${t('home.yourHouseholds')}</div>
           ${userHouseholds.map(h => {
             const isActive   = h.id === householdId;
             const showCheck  = isActive && userHouseholds.length > 1;
@@ -2391,14 +3023,14 @@ function renderHome() {
           <div class="household-switcher-divider"></div>
           <button class="household-switcher-manage" data-action="open-manage-households">
             <span class="household-switcher-manage-icon" aria-hidden="true">⚙️</span>
-            <span class="household-switcher-manage-label">Manage households</span>
+            <span class="household-switcher-manage-label">${t('home.manageHouseholds')}</span>
           </button>
         </div>
       </div>
     </div>
     <div class="tab-bar">
-      <button class="tab-btn${activeTab === 'plants' ? ' active' : ''}" data-action="switch-tab" data-tab="plants">&#127807; My Plants</button>
-      <button class="tab-btn${activeTab === 'schedule' ? ' active' : ''}" data-action="switch-tab" data-tab="schedule">&#9989; Caring</button>
+      <button class="tab-btn${activeTab === 'plants' ? ' active' : ''}" data-action="switch-tab" data-tab="plants">&#127807; ${t('home.tabPlants')}</button>
+      <button class="tab-btn${activeTab === 'schedule' ? ' active' : ''}" data-action="switch-tab" data-tab="schedule">&#9989; ${t('home.tabCaring')}</button>
     </div>`;
 
   if (activeTab === 'plants') {
@@ -2415,15 +3047,15 @@ function renderHome() {
       html += `
     <div class="plants-empty-state">
       <span class="empty-emoji">🌱</span>
-      <h2>Your plants live here</h2>
-      <p>Add a plant to start tracking its care.</p>
+      <h2>${t('home.emptyTitle')}</h2>
+      <p>${t('home.emptySub')}</p>
     </div>`;
     }
 
     if (plants.length > 0) {
       html += `<div class="home-section-header">
       <div class="home-section-header-accent" style="background:var(--primary);"></div>
-      <span class="home-section-header-text">My plants</span>
+      <span class="home-section-header-text">${t('home.myPlants')}</span>
     </div>`;
     }
     html += '<div class="plants-list">';
@@ -2481,11 +3113,11 @@ function renderHome() {
         dueBadgeHtml = '';
       } else if (overdueTasks.length > 0 || dueTodayTasks.length > 0) {
         const parts = [];
-        if (overdueTasks.length > 0)  parts.push(`<span class="pill-overdue">${overdueTasks.length} overdue</span>`);
-        if (dueTodayTasks.length > 0) parts.push(`<span class="pill-duetoday">${dueTodayTasks.length} due today</span>`);
+        if (overdueTasks.length > 0)  parts.push(`<span class="pill-overdue">${t('status.pill.overdue', { n: overdueTasks.length })}</span>`);
+        if (dueTodayTasks.length > 0) parts.push(`<span class="pill-duetoday">${t('status.pill.dueToday', { n: dueTodayTasks.length })}</span>`);
         dueBadgeHtml = `<div class="plant-card-pill-stack">${parts.join('')}</div>`;
       } else {
-        dueBadgeHtml = `<span class="all-good-badge">&#10003; All good</span>`;
+        dueBadgeHtml = `<span class="all-good-badge">&#10003; ${t('home.allGood')}</span>`;
       }
 
       const dueTasks = [...overdueTasks, ...dueTodayTasks];
@@ -2502,7 +3134,7 @@ function renderHome() {
           return `<span class="plant-card-task-icon">${cfg.icon}</span>`;
         }).join('');
         const overflowTile = extra > 0
-          ? `<span class="plant-card-task-icon plant-card-task-icon--overflow" aria-label="${extra} more">+${extra}</span>`
+          ? `<span class="plant-card-task-icon plant-card-task-icon--overflow" aria-label="${t('home.moreTasksAria', { n: extra })}">+${extra}</span>`
           : '';
         taskIconsHtml = `<div class="plant-card-task-icons">${iconTiles}${overflowTile}</div>`;
       }
@@ -2529,7 +3161,7 @@ function renderHome() {
 
     if (plants.length > 0 && !shouldShowOnboardingBanner()
         && localStorage.getItem(`onboarding_session6_done_${currentMemberId}`)) {
-      html += `<button class="fab-add-plant" data-action="add-plant">&#43; Add Plant</button>`;
+      html += `<button class="fab-add-plant" data-action="add-plant">&#43; ${t('home.addPlant')}</button>`;
     }
 
     html += `<div id="dev-build-ts" style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;opacity:0.6;">Built: ${typeof __BUILD_TIME__ !== 'undefined' ? new Date(__BUILD_TIME__).toLocaleString('es-CL', { timeZone: 'America/Santiago' }) : 'dev'}</div>`;
@@ -2552,11 +3184,11 @@ function renderHome() {
 
 function renderCoachMark() {
   const currentMember = membersCache.find(m => m.id === currentMemberId);
-  const displayName   = currentMember?.display_name ?? activeUser ?? 'You';
+  const displayName   = currentMember?.display_name ?? activeUser ?? t('onboarding.coachmark.youFallback');
   const onboardingPlant = plants.find(p => p.id === getOnboardingPlantId());
-  const plantName     = onboardingPlant?.name ?? 'your plant';
+  const plantName     = onboardingPlant?.name ?? t('onboarding.coachmark.plantFallback');
 
-  const body = "Every care action appears here in real time. No more guessing who did what — your whole household stays in sync automatically.";
+  const body = t('onboarding.coachmark.feedBody');
 
   const appRect = document.getElementById('app').getBoundingClientRect();
 
@@ -2587,13 +3219,13 @@ function renderCoachMark() {
   blockEl.style.gap       = '14px';
   blockEl.innerHTML = `
     <div style="width:100%;box-sizing:border-box;background:#fff;border:2px solid #3a6b3a;border-radius:10px;padding:9px 11px;font-size:14px;color:#1a1a1a;">
-      💧 ${escapeHtml(displayName)} watered ${escapeHtml(plantName)} · just now
+      💧 ${t('onboarding.coachmark.demoRow', { name: escapeHtml(displayName), plant: escapeHtml(plantName) })}
     </div>
     <div id="coachmark-tooltip" style="width:100%;box-sizing:border-box;background:#fff;border-radius:12px;padding:13px;position:relative;">
       <div style="position:absolute;top:-9px;left:18px;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:9px solid #fff;"></div>
-      <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:6px;">This is your household's activity feed</div>
+      <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:6px;">${t('onboarding.coachmark.feedTitle')}</div>
       <div style="font-size:13px;color:#555;line-height:1.5;margin-bottom:14px;">${escapeHtml(body)}</div>
-      <button id="coachmark-got-it" style="width:100%;padding:12px;background:#3a6b3a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;">Got it</button>
+      <button id="coachmark-got-it" style="width:100%;padding:12px;background:#3a6b3a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;">${t('onboarding.coachmark.gotIt')}</button>
     </div>`;
 
   document.body.appendChild(darkEl);
@@ -2618,7 +3250,7 @@ function showCaringTabCoachMark() {
   overlayEl.id = 'caring-cm-overlay';
   overlayEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:1000;background:rgba(0,0,0,0.55);';
 
-  const caringBtn = [...document.querySelectorAll('.tab-btn')].find(el => el.textContent.includes('Caring'));
+  const caringBtn = document.querySelector('.tab-btn[data-tab="schedule"]');
 
   // Bubble — just below the tab bar, centered horizontally
   const tabBar   = document.querySelector('.tab-bar');
@@ -2631,9 +3263,9 @@ function showCaringTabCoachMark() {
   bubbleEl.style.cssText = `position:fixed;z-index:1002;width:220px;left:50%;transform:translateX(-50%);top:${tabBottom + 8}px;background:#fff;border-radius:12px;padding:14px;box-sizing:border-box;`;
   bubbleEl.innerHTML = `
     <div style="position:absolute;top:-8px;left:${arrowLeft}px;transform:translateX(-50%);width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:8px solid #fff;"></div>
-    <div style="font-size:15px;font-weight:500;color:#1a2e1a;margin-bottom:6px;">Your daily tasks live here</div>
-    <div style="font-size:13px;color:#666;line-height:1.5;margin-bottom:12px;">See what needs attention today and what's coming up this week.</div>
-    <button id="caring-cm-got-it" style="width:100%;padding:12px;background:#3a6b3a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;">Got it</button>`;
+    <div style="font-size:15px;font-weight:500;color:#1a2e1a;margin-bottom:6px;">${t('onboarding.caringCoachmark.title')}</div>
+    <div style="font-size:13px;color:#666;line-height:1.5;margin-bottom:12px;">${t('onboarding.caringCoachmark.body')}</div>
+    <button id="caring-cm-got-it" style="width:100%;padding:12px;background:#3a6b3a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;">${t('onboarding.coachmark.gotIt')}</button>`;
 
   document.body.appendChild(overlayEl);
   document.body.appendChild(bubbleEl);
@@ -2657,8 +3289,8 @@ function renderSchedule() {
   if (totalTasks === 0) {
     return `<div style="text-align:center;padding:48px 24px 32px;">
   <div style="font-size:32px;margin-bottom:12px;">✅</div>
-  <div style="font-size:15px;font-weight:600;color:#3a6b3a;margin-bottom:8px;">Where care happens</div>
-  <div style="font-size:13px;color:#888;line-height:1.5;">Overdue and upcoming tasks will appear here.</div>
+  <div style="font-size:15px;font-weight:600;color:#3a6b3a;margin-bottom:8px;">${t('caring.emptyTitle')}</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;">${t('caring.emptySub')}</div>
 </div>`;
   }
 
@@ -2669,7 +3301,7 @@ function renderSchedule() {
   // Upcoming: next 7 days (tomorrow through today+7)
   html += `<div class="home-section-header">
     <div class="home-section-header-accent" style="background:#2e7d51;"></div>
-    <span class="home-section-header-text">Upcoming</span>
+    <span class="home-section-header-text">${t('caring.upcoming')}</span>
   </div>`;
 
   html += `<div class="upcoming-rows">`;
@@ -2677,8 +3309,8 @@ function renderSchedule() {
   for (let i = 1; i <= 7; i++) {
     const dateStr = addDays(today, i);
     const dateObj = new Date(dateStr + 'T12:00:00');
-    const dayAbbr = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-    const monAbbr = dateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+    const dayAbbr = dateObj.toLocaleDateString(displayLocale(), { weekday: 'short' });
+    const monAbbr = dateObj.toLocaleDateString(displayLocale(), { month: 'short' }).toUpperCase();
     const dayNum  = dateObj.getDate();
 
     const dayTasks = [];
@@ -2709,8 +3341,8 @@ function renderSchedule() {
         <div class="upcoming-card upcoming-empty-card" style="background:#f0eef8;border:0.5px solid #d0c8ee;">
           <span class="upcoming-empty-tile" style="background:#ddd8f0;border-radius:9px;width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;">🎈</span>
           <span class="home-due-today-info">
-            <span style="font-size:13px;font-weight:500;color:#3a2a7a;">All clear</span>
-            <span style="font-size:11px;color:#6a5aaa;">No tasks today</span>
+            <span style="font-size:13px;font-weight:500;color:#3a2a7a;">${t('caring.allClear')}</span>
+            <span style="font-size:11px;color:#6a5aaa;">${t('caring.noTasksToday')}</span>
           </span>
         </div>
       </div>`;
@@ -2733,7 +3365,7 @@ function renderSchedule() {
               <span class="home-due-today-plant">${escapeHtml(plant.name)}</span>
             </span>
             <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:4px;">${escapeHtml(ownerInitial)}</span>
-            <button class="attention-check-circle" data-action="home-mark-done" data-plant="${plant.id}" data-task="${task.id}" aria-label="Mark done">
+            <button class="attention-check-circle" data-action="home-mark-done" data-plant="${plant.id}" data-task="${task.id}" aria-label="${t('home.aria.markDone')}">
               <span class="attention-check-icon">✓</span>
             </button>
           </div>
@@ -2761,7 +3393,7 @@ function renderPlantDetail(plantId) {
   let html = `
   <div class="app-header app-header--plant-detail">
     <button class="back-btn" data-action="go-home">&#8249;</button>
-    <div class="detail-header-title" data-action="open-edit-plant" data-plant="${plant.id}" role="button" aria-label="Edit plant">
+    <div class="detail-header-title" data-action="open-edit-plant" data-plant="${plant.id}" role="button" aria-label="${t('plantDetail.aria.editPlant')}">
       ${plant.photoUrl
         ? plantIconImgHtml(plant.photoUrl, 30, '50%')
         : `<span class="detail-header-emoji-circle">${plant.emoji}</span>`}
@@ -2770,14 +3402,14 @@ function renderPlantDetail(plantId) {
         <span class="header-edit-chevron-icon" aria-hidden="true">${CHEVRON_RIGHT_SVG}</span>
       </div>
     </div>
-    <button class="header-feedback-btn" data-action="feedback" aria-label="Report a bug">${FEEDBACK_BUBBLE_SVG}</button>
+    <button class="header-feedback-btn" data-action="feedback" aria-label="${t('home.aria.reportBug')}">${FEEDBACK_BUBBLE_SVG}</button>
     <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
   </div>
   <div class="plant-detail-tabs">
-    <button class="detail-tab-btn${plantDetailTab === 'summary'  ? ' active' : ''}" data-action="plant-detail-tab" data-tab="summary">Summary</button>
-    <button class="detail-tab-btn${plantDetailTab === 'tasks'    ? ' active' : ''}" data-action="plant-detail-tab" data-tab="tasks">Tasks</button>
-    <button class="detail-tab-btn${plantDetailTab === 'notes'    ? ' active' : ''}" data-action="plant-detail-tab" data-tab="notes">Notes</button>
-    <button class="detail-tab-btn${plantDetailTab === 'carelog'  ? ' active' : ''}" data-action="plant-detail-tab" data-tab="carelog">Care Log</button>
+    <button class="detail-tab-btn${plantDetailTab === 'summary'  ? ' active' : ''}" data-action="plant-detail-tab" data-tab="summary">${t('plantDetail.tabSummary')}</button>
+    <button class="detail-tab-btn${plantDetailTab === 'tasks'    ? ' active' : ''}" data-action="plant-detail-tab" data-tab="tasks">${t('plantDetail.tabTasks')}</button>
+    <button class="detail-tab-btn${plantDetailTab === 'notes'    ? ' active' : ''}" data-action="plant-detail-tab" data-tab="notes">${t('plantDetail.tabNotes')}</button>
+    <button class="detail-tab-btn${plantDetailTab === 'carelog'  ? ' active' : ''}" data-action="plant-detail-tab" data-tab="carelog">${t('plantDetail.tabCareLog')}</button>
   </div>
   ${renderUserFilterPills()}
   <div class="plant-detail">`;
@@ -2806,15 +3438,15 @@ function renderPlantDetail(plantId) {
         <div class="summary-fab-scrim" data-action="summary-fab-collapse"></div>
         <div class="summary-fab-options">
           <button class="summary-fab-option" data-action="summary-fab-add-note" data-plant="${plant.id}">
-            <span class="summary-fab-option-label">Add note</span>
+            <span class="summary-fab-option-label">${t('home.aria.addNote')}</span>
             <span class="summary-fab-option-icon summary-fab-option-icon--note">&#128221;</span>
           </button>
           <button class="summary-fab-option" data-action="summary-fab-add-task" data-plant="${plant.id}">
-            <span class="summary-fab-option-label">Add task</span>
+            <span class="summary-fab-option-label">${t('plantDetail.addTask')}</span>
             <span class="summary-fab-option-icon summary-fab-option-icon--task">+</span>
           </button>
         </div>
-        <button class="summary-fab-main" data-action="summary-fab-toggle" aria-label="Add">
+        <button class="summary-fab-main" data-action="summary-fab-toggle" aria-label="${t('plantDetail.aria.addFab')}">
           <span class="summary-fab-icon summary-fab-icon-plus">+</span>
           <span class="summary-fab-icon summary-fab-icon-close">&#10005;</span>
         </button>
@@ -2822,10 +3454,10 @@ function renderPlantDetail(plantId) {
   } else {
     html += `<div class="detail-fab-stack">`;
     if (showNote) {
-      html += `<button class="detail-fab detail-fab-note" data-action="add-note" data-plant="${plant.id}">&#128221; Add note</button>`;
+      html += `<button class="detail-fab detail-fab-note" data-action="add-note" data-plant="${plant.id}">&#128221; ${t('home.aria.addNote')}</button>`;
     }
     if (showTask) {
-      html += `<button class="detail-fab detail-fab-task" data-action="add-task" data-plant="${plant.id}">&#43; Add task</button>`;
+      html += `<button class="detail-fab detail-fab-task" data-action="add-task" data-plant="${plant.id}">&#43; ${t('plantDetail.addTask')}</button>`;
     }
     html += `</div>`;
   }
@@ -2834,16 +3466,16 @@ function renderPlantDetail(plantId) {
 }
 
 function renderManageHouseholds() {
-  const name = householdName ?? 'My Household';
+  const name = householdName ?? t('home.householdFallback');
   const memberCount = membersCache.length;
-  const memberSubtitle = `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`;
+  const memberSubtitle = tn('manageHouseholds.memberCount', memberCount);
 
   const cardClass = manageHouseholdsEditingName ? 'manage-household-card editing' : 'manage-household-card';
   const nameRow = manageHouseholdsEditingName
     ? `<input id="manage-household-name-input" class="manage-household-name-input" type="text" value="${escapeHtml(name)}" maxlength="60" autocomplete="off" />
        <div class="manage-household-edit-actions">
-         <button class="manage-household-btn-cancel" data-action="manage-households-cancel-name">Cancel</button>
-         <button class="manage-household-btn-save" data-action="manage-households-save-name">Save</button>
+         <button class="manage-household-btn-cancel" data-action="manage-households-cancel-name">${t('taskSheet.cancel')}</button>
+         <button class="manage-household-btn-save" data-action="manage-households-save-name">${t('auth.reset.save')}</button>
        </div>`
     : `<div class="manage-household-row">
          <span class="manage-household-icon" aria-hidden="true">🏠</span>
@@ -2851,7 +3483,7 @@ function renderManageHouseholds() {
            <div class="manage-household-name">${escapeHtml(name)}</div>
            <div class="manage-household-sub">${memberSubtitle}</div>
          </div>
-         <button class="manage-household-edit-btn" data-action="manage-households-start-edit">Edit Name</button>
+         <button class="manage-household-edit-btn" data-action="manage-households-start-edit">${t('manageHouseholds.editName')}</button>
        </div>`;
 
   const memberRows = membersCache.map(m => {
@@ -2862,24 +3494,24 @@ function renderManageHouseholds() {
       <div class="manage-member-row">
         <span class="manage-member-avatar" style="background:${escapeHtml(color)};">${escapeHtml(initial)}</span>
         <div class="manage-member-text">
-          <div class="manage-member-name">${escapeHtml(m.display_name ?? 'Unknown')}</div>
-          <div class="manage-member-role">Member</div>
+          <div class="manage-member-name">${escapeHtml(m.display_name ?? t('manageHouseholds.unknownMember'))}</div>
+          <div class="manage-member-role">${t('manageHouseholds.role')}</div>
         </div>
-        ${isYou ? '<span class="manage-member-you">YOU</span>' : ''}
+        ${isYou ? `<span class="manage-member-you">${t('manageHouseholds.youBadge')}</span>` : ''}
       </div>`;
   }).join('');
 
   const html = `
   <div class="app-header app-header--manage">
-    <button class="manage-back-btn" data-action="manage-households-back" aria-label="Back">&#8249;</button>
-    <div class="manage-header-title">Manage Households</div>
+    <button class="manage-back-btn" data-action="manage-households-back" aria-label="${t('taskSheet.back')}">&#8249;</button>
+    <div class="manage-header-title">${t('manageHouseholds.title')}</div>
     <div class="manage-header-spacer" aria-hidden="true"></div>
   </div>
   <div class="manage-households-body">
-    <div class="manage-section-label">Your household</div>
+    <div class="manage-section-label">${t('manageHouseholds.yourHousehold')}</div>
     <div class="${cardClass}">${nameRow}</div>
 
-    <div class="manage-section-label">Members</div>
+    <div class="manage-section-label">${t('manageHouseholds.membersLabel')}</div>
     <div class="manage-members-card">${memberRows}</div>
   </div>`;
 
@@ -2903,7 +3535,7 @@ function buildHouseholdActivityContent() {
 
   let bodyHtml;
   if (filtered.length === 0) {
-    bodyHtml = `<div class="detail-empty" style="padding:48px 16px;text-align:center;color:#888;">No activity yet${activeFilter.length ? ' for selected users' : ''}.</div>`;
+    bodyHtml = `<div class="detail-empty" style="padding:48px 16px;text-align:center;color:#888;">${activeFilter.length ? t('manageHouseholds.noActivityFiltered') : t('manageHouseholds.noActivity')}</div>`;
   } else {
     let lastDate = null;
     let rowsHtml = '';
@@ -2914,9 +3546,9 @@ function buildHouseholdActivityContent() {
       if (dateStr) {
         const d = new Date(dateStr + 'T12:00:00');
         if (!isNaN(d.getTime())) {
-          monAbbr = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+          monAbbr = d.toLocaleDateString(displayLocale(), { month: 'short' }).toUpperCase();
           dayNum  = String(d.getDate());
-          dayAbbr = d.toLocaleDateString('en-US', { weekday: 'short' });
+          dayAbbr = d.toLocaleDateString(displayLocale(), { weekday: 'short' });
         }
       }
 
@@ -2946,11 +3578,11 @@ function buildHouseholdActivityContent() {
       let titleText, subtitleText, taskIcon, photoThumbHtml = '';
       const isSkipped = item.type === 'care' && item.taskType === 'skipped';
       if (item.type === 'care') {
-        titleText    = item.taskName ?? 'Care';
-        subtitleText = isSkipped ? `${plantName} · Skipped` : plantName;
+        titleText    = item.taskName ?? t('manageHouseholds.careFallback');
+        subtitleText = isSkipped ? `${plantName} · ${t('plantDetail.careLog.skipped')}` : plantName;
         taskIcon     = CARE_ICON[item.taskType] ?? '✅';
       } else {
-        titleText = 'Note added';
+        titleText = t('menu.toast.noteAdded');
         const noteText  = (item.note ?? '').trim();
         const truncated = noteText.length > 30 ? noteText.slice(0, 30) + '…' : noteText;
         subtitleText = noteText ? `${plantName} · ${truncated}` : plantName;
@@ -2980,8 +3612,8 @@ function buildHouseholdActivityContent() {
 
   return `
   <div class="app-header app-header--household-activity">
-    <button class="back-btn" data-action="close-household-activity" aria-label="Back">&#8249;</button>
-    <span class="household-activity-title">Household activity</span>
+    <button class="back-btn" data-action="close-household-activity" aria-label="${t('taskSheet.back')}">&#8249;</button>
+    <span class="household-activity-title">${t('manageHouseholds.activityTitle')}</span>
     <button class="user-initial-circle" data-action="open-menu" style="background:${escapeHtml(userColor)}">${escapeHtml(initial)}</button>
   </div>
   ${renderUserFilterPills()}
@@ -3029,7 +3661,7 @@ async function handleManageHouseholdsSaveName() {
     .eq('id', householdId);
 
   if (error) {
-    showToast('Could not save — please try again');
+    showToast(t('menu.toast.couldNotSavePleaseRetry'));
     return;
   }
 
@@ -3040,7 +3672,7 @@ async function handleManageHouseholdsSaveName() {
   const headerNameEl = document.getElementById('header-household-name');
   if (headerNameEl) headerNameEl.textContent = newName;
 
-  showToast('&#10003; Household name updated');
+  showToast(t('menu.toast.householdNameUpdated'));
 }
 
 // Predicate: does a given author/owner display_name satisfy the current global filter?
@@ -3073,23 +3705,12 @@ function renderUserFilterPills() {
   return html;
 }
 
-function sectionHeader(label, accentColor, count) {
-  const countHtml = count != null
-    ? `<span class="section-header-bar-count">${count} task${count !== 1 ? 's' : ''}</span>`
-    : '';
-  return `<div class="section-header-bar">
-    <div class="section-header-bar-accent" style="background:${accentColor};"></div>
-    <span class="section-header-bar-text">${label}</span>
-    ${countHtml}
-  </div>`;
-}
-
 function renderSummaryTab(plant) {
   if (plant.tasks.length === 0 && plant.careLog.length === 0) {
     return `<div style="text-align:center;padding:48px 24px 32px;">
   <div style="font-size:52px;margin-bottom:16px;">${escapeHtml(plant.emoji)}</div>
-  <div style="font-size:17px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">Your ${escapeHtml(plant.name)} is home</div>
-  <div style="font-size:13px;color:#888;line-height:1.5;max-width:260px;margin:0 auto;">Add a task to start tracking its care. Your progress will show up here.</div>
+  <div style="font-size:17px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">${t('plantDetail.summary.homeTitle', { name: escapeHtml(plant.name) })}</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;max-width:260px;margin:0 auto;">${t('plantDetail.summary.emptySub')}</div>
 </div>`;
   }
 
@@ -3100,40 +3721,7 @@ function renderSummaryTab(plant) {
     <span style="font-size:11px;font-weight:500;color:#6b7a6b;text-transform:uppercase;letter-spacing:0.05em;">${escapeHtml(label)}</span>
   </div>`;
 
-  const recurrenceLabel = (task) => {
-    const rt = task.recurrenceType ?? 'interval';
-    if (rt === 'one-off') return 'One-off';
-    if (rt === 'weekdays') {
-      const dInts = (task.weekdays ?? [])
-        .filter(d => Number.isInteger(d) && d >= 0 && d <= 6)  // drop null/NaN/out-of-range → no empty slot
-        .slice().sort(compareWeekdaysMonFirst);
-      const abbrev = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      return dInts.length > 0 ? `Every ${dInts.map(d => abbrev[d]).join(', ')}` : 'Days of week';
-    }
-    if (rt === 'yearly') {
-      const m = task.recurrenceMonth, d = task.recurrenceDay;
-      return (m && d) ? `Every year on ${YEARLY_MONTH_NAMES[m - 1]} ${d}` : 'Every year';
-    }
-    const n = task.frequencyDays ?? 1;
-    return `Every ${n} day${n !== 1 ? 's' : ''}`;
-  };
 
-  const relativeDays = (dateStr) => {
-    if (!dateStr) return 'some time ago';
-    const diff = daysBetween(dateStr, today);
-    if (isNaN(diff)) return 'some time ago';
-    if (diff <= 0) return 'today';
-    if (diff === 1) return '1 day ago';
-    return `${diff} days ago`;
-  };
-
-  const compactRelative = (dateStr) => {
-    if (!dateStr) return '';
-    const diff = daysBetween(dateStr, today);
-    if (isNaN(diff)) return '';
-    if (diff <= 0) return 'today';
-    return `${diff}d ago`;
-  };
 
   let html = '';
 
@@ -3149,8 +3737,8 @@ function renderSummaryTab(plant) {
     <div class="hero-card-top">
       <div class="hero-card-days">${totalDays}</div>
       <div class="hero-card-text">
-        <div class="hero-card-label">days of care</div>
-        <div class="hero-card-since">Home since ${escapeHtml(formatDate(dateAcquired))}</div>
+        <div class="hero-card-label">${t('plantDetail.summary.daysOfCare')}</div>
+        <div class="hero-card-since">${t('plantDetail.summary.homeSince', { date: escapeHtml(formatDate(dateAcquired)) })}</div>
       </div>
     </div>
     <div class="hero-card-bar-row">
@@ -3163,8 +3751,8 @@ function renderSummaryTab(plant) {
   <button class="hero-card-prompt" data-action="open-edit-plant" data-plant="${plant.id}">
     <span class="hero-card-prompt-icon" aria-hidden="true">🏠</span>
     <div class="hero-card-prompt-text">
-      <div class="hero-card-prompt-title">When did ${escapeHtml(plant.name)} arrive home?</div>
-      <div class="hero-card-prompt-sub">Set an arrival date to start tracking days of care.</div>
+      <div class="hero-card-prompt-title">${t('addPlant.step3.heading', { name: escapeHtml(plant.name) })}</div>
+      <div class="hero-card-prompt-sub">${t('plantDetail.summary.arrivalPromptSub')}</div>
     </div>
     <span class="hero-card-prompt-chevron" aria-hidden="true">›</span>
   </button>`;
@@ -3179,8 +3767,8 @@ function renderSummaryTab(plant) {
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#3b6d11" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h2l1.5-2h3l1.5 2h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/><circle cx="8" cy="9" r="2.5"/></svg>
     </span>
     <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
-      <span style="font-size:14px;font-weight:500;color:#1a1a1a;">Photo timeline</span>
-      <span style="font-size:12px;color:#8a8d86;">${summaryPhotoCount} photos · tap to view</span>
+      <span style="font-size:14px;font-weight:500;color:#1a1a1a;">${t('plantDetail.summary.photoTimeline')}</span>
+      <span style="font-size:12px;color:#8a8d86;">${t('plantDetail.summary.photoCount', { n: summaryPhotoCount })}</span>
     </span>
     <span style="width:30px;height:30px;background:#3d6b3d;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff;font-size:13px;line-height:1;" aria-hidden="true">▶</span>
   </div>`;
@@ -3199,28 +3787,28 @@ function renderSummaryTab(plant) {
     // Congratulatory state — green header + trophy row (Caring-tab pattern)
     html += `<div class="home-section-header">
       <div class="home-section-header-accent" style="background:#2e7d32;"></div>
-      <span class="home-section-header-text" style="color:#2e7d32;">Needs attention today</span>
+      <span class="home-section-header-text" style="color:#2e7d32;">${t('plantDetail.summary.needsAttention')}</span>
     </div>
     <div class="home-activity-feed">
       <div class="needs-attention-list">
         <div class="attention-done-row">
           <span class="attention-done-tile">🏆</span>
           <span class="home-due-today-info">
-            <span style="font-size:13px;font-weight:500;color:#2e7d32;">All done for today!</span>
+            <span style="font-size:13px;font-weight:500;color:#2e7d32;">${t('home.allDoneToday')}</span>
             <span style="font-size:11px;color:#5a8c58;">${escapeHtml(plant.name)}</span>
           </span>
         </div>
       </div>
     </div>`;
   } else {
-    html += summarySectionHeader('Needs attention today');
+    html += summarySectionHeader(t('plantDetail.summary.needsAttention'));
 
     if (attentionTasks.length === 0) {
       html += `<div style="margin:0;display:flex;align-items:center;gap:10px;background:#f0eef8;border:0.5px solid #d0c8ee;border-radius:12px;padding:10px 12px;">
         <span style="width:40px;height:40px;background:#ddd8f0;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🎈</span>
         <span style="display:flex;flex-direction:column;gap:2px;min-width:0;">
-          <span style="font-size:13px;font-weight:500;color:#3a2a7a;">All clear</span>
-          <span style="font-size:11px;color:#6a5aaa;">No tasks today</span>
+          <span style="font-size:13px;font-weight:500;color:#3a2a7a;">${t('caring.allClear')}</span>
+          <span style="font-size:11px;color:#6a5aaa;">${t('caring.noTasksToday')}</span>
         </span>
       </div>`;
     } else {
@@ -3231,8 +3819,8 @@ function renderSummaryTab(plant) {
         const ownerInit   = (task.owner ?? '?')[0].toUpperCase();
         const d           = daysUntilDue(task);
         const daysLate    = Math.abs(d);
-        const status      = d < 0 ? `${daysLate} day${daysLate !== 1 ? 's' : ''} overdue` : 'Due today';
-        const metaText    = `${status} · ${recurrenceLabel(task)}`;
+        const status      = d < 0 ? tn('status.badge.daysOverdue', daysLate, { manual: '' }) : t('status.badge.dueToday', { manual: '' });
+        const metaText    = `${status} · ${recurrenceLabel(task, RECURRENCE_VERBOSE_OPTS)}`;
         const rowAction   = d < 0 ? 'caring-overdue-row-tap' : 'edit-task';
         const urgencyCls  = d < 0 ? 'attention-row--overdue' : 'attention-row--duetoday';
         html += `<div class="attention-row ${urgencyCls}" style="margin:0 0 8px;display:flex;align-items:center;gap:10px;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="${rowAction}" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
@@ -3243,7 +3831,7 @@ function renderSummaryTab(plant) {
             <span style="font-size:11px;color:#8a5a0f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(metaText)}</span>
           </span>
           <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInit)}</span>
-          <button class="attention-check-circle" data-action="summary-mark-done" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}" aria-label="Mark done">
+          <button class="attention-check-circle" data-action="summary-mark-done" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}" aria-label="${t('home.aria.markDone')}">
             <span class="attention-check-icon">✓</span>
           </button>
         </div>`;
@@ -3252,7 +3840,7 @@ function renderSummaryTab(plant) {
   }
 
   // ── Zone 3a: Upcoming (next 3 occurrences) ────────────────
-  html += summarySectionHeader('Upcoming');
+  html += summarySectionHeader(t('caring.upcoming'));
 
   const projectStart = addDays(today, 1);
   const projectEnd   = addDays(today, 365);
@@ -3308,7 +3896,7 @@ function renderSummaryTab(plant) {
   const upcoming3 = allOccs.slice(0, 3);
 
   if (upcoming3.length === 0) {
-    html += `<div style="margin:0;padding:12px 16px;color:#888;font-size:13px;">No upcoming tasks</div>`;
+    html += `<div style="margin:0;padding:12px 16px;color:#888;font-size:13px;">${t('plantDetail.summary.noUpcoming')}</div>`;
   } else {
     for (const { date, task } of upcoming3) {
       const cfg         = getTaskConfig(task);
@@ -3316,8 +3904,8 @@ function renderSummaryTab(plant) {
       const ownerColor  = ownerMember?.color ?? '#888';
       const ownerInit   = (task.owner ?? '?')[0].toUpperCase();
       const dObj        = new Date(date + 'T12:00:00');
-      const monAbbr     = dObj.toLocaleDateString('en-US', { month: 'short' });
-      const dayAbbr     = dObj.toLocaleDateString('en-US', { weekday: 'short' });
+      const monAbbr     = dObj.toLocaleDateString(displayLocale(), { month: 'short' });
+      const dayAbbr     = dObj.toLocaleDateString(displayLocale(), { weekday: 'short' });
       const dayNum      = dObj.getDate();
       html += `<div style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
         <div style="display:flex;flex-direction:column;align-items:center;min-width:36px;flex-shrink:0;">
@@ -3329,7 +3917,7 @@ function renderSummaryTab(plant) {
         <span style="width:36px;height:36px;background:#f0f0f0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${cfg.icon}</span>
         <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
           <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</span>
-          <span style="font-size:11px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(recurrenceLabel(task))}</span>
+          <span style="font-size:11px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(recurrenceLabel(task, RECURRENCE_VERBOSE_OPTS))}</span>
         </span>
         <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInit)}</span>
       </div>`;
@@ -3339,8 +3927,8 @@ function renderSummaryTab(plant) {
   // ── Zone 3b: Recent activity (last 3 entries) ─────────────
   html += `<div style="display:flex;align-items:center;gap:8px;padding:16px 0 8px;">
     <span style="width:3px;height:14px;background:#3a6b3a;border-radius:2px;flex-shrink:0;"></span>
-    <span style="font-size:11px;font-weight:500;color:#6b7a6b;text-transform:uppercase;letter-spacing:0.05em;">Recent activity</span>
-    <button class="summary-view-all-link" style="margin-left:auto;" data-action="plant-detail-tab" data-tab="carelog">View more</button>
+    <span style="font-size:11px;font-weight:500;color:#6b7a6b;text-transform:uppercase;letter-spacing:0.05em;">${t('home.recentActivity')}</span>
+    <button class="summary-view-all-link" style="margin-left:auto;" data-action="plant-detail-tab" data-tab="carelog">${t('home.viewMore')}</button>
   </div>`;
 
   const plantNotes = notes.filter(n => n.plantId === plant.id);
@@ -3354,7 +3942,7 @@ function renderSummaryTab(plant) {
   }).slice(0, 3);
 
   if (activityItems.length === 0) {
-    html += `<div style="margin:0;padding:12px 16px;color:#888;font-size:13px;">No activity yet</div>`;
+    html += `<div style="margin:0;padding:12px 16px;color:#888;font-size:13px;">${t('plantDetail.summary.noActivity')}</div>`;
   } else {
     for (const item of activityItems) {
       if (item.type === 'care') {
@@ -3364,17 +3952,18 @@ function renderSummaryTab(plant) {
         const cfgM        = matchedTask ? getTaskConfig(matchedTask) : null;
         const icon        = isSkipped ? '⏭' : (cfgM?.icon ?? '✓');
         const tType       = isSkipped ? 'skipped' : (cfgM?.type ?? e.taskType);
-        const relTime     = relativeDays(e.date) === 'today' ? 'Today'
-                          : relativeDays(e.date) === '1 day ago' ? 'Yesterday'
-                          : relativeDays(e.date);
+        const relTime     = relativeDaysLabel(e.date);
         const absDate     = e.date ? formatDate(e.date) : '';
-        const verb        = CARE_VERB[tType];
-        const author      = e.author ?? 'Someone';
+        const verb        = careVerb(tType);
+        const author      = e.author ?? t('home.authorFallback');
+        const isSelf      = !!currentMemberId && e.memberId === currentMemberId;
         const primary     = isSkipped
-          ? `${author} skipped ${e.taskName ?? 'task'}`
-          : verb
-            ? `${author} ${verb} ${plant.name}`
-            : `${author} · ${e.taskName ?? 'care'} — ${plant.name}`;
+          ? t('activityFeed.skipped', { actor: author, task: e.taskName ?? t('home.taskFallback') })
+          : isSelf
+            ? t('activityFeed.careSelf', { task: e.taskName ?? t('home.careFallback') })
+            : verb
+              ? t('activityFeed.care', { actor: author, verb, plant: plant.name })
+              : t('activityFeed.careOther', { actor: author, task: e.taskName ?? t('home.careFallback'), plant: plant.name });
         const isDoneToday = !isSkipped && e.date === today;
         const tileHtml    = isSkipped
           ? `<span class="activity-icon-skipped" style="width:40px;height:40px;background:#f4f6f2;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${icon}</span>`
@@ -3382,8 +3971,8 @@ function renderSummaryTab(plant) {
             ? `<span style="width:40px;height:40px;background:#eaf3de;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${icon}</span>`
             : activityTaskTileHtml(tType, icon);
         const actionsHtml = isDoneToday
-          ? `<button data-action="summary-carelog-add-note" data-plant="${escapeHtml(plant.id)}" style="width:30px;height:30px;border-radius:50%;border:0.5px solid #dde0d9;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;cursor:pointer;padding:0;" aria-label="Add note"><svg viewBox="0 0 16 16" fill="none" stroke="#8a9180" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg></button>
-            <button data-action="summary-carelog-undo" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(e.taskId ?? '')}" data-entry="${escapeHtml(e.id ?? '')}" style="width:28px;height:28px;border-radius:50%;border:none;background:#3b6d11;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;cursor:pointer;padding:0;margin-left:6px;" aria-label="Undo">✓</button>`
+          ? `<button data-action="summary-carelog-add-note" data-plant="${escapeHtml(plant.id)}" style="width:30px;height:30px;border-radius:50%;border:0.5px solid #dde0d9;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;cursor:pointer;padding:0;" aria-label="${t('home.aria.addNote')}"><svg viewBox="0 0 16 16" fill="none" stroke="#8a9180" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg></button>
+            <button data-action="summary-carelog-undo" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(e.taskId ?? '')}" data-entry="${escapeHtml(e.id ?? '')}" style="width:28px;height:28px;border-radius:50%;border:none;background:#3b6d11;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;cursor:pointer;padding:0;margin-left:6px;" aria-label="${t('menu.toast.undo')}">✓</button>`
           : '';
         html += `<div class="${isSkipped ? 'activity-row-skipped ' : ''}" style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff;${isSkipped ? '' : 'border:0.5px solid #e8ede8;border-radius:12px;'}padding:10px 12px;cursor:pointer;" data-action="carelog-open-edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(e.taskId ?? '')}">
           ${tileHtml}
@@ -3396,11 +3985,9 @@ function renderSummaryTab(plant) {
         </div>`;
       } else {
         const n       = item.data;
-        const relTime = relativeDays(item.sortKey) === 'today' ? 'Today'
-                      : relativeDays(item.sortKey) === '1 day ago' ? 'Yesterday'
-                      : relativeDays(item.sortKey);
+        const relTime = relativeDaysLabel(item.sortKey);
         const absDate = item.sortKey ? formatDate(item.sortKey) : '';
-        const primary = `${n.author ?? 'Someone'} added a note`;
+        const primary = t('activityFeed.noteAdded', { actor: n.author ?? t('home.authorFallback') });
         const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
         const isOwn = n.memberId && n.memberId === activeMemberId;
         const rowAction = isOwn
@@ -3434,7 +4021,7 @@ function renderTasksTab(plant) {
   if (step === 3 && isOnboardingPlant) {
     const onboardingTask = plant.tasks.find(t => t.id === getOnboardingTaskId());
     if (onboardingTask) {
-      return `<div style="font-size:13px;font-weight:500;color:#3a6b3a;margin-bottom:8px;">Tap ✓ Done below to complete your setup</div>
+      return `<div style="font-size:13px;font-weight:500;color:#3a6b3a;margin-bottom:8px;">${t('onboarding.tasksBanner.step3')}</div>
 <div class="task-list">${renderTaskCard(plant.id, onboardingTask, true)}</div>`;
     }
   }
@@ -3442,14 +4029,14 @@ function renderTasksTab(plant) {
   if (plant.tasks.length === 0) {
     return `<div class="tasks-empty-state">
   <div class="tasks-empty-icon">📋</div>
-  <div class="tasks-empty-title">No tasks yet</div>
-  <div class="tasks-empty-sub">Add a care task to start tracking what your ${escapeHtml(plant.name)} needs.</div>
+  <div class="tasks-empty-title">${t('plantDetail.tasks.emptyTitle')}</div>
+  <div class="tasks-empty-sub">${t('plantDetail.tasks.emptySub', { name: escapeHtml(plant.name) })}</div>
 </div>`;
   }
   let html = '';
   const filtered = plant.tasks.filter(t => matchesFilter(t.owner));
   if (filtered.length === 0) {
-    html += `<div class="detail-empty">No tasks for selected users</div>`;
+    html += `<div class="detail-empty">${t('plantDetail.tasks.noneForFilter')}</div>`;
     return html;
   }
   const today = todayStr();
@@ -3473,7 +4060,7 @@ function renderTasksTab(plant) {
   if (sorted.length > 0) {
     html += `<div style="display:flex;align-items:center;gap:8px;padding:0 0 8px;">
       <span style="width:3px;height:14px;background:#2e7d32;border-radius:2px;flex-shrink:0;"></span>
-      <span style="font-size:11px;font-weight:500;color:#8a9180;text-transform:uppercase;letter-spacing:0.05em;">Task list</span>
+      <span style="font-size:11px;font-weight:500;color:#8a9180;text-transform:uppercase;letter-spacing:0.05em;">${t('plantDetail.tasks.listHeader')}</span>
     </div>
     <div class="task-row-list">`;
     for (const task of sorted) {
@@ -3493,8 +4080,8 @@ function renderNotesTab(plant) {
   if (plantNotes.length === 0) {
     return `<div style="text-align:center;padding:48px 24px 32px;">
   <div style="font-size:32px;margin-bottom:12px;">📝</div>
-  <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">No notes yet</div>
-  <div style="font-size:13px;color:#888;line-height:1.5;max-width:260px;margin:0 auto;">Jot down observations about your ${escapeHtml(plant.name)} — growth, health, anything worth remembering. Tap the button below to add one.</div>
+  <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">${t('plantDetail.notes.emptyTitle')}</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;max-width:260px;margin:0 auto;">${t('plantDetail.notes.emptySub', { name: escapeHtml(plant.name) })}</div>
 </div>`;
   }
 
@@ -3502,7 +4089,7 @@ function renderNotesTab(plant) {
   const filteredNotes = plantNotes.filter(n => matchesFilter(n.author));
 
   if (filteredNotes.length === 0) {
-    html += `<div class="detail-empty">No notes for selected users</div>`;
+    html += `<div class="detail-empty">${t('plantDetail.notes.noneForFilter')}</div>`;
     return html;
   }
 
@@ -3517,7 +4104,7 @@ function renderNotesTab(plant) {
     if (monthKey && monthKey !== lastMon) {
       lastMon = monthKey;
       const [y, m] = monthKey.split('-').map(Number);
-      const lbl = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      const lbl = new Date(y, m - 1, 1).toLocaleDateString(displayLocale(), { month: 'long', year: 'numeric' });
       html += `<div class="carelog-month-header">${lbl.toUpperCase()}</div>`;
     }
 
@@ -3526,7 +4113,7 @@ function renderNotesTab(plant) {
     if (dateStr) {
       const d = new Date(dateStr + 'T12:00:00');
       if (!isNaN(d.getTime())) {
-        dayAbbr = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase().slice(0, 3);
+        dayAbbr = d.toLocaleDateString(displayLocale(), { weekday: 'short' }).toUpperCase().slice(0, 3);
         dayNum  = String(d.getDate());
       }
     }
@@ -3598,8 +4185,8 @@ function renderCareLogTab(plant) {
   if (unified.length === 0) {
     html += `<div style="text-align:center;padding:40px 24px 24px;">
   <div style="font-size:32px;margin-bottom:12px;">📖</div>
-  <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">Your plant's care history</div>
-  <div style="font-size:13px;color:#888;line-height:1.5;">Your completed tasks and notes will appear here.</div>
+  <div style="font-size:15px;font-weight:600;color:#1a1a1a;margin-bottom:8px;">${t('plantDetail.careLog.emptyTitle')}</div>
+  <div style="font-size:13px;color:#888;line-height:1.5;">${t('plantDetail.careLog.emptySub')}</div>
 </div>`;
     return html;
   }
@@ -3614,7 +4201,7 @@ function renderCareLogTab(plant) {
     if (monthKey && monthKey !== lastMonth) {
       lastMonth = monthKey;
       const [y, m] = monthKey.split('-').map(Number);
-      const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      const monthLabel = new Date(y, m - 1, 1).toLocaleDateString(displayLocale(), { month: 'long', year: 'numeric' });
       html += `<div class="carelog-month-header">${monthLabel.toUpperCase()}</div>`;
     }
 
@@ -3652,7 +4239,7 @@ function renderCareLogNewRow(entry, plant) {
   if (dateStr) {
     const d = new Date(dateStr + 'T12:00:00');
     if (!isNaN(d.getTime())) {
-      dayAbbr = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+      dayAbbr = d.toLocaleDateString(displayLocale(), { weekday: 'short' }).toUpperCase();
       dayNum  = String(d.getDate());
     }
   }
@@ -3670,7 +4257,7 @@ function renderCareLogNewRow(entry, plant) {
     ${iconTileHtml}
     <div class="carelog-new-info">
       <span class="carelog-new-name">${escapeHtml(entry.taskName ?? '')}</span>
-      <span class="carelog-new-time${isSkipped ? ' activity-sub-skipped' : ''}">${isSkipped ? 'Skipped' : '—'}</span>
+      <span class="carelog-new-time${isSkipped ? ' activity-sub-skipped' : ''}">${isSkipped ? t('plantDetail.careLog.skipped') : '—'}</span>
     </div>
     <div class="carelog-new-owner" style="background:${escapeHtml(color)};">${escapeHtml(initial)}</div>
   </div>
@@ -3689,9 +4276,9 @@ function renderCareLogNoteRow(note) {
   if (note.createdAt) {
     const d = new Date(note.createdAt);
     if (!isNaN(d.getTime())) {
-      dayAbbr = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+      dayAbbr = d.toLocaleDateString(displayLocale(), { weekday: 'short' }).toUpperCase();
       dayNum  = String(d.getDate());
-      timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      timeStr = d.toLocaleTimeString(displayLocale(), { hour: 'numeric', minute: '2-digit' });
     }
   }
 
@@ -3709,7 +4296,7 @@ function renderCareLogNoteRow(note) {
   <div class="carelog-new-card">
     <span style="width:36px;height:36px;background:#e8f0fb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">💬</span>
     <div class="carelog-new-info">
-      <span class="carelog-new-name">Note added</span>
+      <span class="carelog-new-name">${t('menu.toast.noteAdded')}</span>
       <span class="carelog-new-time">${escapeHtml(preview)}</span>
     </div>
     ${photoThumbHtml}
@@ -3782,9 +4369,9 @@ function renderExpandedTaskRow(plantId, task) {
     </div>
     <div class="task-actions">
       ${doneToday
-        ? `<button class="btn btn-warning" data-action="undo-mark-done" data-plant="${plantId}" data-task="${task.id}">&#8630; Undo</button>`
-        : `<button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>
-           <button class="btn btn-secondary" data-action="mark-done-with-note" data-plant="${plantId}" data-task="${task.id}">&#10003; + Note</button>`
+        ? `<button class="btn btn-warning" data-action="undo-mark-done" data-plant="${plantId}" data-task="${task.id}">&#8630; ${t('menu.toast.undo')}</button>`
+        : `<button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; ${t('taskCard.done')}</button>
+           <button class="btn btn-secondary" data-action="mark-done-with-note" data-plant="${plantId}" data-task="${task.id}">&#10003; ${t('taskCard.plusNote')}</button>`
       }
       <button class="btn btn-secondary" data-action="reassign-task" data-plant="${plantId}" data-task="${task.id}">&#8644; ${escapeHtml(otherOwner)}</button>
       <button class="btn btn-ghost" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">&#9999;&#xFE0E;</button>
@@ -3829,7 +4416,7 @@ function renderTaskCard(plantId, task, onboardingMode = false) {
         <div class="task-row1">
           <span class="task-icon">${cfg.icon}</span>
           <span class="task-name">${cfg.name}</span>
-          ${isPaused ? '<span class="task-paused-badge">Paused</span>' : ''}
+          ${isPaused ? `<span class="task-paused-badge">${t('taskCard.paused')}</span>` : ''}
           <span class="owner-badge ${ownerCls}">${task.owner}</span>
         </div>
         <div class="task-meta">${escapeHtml(recurrenceLabel(task))} &middot; ${lastDoneLabel(task)}</div>`;
@@ -3849,12 +4436,12 @@ function renderTaskCard(plantId, task, onboardingMode = false) {
   if (onboardingMode) {
     html += `
         <div class="task-actions">
-          <button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>
+          <button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; ${t('taskCard.done')}</button>
         </div>`;
   } else if (isPaused) {
     html += `
         <div class="task-actions">
-          <button class="btn btn-secondary" data-action="resume-task" data-plant="${plantId}" data-task="${task.id}">&#9654; Resume</button>
+          <button class="btn btn-secondary" data-action="resume-task" data-plant="${plantId}" data-task="${task.id}">&#9654; ${t('taskCard.resume')}</button>
           <button class="btn btn-ghost task-edit-icon-btn" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">&#9999;&#xFE0E;</button>
         </div>`;
   } else {
@@ -3862,9 +4449,9 @@ function renderTaskCard(plantId, task, onboardingMode = false) {
     html += `
         <div class="task-actions">
           ${doneToday
-            ? `<button class="btn btn-warning" data-action="undo-mark-done" data-plant="${plantId}" data-task="${task.id}">&#8630; Undo</button>`
-            : `<button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; Done</button>
-               <button class="btn btn-secondary" data-action="mark-done-with-note" data-plant="${plantId}" data-task="${task.id}">&#10003; + Note</button>`
+            ? `<button class="btn btn-warning" data-action="undo-mark-done" data-plant="${plantId}" data-task="${task.id}">&#8630; ${t('menu.toast.undo')}</button>`
+            : `<button class="btn btn-primary" data-action="mark-done" data-plant="${plantId}" data-task="${task.id}">&#10003; ${t('taskCard.done')}</button>
+               <button class="btn btn-secondary" data-action="mark-done-with-note" data-plant="${plantId}" data-task="${task.id}">&#10003; ${t('taskCard.plusNote')}</button>`
           }
           <button class="btn btn-secondary" data-action="reassign-task" data-plant="${plantId}" data-task="${task.id}">&#8644; ${escapeHtml(otherOwner)}</button>
           <button class="btn btn-ghost task-edit-icon-btn" data-action="edit-task" data-plant="${plantId}" data-task="${task.id}">&#9999;&#xFE0E;</button>
@@ -3886,45 +4473,32 @@ function renderTaskRow(plantId, task) {
 
   // Meta line: recurrence text
   const recType = task.recurrenceType ?? 'interval';
-  let recText;
-  if (recType === 'one-off') {
-    recText = 'One-off';
-  } else if (recType === 'weekdays') {
-    const dInts  = (task.weekdays ?? []).slice().sort(compareWeekdaysMonFirst);
-    const abbrev = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    recText = dInts.length > 0 ? `Every ${dInts.map(d => abbrev[d]).join(', ')}` : 'Days of week';
-  } else if (recType === 'yearly') {
-    const m = task.recurrenceMonth, d = task.recurrenceDay;
-    recText = (m && d) ? `Every year on ${YEARLY_MONTH_NAMES[m - 1]} ${d}` : 'Every year';
-  } else {
-    const n = task.frequencyDays ?? 1;
-    recText = `Every ${n} day${n !== 1 ? 's' : ''}`;
-  }
+  const recText = recurrenceLabel(task, RECURRENCE_VERBOSE_OPTS);
 
   // Meta line: urgency text (neutral color regardless of due date)
   let urgencyText;
   if (isPaused) {
-    urgencyText = 'Paused';
+    urgencyText = t('taskCard.paused');
   } else if (doneToday) {
-    urgencyText = '✓ done today';
+    urgencyText = t('status.row.doneToday');
   } else {
     const days = daysUntilDue(task);
     if (recType === 'one-off') {
       if (days === Infinity) {
-        urgencyText = '✓ done';
+        urgencyText = t('status.row.done');
       } else {
         const nd = computeNextDue(task);
-        const ds = nd ? new Date(nd + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
-        if (days > 1)        urgencyText = `due ${ds}`;
-        else if (days === 1) urgencyText = 'due tomorrow';
-        else if (days === 0) urgencyText = 'due today';
-        else                 urgencyText = 'overdue';
+        const ds = nd ? new Date(nd + 'T12:00:00').toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric' }) : '—';
+        if (days > 1)        urgencyText = t('status.row.dueDate', { date: ds });
+        else if (days === 1) urgencyText = t('status.row.dueTomorrow');
+        else if (days === 0) urgencyText = t('status.row.dueToday');
+        else                 urgencyText = t('status.row.overdue');
       }
     } else {
-      if (days < 0)        urgencyText = 'overdue';
-      else if (days === 0) urgencyText = 'due today';
-      else if (days === 1) urgencyText = 'due tomorrow';
-      else                 urgencyText = `due in ${days} days`;
+      if (days < 0)        urgencyText = t('status.row.overdue');
+      else if (days === 0) urgencyText = t('status.row.dueToday');
+      else if (days === 1) urgencyText = t('status.row.dueTomorrow');
+      else                 urgencyText = t('status.row.dueInDays', { n: days });
     }
   }
 
@@ -3935,7 +4509,7 @@ function renderTaskRow(plantId, task) {
 
   // Right-edge button: pause-badge for paused tasks (resumes on tap). No button otherwise.
   const rightHtml = isPaused
-    ? `<button class="task-row-check task-row-pause" data-action="resume-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" aria-label="Resume" style="background:#f0a500;border:none;border-radius:50%;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;gap:3px;flex-shrink:0;padding:0;cursor:pointer;">
+    ? `<button class="task-row-check task-row-pause" data-action="resume-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" aria-label="${t('home.aria.resume')}" style="background:#f0a500;border:none;border-radius:50%;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;gap:3px;flex-shrink:0;padding:0;cursor:pointer;">
         <span style="width:3px;height:10px;background:white;border-radius:1px;display:inline-block;"></span>
         <span style="width:3px;height:10px;background:white;border-radius:1px;display:inline-block;"></span>
       </button>`
@@ -3962,8 +4536,8 @@ function renderNoteCard(note) {
 
   const actions = isOwn
     ? `<div class="health-note-btns">
-         <button class="note-action-btn" data-action="edit-note" data-note="${note.id}" title="Edit">&#9999;&#xFE0E;</button>
-         <button class="note-action-btn note-action-btn--delete" data-action="delete-note" data-plant="${note.plantId}" data-note="${note.id}" title="Delete">&#128465;&#xFE0E;</button>
+         <button class="note-action-btn" data-action="edit-note" data-note="${note.id}" title="${t('notes.editTooltip')}">&#9999;&#xFE0E;</button>
+         <button class="note-action-btn note-action-btn--delete" data-action="delete-note" data-plant="${note.plantId}" data-note="${note.id}" title="${t('photos.delete')}">&#128465;&#xFE0E;</button>
        </div>`
     : '';
 
@@ -3973,14 +4547,14 @@ function renderNoteCard(note) {
     const task = plant?.tasks.find(t => t.id === note.taskId);
     if (!task) return '';
     const cfg = getTaskConfig(task);
-    return ` &middot; ${cfg.icon} after ${escapeHtml(cfg.name)}`;
+    return ` &middot; ${cfg.icon} ${t('notes.noteTaskMeta', { task: escapeHtml(cfg.name) })}`;
   })();
 
   const body = isEditing
     ? `<textarea class="form-textarea note-edit-textarea" data-note="${note.id}" style="min-height:80px">${escapeHtml(note.note)}</textarea>
        <div class="note-edit-actions">
-         <button class="btn btn-ghost btn-sm" data-action="cancel-note-edit" data-note="${note.id}">Cancel</button>
-         <button class="btn btn-primary btn-sm" data-action="save-note-edit" data-note="${note.id}">Save</button>
+         <button class="btn btn-ghost btn-sm" data-action="cancel-note-edit" data-note="${note.id}">${t('taskSheet.cancel')}</button>
+         <button class="btn btn-primary btn-sm" data-action="save-note-edit" data-note="${note.id}">${t('auth.reset.save')}</button>
        </div>`
     : `<div class="health-note-text">${escapeHtml(note.note)}</div>`;
 
@@ -4027,7 +4601,7 @@ function openOverdueActionSheet(plantId, taskId) {
   const isOneOff = (task.recurrenceType ?? 'interval') === 'one-off';
 
   const skipBtnHtml = isOneOff ? '' : `
-    <button class="btn btn-ghost" data-action="caring-skip-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" style="width:100%;text-align:center;padding:14px;font-size:15px;">⏭ Skip this time</button>`;
+    <button class="btn btn-ghost" data-action="caring-skip-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" style="width:100%;text-align:center;padding:14px;font-size:15px;">⏭ ${t('taskSheet.overdueSheet.skip')}</button>`;
 
   state.sheetMode = 'overdue-action';
   state.sheetData = { plantId, taskId };
@@ -4041,10 +4615,10 @@ function openOverdueActionSheet(plantId, taskId) {
       </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:8px;">
-      <button class="btn btn-primary" data-action="caring-action-mark-done" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" style="width:100%;text-align:center;padding:14px;font-size:15px;">✓ Mark done</button>
+      <button class="btn btn-primary" data-action="caring-action-mark-done" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" style="width:100%;text-align:center;padding:14px;font-size:15px;">✓ ${t('home.aria.markDone')}</button>
       ${skipBtnHtml}
-      <button class="btn btn-ghost" data-action="caring-open-edit-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" style="width:100%;text-align:center;padding:14px;font-size:15px;">Edit task</button>
-      <button class="btn btn-ghost" data-action="close-sheet" style="width:100%;text-align:center;padding:14px;font-size:15px;margin-top:6px;">Cancel</button>
+      <button class="btn btn-ghost" data-action="caring-open-edit-task" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" style="width:100%;text-align:center;padding:14px;font-size:15px;">${t('taskSheet.overdueSheet.editTask')}</button>
+      <button class="btn btn-ghost" data-action="close-sheet" style="width:100%;text-align:center;padding:14px;font-size:15px;margin-top:6px;">${t('taskSheet.cancel')}</button>
     </div>
   `);
 }
@@ -4087,30 +4661,6 @@ function weekdayOccurrencesAfterToday(weekdays, gridEnd) {
   return out;
 }
 
-function renderReschedCalendar(startSun, endDate, highlightSet, highlightBg, highlightFg) {
-  // Pad endDate up to its Saturday so the last row is complete.
-  const endSat = addDays(endDate, 6 - new Date(endDate + 'T12:00:00').getDay());
-  const headers = ['S','M','T','W','T','F','S']
-    .map(l => `<div style="font-size:10px;color:#8a8d86;text-align:center;padding:2px 0;font-weight:500;">${l}</div>`)
-    .join('');
-  let cells = '';
-  let cursor = startSun;
-  while (cursor <= endSat) {
-    const dObj = new Date(cursor + 'T12:00:00');
-    const day = dObj.getDate();
-    const hl  = highlightSet.has(cursor);
-    const cellStyle = hl
-      ? `background:${highlightBg};color:${highlightFg};font-weight:600;border-radius:6px;`
-      : `color:#bdbdbd;`;
-    cells += `<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:11px;${cellStyle}">${day}</div>`;
-    cursor = addDays(cursor, 1);
-  }
-  return `
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">${headers}</div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-top:2px;">${cells}</div>
-  `;
-}
-
 function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) {
   const plant = getPlant(plantId);
   const task  = plant?.tasks.find(t => t.id === taskId);
@@ -4137,7 +4687,7 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
     const headlineColor = isLate ? '#a32d2d' : '#2e6b28';   // red only for late, matching the interval branch
     // formatFullDate is a const declared further down (interval/weekday path) —
     // out of scope here (TDZ), so inline the same "Wkd, Mon D" format.
-    const todayFull   = new Date(today + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const todayFull   = new Date(today + 'T12:00:00').toLocaleDateString(displayLocale(), { weekday: 'short', month: 'short', day: 'numeric' });
 
     const yearlyCard = `
       <div style="background:#ffffff;border-radius:20px;padding:24px 20px;max-width:390px;width:calc(100% - 32px);max-height:calc(100vh - 32px);overflow:auto;box-sizing:border-box;">
@@ -4145,16 +4695,16 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
           <div style="width:44px;height:44px;border-radius:10px;background:#e8f5e9;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">${cfg.icon}</div>
           <div>
             <div style="font-size:15px;font-weight:700;color:#1a2e1a;margin:0 0 2px;">${escapeHtml(cfg.name)} · ${escapeHtml(plant.name)}</div>
-            <div style="font-size:12px;color:#6b7c6b;">Every year on ${escapeHtml(anchorLabel)}</div>
+            <div style="font-size:12px;color:#6b7c6b;">${t('reschedule.yearly.everyYearOn', { anchor: escapeHtml(anchorLabel) })}</div>
           </div>
         </div>
-        <div style="font-size:18px;font-weight:600;color:${headlineColor};text-align:center;margin-bottom:4px;">Running ${offsetDays} day${offsetDays === 1 ? '' : 's'} ${isLate ? 'late' : 'early'}</div>
-        <div style="font-size:12px;color:#888;text-align:center;margin-bottom:16px;">Today is ${todayFull}</div>
+        <div style="font-size:18px;font-weight:600;color:${headlineColor};text-align:center;margin-bottom:4px;">${isLate ? tn('reschedule.yearly.runningLate', offsetDays) : tn('reschedule.yearly.runningEarly', offsetDays)}</div>
+        <div style="font-size:12px;color:#888;text-align:center;margin-bottom:16px;">${t('reschedule.todayIs', { date: todayFull })}</div>
         <div data-action="reschedule-keep-original" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${offsetDays}" style="background:#f7f8f6;border:1px solid #d8ddd4;border-radius:14px;padding:16px;cursor:pointer;margin-bottom:10px;">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
             <div>
-              <div style="font-size:14px;font-weight:600;color:#4a5e4a;margin-bottom:2px;">Keep Original Schedule</div>
-              <div style="font-size:12px;color:#6b7c6b;">Next due: ${escapeHtml(keepLabel)}</div>
+              <div style="font-size:14px;font-weight:600;color:#4a5e4a;margin-bottom:2px;">${t('reschedule.keepOriginal.title')}</div>
+              <div style="font-size:12px;color:#6b7c6b;">${t('reschedule.nextDue', { date: escapeHtml(keepLabel) })}</div>
             </div>
             <div style="font-size:20px;font-weight:300;color:#aaaaaa;line-height:1;">›</div>
           </div>
@@ -4162,8 +4712,8 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
         <div data-action="reschedule-modify" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${offsetDays}" style="background:#f0f7ec;border:2px solid #4a8c3f;border-radius:14px;padding:16px;cursor:pointer;">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
             <div style="min-width:0;">
-              <div style="font-size:14px;font-weight:700;color:#2e6b28;margin-bottom:2px;">Accept Modified Schedule</div>
-              <div style="font-size:12px;color:#2e6b28;">Move anchor to ${escapeHtml(shiftLabel)} every year</div>
+              <div style="font-size:14px;font-weight:700;color:#2e6b28;margin-bottom:2px;">${t('reschedule.acceptModified.title')}</div>
+              <div style="font-size:12px;color:#2e6b28;">${t('reschedule.yearly.moveAnchor', { date: escapeHtml(shiftLabel) })}</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
               <div style="background:#c8e6c9;color:#1b5e20;font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;white-space:nowrap;flex-shrink:0;">&rarr; ${escapeHtml(shiftLabel)}</div>
@@ -4207,7 +4757,7 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
     const origSorted = sortAndDedupe(origWd);
     const modSorted  = sortAndDedupe(shiftedWeekdays);
     shiftedWeekdays = modSorted;
-    const full = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const full = WEEKDAY_NAMES_ABBR;
     originalWeekdaysLabel = origSorted.slice().sort(compareWeekdaysMonFirst).map(d => full[d]).join(' & ');
     modifiedWeekdaysLabel = modSorted.slice().sort(compareWeekdaysMonFirst).map(d => full[d]).join(' & ');
     originalDates = weekdayOccurrencesAfterToday(origSorted, gridEnd);
@@ -4241,15 +4791,15 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
   const modifyFutureFg  = '#ffffff';
 
   const deltaText = isLate
-    ? `→ ${displacement} ${displacement === 1 ? 'day' : 'days'} later`
-    : `← ${Math.abs(displacement)} ${Math.abs(displacement) === 1 ? 'day' : 'days'} earlier`;
+    ? tn('reschedule.deltaLater', displacement)
+    : tn('reschedule.deltaEarlier', Math.abs(displacement));
 
   const recurrenceSummary = recType === 'weekdays'
     ? originalWeekdaysLabel
-    : `Every ${task.frequencyDays ?? 1} days`;
+    : tn('reschedule.recurrenceEveryDays', task.frequencyDays ?? 1);
 
   const formatFullDate = (s) => new Date(s + 'T12:00:00')
-    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    .toLocaleDateString(displayLocale(), { weekday: 'short', month: 'short', day: 'numeric' });
 
   // Calendar layout: 4 rows, week starts Monday.
   // Keep card: anchored to missed due (late) or today (early).
@@ -4265,8 +4815,8 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
 
   const renderCalendar = ({ startMonday, firstVisible, todayCellHasBg, futureDueSet, futureDueBg, futureDueFg, showMissedDue }) => {
     const endDate = addDays(startMonday, WEEKS * 7 - 1);
-    const startMonthLbl = new Date(startMonday + 'T12:00:00').toLocaleDateString('en-US', { month: 'short' });
-    const endMonthLbl   = new Date(endDate     + 'T12:00:00').toLocaleDateString('en-US', { month: 'short' });
+    const startMonthLbl = new Date(startMonday + 'T12:00:00').toLocaleDateString(displayLocale(), { month: 'short' });
+    const endMonthLbl   = new Date(endDate     + 'T12:00:00').toLocaleDateString(displayLocale(), { month: 'short' });
     const monthLabel    = startMonthLbl === endMonthLbl ? startMonthLbl : `${startMonthLbl} – ${endMonthLbl}`;
 
     let cells = '';
@@ -4327,26 +4877,26 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
         <div style="width:44px;height:44px;border-radius:10px;background:${isLate ? '#fce8e8' : '#e8f5e9'};display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">${cfg.icon}</div>
         <div>
           <div style="font-size:15px;font-weight:700;color:#1a2e1a;margin:0 0 2px;">${escapeHtml(cfg.name)} · ${escapeHtml(plant.name)}</div>
-          <div style="font-size:12px;color:#6b7c6b;">${escapeHtml(recurrenceSummary)} · due ${formatDateShort(mostRecentDueDate)}</div>
+          <div style="font-size:12px;color:#6b7c6b;">${escapeHtml(recurrenceSummary)} · ${t('reschedule.summaryDue', { date: formatDateShort(mostRecentDueDate) })}</div>
         </div>
       </div>
-      <div style="font-size:18px;font-weight:600;color:${headlineColor};text-align:center;margin-bottom:4px;">${isLate ? `Running ${absDays} days late` : `${absDays} days early`}</div>
-      <div style="font-size:12px;color:#888;text-align:center;margin-bottom:16px;">Today is ${formatFullDate(today)}</div>
+      <div style="font-size:18px;font-weight:600;color:${headlineColor};text-align:center;margin-bottom:4px;">${isLate ? tn('reschedule.runningLate', absDays) : tn('reschedule.daysEarly', absDays)}</div>
+      <div style="font-size:12px;color:#888;text-align:center;margin-bottom:16px;">${t('reschedule.todayIs', { date: formatFullDate(today) })}</div>
       <div data-action="reschedule-keep-original" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:#f7f8f6;border:1px solid #d8ddd4;border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-          <div style="font-size:14px;font-weight:600;color:#4a5e4a;">Keep Original Schedule</div>
+          <div style="font-size:14px;font-weight:600;color:#4a5e4a;">${t('reschedule.keepOriginal.title')}</div>
           <div style="font-size:20px;font-weight:300;color:#aaaaaa;line-height:1;">›</div>
         </div>
         ${keepCalendar}
         <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
-          ${isLate ? `<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:2px;background:#fce8e8;border:1px solid #f09595;"></div>Missed</div>` : ''}
-          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:50%;border:1.5px solid ${todayCircleEdge};"></div>Today</div>
-          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:2px;background:#d8ddd4;"></div>Next occurrences</div>
+          ${isLate ? `<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:2px;background:#fce8e8;border:1px solid #f09595;"></div>${t('reschedule.legend.missed')}</div>` : ''}
+          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:50%;border:1.5px solid ${todayCircleEdge};"></div>${t('relativeTime.today')}</div>
+          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:2px;background:#d8ddd4;"></div>${t('reschedule.legend.nextOccurrences')}</div>
         </div>
       </div>
       <div data-action="reschedule-modify" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(taskId)}" data-direction="${isLate ? 'late' : 'early'}" data-days="${absDays}" style="background:${modifyCardBg};border:2px solid #4a8c3f;border-radius:14px;padding:14px;cursor:pointer;margin-bottom:10px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-          <div style="font-size:14px;font-weight:700;color:${modifyTitleFg};">Accept Modified Schedule</div>
+          <div style="font-size:14px;font-weight:700;color:${modifyTitleFg};">${t('reschedule.acceptModified.title')}</div>
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="background:${modifyPillBg};color:${modifyPillFg};font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;">${deltaText}</div>
             <div style="font-size:20px;font-weight:300;color:#2e6b28;line-height:1;">›</div>
@@ -4354,8 +4904,8 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
         </div>
         ${modifyCalendar}
         <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
-          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:50%;border:1.5px solid ${todayCircleEdge};"></div>Today</div>
-          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:2px;background:#4a8c3f;"></div>Next occurrences</div>
+          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:50%;border:1.5px solid ${todayCircleEdge};"></div>${t('relativeTime.today')}</div>
+          <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#888;"><div style="width:8px;height:8px;border-radius:2px;background:#4a8c3f;"></div>${t('reschedule.legend.nextOccurrences')}</div>
         </div>
       </div>
     </div>`;
@@ -4425,7 +4975,7 @@ function closeMenu() {
 
 function openCalendarSyncSheet() {
   if (!currentMemberId || !householdId) {
-    showToast('Loading household data… please try again in a moment.');
+    showToast(t('calendarSync.toast.loading'));
     return;
   }
   const base       = import.meta.env.VITE_SUPABASE_URL;
@@ -4502,15 +5052,15 @@ function openCalendarSyncSheet() {
   const appKey    = (scope) => `calendar_app_${scope === 'all' ? 'all' : 'my'}_${householdId}_${currentMemberId}`;
   const getApp    = (scope) => localStorage.getItem(appKey(scope)) || (isIOS() ? 'apple' : 'google');
   const setApp    = (scope, app) => localStorage.setItem(appKey(scope), app);
-  const scopeName = (scope) => scope === 'all' ? 'All household tasks' : 'My tasks';
-  const appLabel  = (scope) => getApp(scope) === 'google' ? 'Google Calendar' : 'Apple Calendar';
+  const scopeName = (scope) => scope === 'all' ? t('calendarSync.scope.all') : t('calendarSync.scope.my');
+  const appLabel  = (scope) => getApp(scope) === 'google' ? t('calendarSync.app.google') : t('calendarSync.app.apple');
 
   // Shared header row (title + optional Back + close), reused by every view.
   const headerRow = (back) => `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-        ${back ? `<button type="button" data-action="cal-back" aria-label="Back" style="background:none;border:none;font-size:22px;line-height:1;color:#2e7d51;cursor:pointer;padding:0 2px 0 0;font-family:inherit;">&#8249;</button>` : ''}
-        <div class="sheet-title" style="margin-bottom:0;flex:1;">Sync to Calendar</div>
-        <button type="button" class="menu-close" data-action="close-sheet" aria-label="Close" style="position:static;">&#10005;</button>
+        ${back ? `<button type="button" data-action="cal-back" aria-label="${t('calendarSync.aria.back')}" style="background:none;border:none;font-size:22px;line-height:1;color:#2e7d51;cursor:pointer;padding:0 2px 0 0;font-family:inherit;">&#8249;</button>` : ''}
+        <div class="sheet-title" style="margin-bottom:0;flex:1;">${t('menu.item.syncCalendar')}</div>
+        <button type="button" class="menu-close" data-action="close-sheet" aria-label="${t('calendarSync.aria.close')}" style="position:static;">&#10005;</button>
       </div>`;
 
   // Segmented Calendar-app chooser (#373), iOS-only. Shared by configure + switch.
@@ -4520,26 +5070,26 @@ function openCalendarSyncSheet() {
     + `box-shadow:${active ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'};`;
   const appChooserFor = (choice) => !isIOS() ? '' : `
         <div style="margin-bottom:16px;">
-          <div class="manage-section-label" style="margin:0 0 10px;">Calendar app</div>
+          <div class="manage-section-label" style="margin:0 0 10px;">${t('calendarSync.state1.calendarAppLabel')}</div>
           <div style="display:flex;gap:6px;background:#f4f6f2;border-radius:10px;padding:4px;">
-            <button type="button" data-action="cal-app-toggle" data-app="apple" style="${segStyle(choice === 'apple')}">Apple Calendar</button>
-            <button type="button" data-action="cal-app-toggle" data-app="google" style="${segStyle(choice !== 'apple')}">Google Calendar</button>
+            <button type="button" data-action="cal-app-toggle" data-app="apple" style="${segStyle(choice === 'apple')}">${t('calendarSync.app.apple')}</button>
+            <button type="button" data-action="cal-app-toggle" data-app="google" style="${segStyle(choice !== 'apple')}">${t('calendarSync.app.google')}</button>
           </div>
         </div>`;
 
   // Human-readable schedule line for a subscription card.
   const scheduleText = (m) => {
     const wd = toHHMM(m?.calendar_time) || '20:00';
-    if (m?.calendar_weekend_time == null) return `Daily at ${to12h(wd)}`;
+    if (m?.calendar_weekend_time == null) return t('calendarSync.schedule.daily', { time: to12h(wd) });
     const we = toHHMM(m?.calendar_weekend_time) || wd;
-    return `Weekdays ${to12h(wd)} · Weekends ${to12h(we)}`;
+    return t('calendarSync.schedule.split', { weekday: to12h(wd), weekend: to12h(we) });
   };
 
   // Platform/app-specific feed-removal copy (relocated from #365b's "start over"
   // block). Used by both Switch App and Unsubscribe.
   const removeFeedCopy = (scope) => getApp(scope) === 'google'
-    ? `In Google Calendar, open <strong>Settings &rarr; the Plant Care calendar</strong> and choose <strong>Unsubscribe</strong>. This only removes the calendar feed, not your Plant Care account.`
-    : `Go to <strong>Settings &rarr; Calendar &rarr; Accounts</strong>, find the Plant Care feed, and tap <strong>Delete Account</strong> — this only removes the calendar feed, not your Plant Care account.`;
+    ? t('calendarSync.removeFeed.google')
+    : t('calendarSync.removeFeed.apple');
 
   // Builds every view except 'configure' (State 1), which falls through to the
   // main render() body below. Each view supplies its own body; the shared shell
@@ -4576,14 +5126,14 @@ function openCalendarSyncSheet() {
             </div>
           </div>
           <div class="sub-actions">
-            <div class="sub-action" data-action="cal-modify" data-scope="${scope}">Modify</div>
-            ${isIOS() ? `<div class="sub-action" data-action="cal-switch" data-scope="${scope}">Switch App</div>` : ''}
-            <div class="sub-action danger" data-action="cal-unsub" data-scope="${scope}">Unsubscribe</div>
+            <div class="sub-action" data-action="cal-modify" data-scope="${scope}">${t('calendarSync.action.modify')}</div>
+            ${isIOS() ? `<div class="sub-action" data-action="cal-switch" data-scope="${scope}">${t('calendarSync.action.switchApp')}</div>` : ''}
+            <div class="sub-action danger" data-action="cal-unsub" data-scope="${scope}">${t('calendarSync.action.unsubscribe')}</div>
           </div>
         </div>`;
       const scopeBlurb = (scope) => scope === 'all'
-        ? 'Every task across your household.'
-        : 'Only tasks assigned to you.';
+        ? t('calendarSync.scope.allBlurb')
+        : t('calendarSync.scope.myBlurb');
       const addCardFor = (scope) => `
         <div class="sub-card">
           <div class="sub-card-top">
@@ -4594,7 +5144,7 @@ function openCalendarSyncSheet() {
             </div>
           </div>
           <div class="sub-actions">
-            <div class="sub-action" data-action="cal-add" data-scope="${scope}">Subscribe</div>
+            <div class="sub-action" data-action="cal-add" data-scope="${scope}">${t('calendarSync.action.subscribe')}</div>
           </div>
         </div>`;
       const cards = [];
@@ -4604,58 +5154,58 @@ function openCalendarSyncSheet() {
       if (!mySub)  addRows.push(addCardFor('my'));
       if (!allSub) addRows.push(addCardFor('all'));
       body = `${styleBlock}
-        <div class="section-label">ACTIVE SYNCS</div>
-        ${cards.join('') || `<p style="font-size:13px;color:var(--text-muted);margin:0 0 4px;">No calendar syncs yet — add one below.</p>`}
+        <div class="section-label">${t('calendarSync.options.activeSyncs')}</div>
+        ${cards.join('') || `<p style="font-size:13px;color:var(--text-muted);margin:0 0 4px;">${t('calendarSync.options.noSyncs')}</p>`}
         ${addRows.join('')}
         <div class="option-card" data-action="cal-help" style="margin-top:20px;">
           <div class="option-icon">&#10067;</div>
           <div>
-            <div class="option-title">Get Help</div>
-            <div class="option-sub">Troubleshooting &amp; tips</div>
+            <div class="option-title">${t('calendarSync.options.getHelp')}</div>
+            <div class="option-sub">${t('calendarSync.options.getHelpSub')}</div>
           </div>
           <div class="option-chevron">&#8250;</div>
         </div>`;
     } else if (view === 'help') {
       body = `
-        <div style="font-size:16px;font-weight:600;color:#1a2e1a;margin-bottom:12px;">Troubleshooting</div>
+        <div style="font-size:16px;font-weight:600;color:#1a2e1a;margin-bottom:12px;">${t('calendarSync.getHelp.title')}</div>
         <ol style="margin:0;padding:0;list-style:none;">
           <li style="display:flex;gap:8px;font-size:12.5px;color:#4b5563;line-height:1.55;margin-bottom:10px;">
             <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">1.</span>
-            <span>Wait a minute — Calendar can take a moment to sync after adding a new feed.</span>
+            <span>${t('calendarSync.getHelp.item1')}</span>
           </li>
           <li style="display:flex;gap:8px;font-size:12.5px;color:#4b5563;line-height:1.55;margin-bottom:10px;">
             <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">2.</span>
-            <span>Open the Calendar app directly and pull down to refresh.</span>
+            <span>${t('calendarSync.getHelp.item2')}</span>
           </li>
           <li style="display:flex;gap:8px;font-size:12.5px;color:#4b5563;line-height:1.55;margin-bottom:10px;">
             <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">3.</span>
-            <span>Make sure the Plant Care calendar is visible — tap Calendars at the bottom and check it's enabled.</span>
+            <span>${t('calendarSync.getHelp.item3')}</span>
           </li>
           <li style="display:flex;gap:8px;font-size:12.5px;color:#4b5563;line-height:1.55;margin-bottom:10px;">
             <span style="font-weight:700;color:#2e7d51;flex-shrink:0;">4.</span>
-            <span>If you don't see events after subscribing, check that the calendar is checked/visible in your calendar app's list.</span>
+            <span>${t('calendarSync.getHelp.item4')}</span>
           </li>
         </ol>`;
     } else if (view === 'switch') {
-      const chosen = calendarAppChoice === 'apple' ? 'Apple Calendar' : 'Google Calendar';
+      const chosen = calendarAppChoice === 'apple' ? t('calendarSync.app.apple') : t('calendarSync.app.google');
       body = `
-        <div style="font-size:16px;font-weight:600;color:#1a2e1a;margin-bottom:6px;">Switch calendar app</div>
-        <p style="font-size:13px;color:var(--text-muted);line-height:1.5;margin:0 0 14px;">First remove the current ${scopeName(activeScope)} feed from ${appLabel(activeScope)}, then pick the new app and subscribe again.</p>
+        <div style="font-size:16px;font-weight:600;color:#1a2e1a;margin-bottom:6px;">${t('calendarSync.switch.title')}</div>
+        <p style="font-size:13px;color:var(--text-muted);line-height:1.5;margin:0 0 14px;">${t('calendarSync.switch.intro', { scope: scopeName(activeScope), app: appLabel(activeScope) })}</p>
         <div style="background:#f4f6f2;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#4b5563;line-height:1.6;">${removeFeedCopy(activeScope)}</div>
         ${appChooserFor(calendarAppChoice)}
-        <div style="background:#f4f6f2;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text-muted);margin-bottom:16px;">Tapping Subscribe will open ${chosen}. Tap Allow when prompted to add the feed.</div>
-        <button type="button" class="btn btn-primary" id="cal-subscribe-btn" style="width:100%;">Subscribe</button>`;
+        <div style="background:#f4f6f2;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text-muted);margin-bottom:16px;">${t('calendarSync.handoffNotice', { app: chosen })}</div>
+        <button type="button" class="btn btn-primary" id="cal-subscribe-btn" style="width:100%;">${t('calendarSync.action.subscribe')}</button>`;
     } else if (view === 'unsubscribe') {
       body = `
-        <div style="font-size:16px;font-weight:600;color:#1a2e1a;margin-bottom:6px;">Unsubscribe &middot; ${scopeName(activeScope)}</div>
-        <p style="font-size:13px;color:var(--text-muted);line-height:1.5;margin:0 0 14px;">To stop these events, remove the feed from your calendar app:</p>
+        <div style="font-size:16px;font-weight:600;color:#1a2e1a;margin-bottom:6px;">${t('calendarSync.action.unsubscribe')} &middot; ${scopeName(activeScope)}</div>
+        <p style="font-size:13px;color:var(--text-muted);line-height:1.5;margin:0 0 14px;">${t('calendarSync.unsubscribe.body')}</p>
         <div style="background:#f4f6f2;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#4b5563;line-height:1.6;">${removeFeedCopy(activeScope)}</div>
-        <button type="button" class="btn btn-primary" data-action="cal-unsub-confirm" data-scope="${activeScope}" style="width:100%;">I've removed it</button>`;
+        <button type="button" class="btn btn-primary" data-action="cal-unsub-confirm" data-scope="${activeScope}" style="width:100%;">${t('calendarSync.unsubscribe.confirm')}</button>`;
     }
 
     openSheet(`<div id="cal-sync-body">
       ${headerRow(back)}
-      <p style="font-size:13px;color:var(--text-muted);line-height:1.45;margin:0 0 18px;">Tasks appear as daily events in your calendar app.</p>
+      <p style="font-size:13px;color:var(--text-muted);line-height:1.45;margin:0 0 18px;">${t('calendarSync.intro')}</p>
       ${body}
     </div>`);
     wire();
@@ -4705,14 +5255,14 @@ function openCalendarSyncSheet() {
       // auto-route to Google, so their handoff copy stays "your Calendar app".
       const showAppChooser = isIOS();
       const appleActive    = calendarAppChoice === 'apple';
-      const chosenAppName  = appleActive ? 'Apple Calendar' : 'Google Calendar';
-      const handoffApp     = showAppChooser ? chosenAppName : 'your Calendar app';
+      const chosenAppName  = appleActive ? t('calendarSync.app.apple') : t('calendarSync.app.google');
+      const handoffApp     = showAppChooser ? chosenAppName : t('calendarSync.state1.yourCalendarApp');
 
       const appChooserHtml = appChooserFor(calendarAppChoice);
 
       feedBlock = `
         <div style="margin-bottom:16px;">
-          <div class="manage-section-label" style="margin:0 0 10px;">Choose a feed</div>
+          <div class="manage-section-label" style="margin:0 0 10px;">${t('calendarSync.state1.chooseFeed')}</div>
 
           <div data-action="cal-scope-toggle" data-scope="my"
             style="border:1.5px solid ${myActive ? '#2e7d51' : '#e5e7eb'};border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;background:${myActive ? '#f0faf4' : '#fff'};">
@@ -4720,8 +5270,8 @@ function openCalendarSyncSheet() {
               ${myActive ? '<div style="width:6px;height:6px;border-radius:50%;background:#fff;"></div>' : ''}
             </div>
             <div>
-              <div style="font-size:14px;font-weight:500;color:${myActive ? '#2e7d51' : '#1a1a1a'};margin-bottom:2px;">My tasks</div>
-              <div style="font-size:12px;color:#6b7280;line-height:1.45;">Only tasks assigned to you.</div>
+              <div style="font-size:14px;font-weight:500;color:${myActive ? '#2e7d51' : '#1a1a1a'};margin-bottom:2px;">${t('calendarSync.scope.my')}</div>
+              <div style="font-size:12px;color:#6b7280;line-height:1.45;">${t('calendarSync.scope.myBlurb')}</div>
             </div>
           </div>
 
@@ -4731,39 +5281,39 @@ function openCalendarSyncSheet() {
               ${!myActive ? '<div style="width:6px;height:6px;border-radius:50%;background:#fff;"></div>' : ''}
             </div>
             <div>
-              <div style="font-size:14px;font-weight:500;color:${!myActive ? '#2e7d51' : '#1a1a1a'};margin-bottom:2px;">All household tasks</div>
-              <div style="font-size:12px;color:#6b7280;line-height:1.45;">Every task across your household.</div>
+              <div style="font-size:14px;font-weight:500;color:${!myActive ? '#2e7d51' : '#1a1a1a'};margin-bottom:2px;">${t('calendarSync.scope.all')}</div>
+              <div style="font-size:12px;color:#6b7280;line-height:1.45;">${t('calendarSync.scope.allBlurb')}</div>
             </div>
           </div>
         </div>
         ${appChooserHtml}
         <div style="background:#f4f6f2;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text-muted);margin-bottom:16px;">
-          Tapping Subscribe will open ${handoffApp}. Tap Allow when prompted to add the feed.
+          ${t('calendarSync.handoffNotice', { app: handoffApp })}
         </div>
-        <button type="button" class="btn btn-primary" id="cal-subscribe-btn" style="width:100%;">Subscribe</button>`;
+        <button type="button" class="btn btn-primary" id="cal-subscribe-btn" style="width:100%;">${t('calendarSync.action.subscribe')}</button>`;
     }
 
     openSheet(`
       ${headerRow(cameFromOptions)}
-      <p style="font-size:13px;color:var(--text-muted);line-height:1.45;margin:0 0 18px;">Tasks appear as daily events in your calendar app.</p>
+      <p style="font-size:13px;color:var(--text-muted);line-height:1.45;margin:0 0 18px;">${t('calendarSync.intro')}</p>
 
       <div style="background:#eef7f1;border-radius:12px;padding:14px 14px 6px;">
-        <div class="manage-section-label" style="margin:0 0 10px;">Schedule time</div>
+        <div class="manage-section-label" style="margin:0 0 10px;">${t('calendarSync.state1.scheduleTime')}</div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
-          <span style="font-size:14px;font-weight:500;color:#1a2e1a;" id="cal-weekday-label">${weekendEnabled ? 'Mon &ndash; Fri' : 'All days'}</span>
+          <span style="font-size:14px;font-weight:500;color:#1a2e1a;" id="cal-weekday-label">${weekendEnabled ? t('calendarSync.state1.weekdaysLabel') : t('calendarSync.state1.allDaysLabel')}</span>
           ${timeSelect('cal-weekday-time', weekdayTime, false)}
         </div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
-          <span style="font-size:14px;font-weight:500;color:#1a2e1a;">Different time on weekends</span>
+          <span style="font-size:14px;font-weight:500;color:#1a2e1a;">${t('calendarSync.state1.weekendToggle')}</span>
           <button type="button" class="task-toggle-btn${weekendEnabled ? ' on' : ''}" id="cal-weekend-toggle" role="switch" aria-checked="${weekendEnabled}">
             <span class="task-toggle-knob"></span>
           </button>
         </div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
-          <span style="font-size:14px;font-weight:500;color:#1a2e1a;${weekendEnabled ? '' : 'opacity:0.35;'}" id="cal-weekend-label">Sat &amp; Sun</span>
+          <span style="font-size:14px;font-weight:500;color:#1a2e1a;${weekendEnabled ? '' : 'opacity:0.35;'}" id="cal-weekend-label">${t('calendarSync.state1.weekendLabel')}</span>
           ${timeSelect('cal-weekend-time', weekendTime, !weekendEnabled)}
         </div>
       </div>
@@ -4804,7 +5354,7 @@ function openCalendarSyncSheet() {
       const turningOn = !isOn();
       toggle.setAttribute('aria-checked', String(turningOn));
       toggle.classList.toggle('on', turningOn);
-      if (weekdayLabel) weekdayLabel.innerHTML = turningOn ? 'Mon &ndash; Fri' : 'All days';
+      if (weekdayLabel) weekdayLabel.innerHTML = turningOn ? t('calendarSync.state1.weekdaysLabel') : t('calendarSync.state1.allDaysLabel');
       if (turningOn) {
         const v = lastCustomWeekend || weekdayInput.value || '20:00';
         weekendInput.value = v;
@@ -4896,7 +5446,7 @@ async function handleCopyCalendarLink(btn) {
     return;
   }
   const original = btn.textContent;
-  btn.textContent = 'Copied!';
+  btn.textContent = t('calendarSync.copied');
   btn.disabled = true;
   setTimeout(() => {
     btn.textContent = original;
@@ -4908,53 +5458,53 @@ function renderMenuPanel() {
   document.getElementById('menu-content').innerHTML = `
     <button class="menu-close" data-action="close-menu">&#10005;</button>
     <div class="menu-section">
-      <div class="menu-section-title">Profile</div>
+      <div class="menu-section-title">${t('menu.section.profile')}</div>
       <div class="menu-user-name">&#128100; ${escapeHtml(activeUser)}</div>
     </div>
     <div class="menu-section">
-      <div class="menu-section-title">Reminders & Notifications</div>
+      <div class="menu-section-title">${t('menu.section.reminders')}</div>
       ${('Notification' in window && Notification.permission === 'denied')
-        ? `<button class="menu-item" data-action="menu-notifications">🔔 Notifications &middot; <span style="color:#c0392b;">Blocked</span></button>
-        <div style="padding:0 20px 12px;font-size:12px;color:#999;line-height:1.4;">To turn them on: <strong>${isIOS() ? 'iPhone Settings &rarr; Plant Care &rarr; Notifications' : 'Android Settings &rarr; Apps &rarr; Plant Care &rarr; Notifications'}</strong>.</div>`
+        ? `<button class="menu-item" data-action="menu-notifications">🔔 ${t('menu.notifications.label')} &middot; <span style="color:#c0392b;">${t('menu.notifications.blocked')}</span></button>
+        <div style="padding:0 20px 12px;font-size:12px;color:#999;line-height:1.4;">${t('onboarding.reminders.blockedBody', { path: isIOS() ? t('onboarding.reminders.blockedPathIos') : t('onboarding.reminders.blockedPathAndroid') })}</div>`
         : membersCache.find(m => m.id === currentMemberId)?.notifications_enabled
-        ? `<button class="menu-item" style="color:#3a6b3a;opacity:0.7;" disabled>🔔 Notifications &middot; On</button>`
-        : `<button class="menu-item" data-action="menu-notifications">🔔 Notifications &middot; <span style="color:#aaa;">Off</span></button>`}
-      <button class="menu-item" data-action="open-calendar-sync">📅 Sync to Calendar</button>
+        ? `<button class="menu-item" style="color:#3a6b3a;opacity:0.7;" disabled>🔔 ${t('menu.notifications.label')} &middot; ${t('menu.notifications.on')}</button>`
+        : `<button class="menu-item" data-action="menu-notifications">🔔 ${t('menu.notifications.label')} &middot; <span style="color:#aaa;">${t('menu.notifications.off')}</span></button>`}
+      <button class="menu-item" data-action="open-calendar-sync">📅 ${t('menu.item.syncCalendar')}</button>
     </div>
     <div class="menu-section">
-      <div class="menu-section-title">Account</div>
-      <button class="menu-item" data-action="change-password">Change Password</button>
-      <button class="menu-item menu-item-danger" data-action="menu-sign-out">Sign Out</button>
+      <div class="menu-section-title">${t('menu.section.account')}</div>
+      <button class="menu-item" data-action="change-password">${t('menu.item.changePassword')}</button>
+      <button class="menu-item menu-item-danger" data-action="menu-sign-out">${t('menu.item.signOut')}</button>
     </div>
   `;
 }
 
 function renderNotificationsSheet() {
   openSheet(`
-    <div class="sheet-title">Notifications</div>
-    <p style="font-size:14px;color:#555;line-height:1.5;margin-bottom:20px;">Get a heads-up on your phone whenever someone in your household completes a care task.</p>
+    <div class="sheet-title">${t('menu.notifications.label')}</div>
+    <p style="font-size:14px;color:#555;line-height:1.5;margin-bottom:20px;">${t('menu.notifications.body')}</p>
     <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="close-sheet">Cancel</button>
-      <button class="btn btn-primary" data-action="sheet-enable-notifications">Enable</button>
+      <button class="btn btn-ghost" data-action="close-sheet">${t('taskSheet.cancel')}</button>
+      <button class="btn btn-primary" data-action="sheet-enable-notifications">${t('menu.notifications.enable')}</button>
     </div>
   `);
 }
 
 function renderChangePasswordSheet() {
   openSheet(`
-    <div class="sheet-title">Change Password</div>
+    <div class="sheet-title">${t('menu.item.changePassword')}</div>
     <div class="form-group">
-      <label class="form-label">New password</label>
-      <input type="password" class="form-input" id="sheet-new-password" placeholder="At least 8 characters" autocomplete="new-password">
+      <label class="form-label">${t('menu.changePassword.newLabel')}</label>
+      <input type="password" class="form-input" id="sheet-new-password" placeholder="${t('menu.changePassword.newPlaceholder')}" autocomplete="new-password">
     </div>
     <div class="form-group">
-      <label class="form-label">Confirm password</label>
-      <input type="password" class="form-input" id="sheet-confirm-password" placeholder="Repeat new password" autocomplete="new-password">
+      <label class="form-label">${t('menu.changePassword.confirmLabel')}</label>
+      <input type="password" class="form-input" id="sheet-confirm-password" placeholder="${t('menu.changePassword.confirmPlaceholder')}" autocomplete="new-password">
     </div>
     <div id="change-password-error" style="color:var(--due);font-size:14px;margin-bottom:8px;display:none;"></div>
     <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="close-sheet">Cancel</button>
-      <button class="btn btn-primary" data-action="save-change-password">Save</button>
+      <button class="btn btn-ghost" data-action="close-sheet">${t('taskSheet.cancel')}</button>
+      <button class="btn btn-primary" data-action="save-change-password">${t('auth.reset.save')}</button>
     </div>
   `);
 }
@@ -4970,8 +5520,8 @@ async function handleChangePassword() {
     errorEl.style.display = 'block';
   };
 
-  if (password.length < 8) { showError('Password must be at least 8 characters.'); return; }
-  if (password !== confirm) { showError('Passwords do not match.'); return; }
+  if (password.length < 8) { showError(t('menu.changePassword.errorTooShort')); return; }
+  if (password !== confirm) { showError(t('auth.reset.errorMismatch')); return; }
 
   isSaving = true;
   try {
@@ -4979,7 +5529,7 @@ async function handleChangePassword() {
     if (error) { showError(error.message); return; }
 
     closeSheet();
-    showToast('&#128274; Password updated!');
+    showToast(t('menu.toast.passwordUpdated'));
   } finally {
     isSaving = false;
   }
@@ -5030,7 +5580,7 @@ function renderEditTaskSheet(plantId, taskId) {
       <div style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;">
         <div style="font-size:15px;font-weight:600;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</div>
         <div style="font-size:12px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant?.name ?? '')}</div>
-        ${isCustom ? `<div style="font-size:10px;color:#3a6b3a;margin-top:2px;">tap icon to change</div>` : ''}
+        ${isCustom ? `<div style="font-size:10px;color:#3a6b3a;margin-top:2px;">${t('taskSheet.icon.tapToChange')}</div>` : ''}
       </div>
     </div>
 
@@ -5042,23 +5592,23 @@ function renderEditTaskSheet(plantId, taskId) {
     </div>
 
     <div style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
-      <label class="form-label" style="${rowLabelStyle}">Task name</label>
+      <label class="form-label" style="${rowLabelStyle}">${t('taskSheet.field.taskName')}</label>
       <input type="text" class="form-input" id="sheet-task-name" value="${escapeHtml(task.name ?? '')}" style="background:#f8f8f6;border:0.5px solid #e0e0dc;border-radius:8px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box;">
     </div>` : ''}
 
     <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
-      <label class="form-label" style="font-size:11px;color:#8a8d86;margin:0;text-transform:none;font-weight:500;letter-spacing:normal;flex-shrink:0;">Owner</label>
+      <label class="form-label" style="font-size:11px;color:#8a8d86;margin:0;text-transform:none;font-weight:500;letter-spacing:normal;flex-shrink:0;">${t('taskSheet.field.owner')}</label>
       <div class="owner-pill-group" style="flex:1;display:flex;gap:6px;flex-wrap:wrap;margin:0;">${renderOwnerPills(task.owner)}</div>
     </div>
 
     <div id="task-due-home"></div>
     <div id="task-due-field" style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
-      <label class="form-label" id="task-due-label" style="${rowLabelStyle}">Due date</label>
+      <label class="form-label" id="task-due-label" style="${rowLabelStyle}">${t('taskSheet.field.dueDate')}</label>
       ${renderDateSelectHtml('task-override', overrideDate, curYear, curYear + 2)}
     </div>
 
     <div class="task-toggle-row${isRepeating ? ' task-toggle-row--expanded' : ''}" id="repeating-toggle-row" data-action="toggle-repeating-task" style="padding:10px 16px;">
-      <span class="task-toggle-label">Repeating task</span>
+      <span class="task-toggle-label">${t('taskSheet.field.repeating')}</span>
       <button class="task-toggle-btn${isRepeating ? ' on' : ''}" id="repeating-toggle" role="switch" aria-checked="${isRepeating}" type="button">
         <span class="task-toggle-knob"></span>
       </button>
@@ -5067,15 +5617,15 @@ function renderEditTaskSheet(plantId, taskId) {
     <div id="task-recurrence-block" style="${isRepeating ? '' : 'display:none;'}padding:0 16px 10px;">
       <div style="background:#f4f6f2;border-radius:10px;padding:8px 10px;">
         <div class="recurrence-type-toggle" style="margin-bottom:8px;">
-          <div class="recurrence-option${recType === 'interval' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">Every X days</div>
-          <div class="recurrence-option${recType === 'weekdays' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">Days of week</div>
-          <div class="recurrence-option${recType === 'yearly' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="yearly" style="font-size:12px;padding:5px 8px;">Yearly</div>
+          <div class="recurrence-option${recType === 'interval' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.interval')}</div>
+          <div class="recurrence-option${recType === 'weekdays' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.weekdays')}</div>
+          <div class="recurrence-option${recType === 'yearly' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="yearly" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.yearly')}</div>
         </div>
         <div id="recurrence-container" class="recurrence-${isRepeating ? recType : 'one-off'}">
           <div class="recurrence-interval-section form-group" style="margin:0;">
             <div class="freq-row">
               <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="${task.frequencyDays}" style="width:auto;min-width:52px;font-size:13px;padding:5px 8px;overflow:visible;text-overflow:unset;">
-              <span style="font-size:13px;">days between tasks</span>
+              <span style="font-size:13px;">${t('taskSheet.recurrence.daysBetween')}</span>
             </div>
           </div>
           <div class="recurrence-weekdays-section form-group" style="margin:0;">
@@ -5089,8 +5639,8 @@ function renderEditTaskSheet(plantId, taskId) {
 
     <div id="pause-toggle-row" class="task-toggle-row task-toggle-row--sub" data-action="toggle-task-pause" style="${isRepeating ? '' : 'display:none;'}padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
       <div>
-        <div class="task-toggle-label">Pause task</div>
-        <div class="task-toggle-subtitle">Skip until resumed</div>
+        <div class="task-toggle-label">${t('taskSheet.pause.label')}</div>
+        <div class="task-toggle-subtitle">${t('taskSheet.pause.subtitle')}</div>
       </div>
       <button class="task-toggle-btn${isPaused ? ' on' : ''}" id="pause-toggle" role="switch" aria-checked="${isPaused}" type="button">
         <span class="task-toggle-knob"></span>
@@ -5098,13 +5648,13 @@ function renderEditTaskSheet(plantId, taskId) {
     </div>
 
     <div class="task-delete-section" style="padding:10px 16px 6px;">
-      <button class="task-delete-link" data-action="delete-task" data-plant="${plantId}" data-task="${taskId}" style="font-size:13px;">Delete task</button>
+      <button class="task-delete-link" data-action="delete-task" data-plant="${plantId}" data-task="${taskId}" style="font-size:13px;">${t('taskSheet.delete')}</button>
     </div>
 
     <div class="sheet-footer-sticky">
       <div class="sheet-actions" style="padding:8px 16px 14px;">
-        <button class="btn btn-ghost" data-action="sheet-cancel">&#8592; Cancel</button>
-        <button class="btn btn-primary" data-action="sheet-save-task">Save Changes</button>
+        <button class="btn btn-ghost" data-action="sheet-cancel">&#8592; ${t('taskSheet.cancel')}</button>
+        <button class="btn btn-primary" data-action="sheet-save-task">${t('taskSheet.saveChanges')}</button>
       </div>
     </div>
   `);
@@ -5131,7 +5681,7 @@ function renderAddTaskStep1(plantId) {
       <div class="task-type-option task-type-option-disabled">
         <span class="task-type-icon">${cfg.icon}</span>
         <span class="task-type-name">${escapeHtml(cfg.name)}</span>
-        <span class="task-type-assigned">Added</span>
+        <span class="task-type-assigned">${t('taskSheet.type.added')}</span>
       </div>`;
     }
     return `
@@ -5142,16 +5692,16 @@ function renderAddTaskStep1(plantId) {
   }).join('');
 
   openSheet(`
-    <div class="sheet-title">Add Task</div>
+    <div class="sheet-title">${t('taskSheet.step1.title')}</div>
     <div class="task-type-list">
       ${presetOptions}
       <div class="task-type-option task-type-option-custom" data-action="add-task-select-type" data-plant="${plantId}" data-type-key="custom">
         <span class="task-type-icon">✏️</span>
-        <span class="task-type-name">Custom</span>
+        <span class="task-type-name">${t('taskSheet.type.custom')}</span>
       </div>
     </div>
     <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>
+      <button class="btn btn-ghost" data-action="sheet-cancel">${t('taskSheet.cancel')}</button>
     </div>
   `);
 }
@@ -5182,7 +5732,7 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
 
   const plant = getPlant(plantId);
   const headerIcon = isCustom ? CUSTOM_ICONS[0] : cfg.icon;
-  const headerName = isCustom ? 'Custom Task' : cfg.name;
+  const headerName = isCustom ? t('taskSheet.customTask.header') : cfg.name;
 
   const customFields = isCustom ? `
     <div id="edit-task-icon-picker" class="icon-picker" style="display:none;padding:8px 16px;border-bottom:0.5px solid #f0f0ee;">
@@ -5191,8 +5741,8 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
       ).join('')}
     </div>
     <div style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
-      <label class="form-label" style="display:block;font-size:11px;color:#8a8d86;margin:0 0 4px;text-transform:none;font-weight:500;letter-spacing:normal;">Task name</label>
-      <input type="text" class="form-input" id="sheet-custom-name" placeholder="e.g. Mist leaves" autocomplete="off" style="background:#f8f8f6;border:0.5px solid #e0e0dc;border-radius:8px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box;">
+      <label class="form-label" style="display:block;font-size:11px;color:#8a8d86;margin:0 0 4px;text-transform:none;font-weight:500;letter-spacing:normal;">${t('taskSheet.field.taskName')}</label>
+      <input type="text" class="form-input" id="sheet-custom-name" placeholder="${t('taskSheet.field.taskNamePlaceholder')}" autocomplete="off" style="background:#f8f8f6;border:0.5px solid #e0e0dc;border-radius:8px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box;">
     </div>` : '';
 
   const todayVal = todayStr();
@@ -5204,10 +5754,10 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
     ${isOnboarding ? `
     <div style="background:#eef7f1;padding:12px 16px;border-bottom:0.5px solid #d6e6d6;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-        <span style="font-size:13px;font-weight:600;color:#3a6b3a;">Your care task</span>
-        <span style="font-size:11px;font-weight:500;color:#3a6b3a;">Step 2 of 3</span>
+        <span style="font-size:13px;font-weight:600;color:#3a6b3a;">${t('onboarding.addTask.label')}</span>
+        <span style="font-size:11px;font-weight:500;color:#3a6b3a;">${t('onboarding.step.counter', { step: 2 })}</span>
       </div>
-      <div style="font-size:12px;color:#3a6b3a;line-height:1.4;">We've pre-filled a watering task for you. Adjust it or tap Add task to continue.</div>
+      <div style="font-size:12px;color:#3a6b3a;line-height:1.4;">${t('onboarding.addTask.instruction')}</div>
     </div>` : ''}
     <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:0.5px solid #e8ece6;">
       ${isCustom
@@ -5216,25 +5766,25 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
       <div style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;">
         <div style="font-size:15px;font-weight:600;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(headerName)}</div>
         <div style="font-size:12px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant?.name ?? '')}</div>
-        ${isCustom ? `<div style="font-size:10px;color:#3a6b3a;margin-top:2px;">tap icon to change</div>` : ''}
+        ${isCustom ? `<div style="font-size:10px;color:#3a6b3a;margin-top:2px;">${t('taskSheet.icon.tapToChange')}</div>` : ''}
       </div>
     </div>
 
     ${customFields}
 
     <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
-      <label class="form-label" style="font-size:11px;color:#8a8d86;margin:0;text-transform:none;font-weight:500;letter-spacing:normal;flex-shrink:0;">Owner</label>
+      <label class="form-label" style="font-size:11px;color:#8a8d86;margin:0;text-transform:none;font-weight:500;letter-spacing:normal;flex-shrink:0;">${t('taskSheet.field.owner')}</label>
       <div class="owner-pill-group" style="flex:1;display:flex;gap:6px;flex-wrap:wrap;margin:0;">${ownerPillsHtml}</div>
     </div>
 
     <div id="task-due-home"></div>
     <div id="task-due-field" style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
-      <label class="form-label" id="task-due-label" style="${rowLabelStyle}">Due date</label>
+      <label class="form-label" id="task-due-label" style="${rowLabelStyle}">${t('taskSheet.field.dueDate')}</label>
       ${renderDateSelectHtml('task-due-oneoff', todayVal, curYear, curYear + 2)}
     </div>
 
     <div class="task-toggle-row${repeating ? ' task-toggle-row--expanded' : ''}" id="repeating-toggle-row" data-action="toggle-repeating-task" style="padding:10px 16px;">
-      <span class="task-toggle-label">Repeating task</span>
+      <span class="task-toggle-label">${t('taskSheet.field.repeating')}</span>
       <button class="task-toggle-btn${repeating ? ' on' : ''}" id="repeating-toggle" role="switch" aria-checked="${repeating}" type="button">
         <span class="task-toggle-knob"></span>
       </button>
@@ -5243,15 +5793,15 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
     <div id="task-recurrence-block" style="${repeating ? '' : 'display:none;'}padding:0 16px 10px;">
       <div style="background:#f4f6f2;border-radius:10px;padding:8px 10px;">
         <div class="recurrence-type-toggle" style="margin-bottom:8px;">
-          <div class="recurrence-option${recType === 'interval' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">Every X days</div>
-          <div class="recurrence-option${recType === 'weekdays' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">Days of week</div>
-          <div class="recurrence-option${recType === 'yearly' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="yearly" style="font-size:12px;padding:5px 8px;">Yearly</div>
+          <div class="recurrence-option${recType === 'interval' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.interval')}</div>
+          <div class="recurrence-option${recType === 'weekdays' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.weekdays')}</div>
+          <div class="recurrence-option${recType === 'yearly' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="yearly" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.yearly')}</div>
         </div>
         <div id="recurrence-container" class="recurrence-${repeating ? recType : 'one-off'}">
           <div class="recurrence-interval-section form-group" style="margin:0;">
             <div class="freq-row">
               <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="${freqValue}" style="width:auto;min-width:52px;font-size:13px;padding:5px 8px;overflow:visible;text-overflow:unset;">
-              <span style="font-size:13px;">days between tasks</span>
+              <span style="font-size:13px;">${t('taskSheet.recurrence.daysBetween')}</span>
             </div>
           </div>
           <div class="recurrence-weekdays-section form-group" style="margin:0;">
@@ -5266,9 +5816,9 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
     <div class="sheet-footer-sticky">
       <div class="sheet-actions" style="padding:8px 16px 14px;">
         ${isOnboarding
-          ? `<button class="btn btn-ghost" data-action="sheet-cancel">Cancel</button>`
-          : `<button class="btn btn-ghost" data-action="add-task-back" data-plant="${plantId}">&#8592; Back</button>`}
-        <button class="btn btn-primary" data-action="sheet-save-new-task">Add Task</button>
+          ? `<button class="btn btn-ghost" data-action="sheet-cancel">${t('taskSheet.cancel')}</button>`
+          : `<button class="btn btn-ghost" data-action="add-task-back" data-plant="${plantId}">&#8592; ${t('taskSheet.back')}</button>`}
+        <button class="btn btn-primary" data-action="sheet-save-new-task">${t('taskSheet.step2.addButton')}</button>
       </div>
     </div>
   `);
@@ -5285,14 +5835,14 @@ function renderPostTaskNoteSheet(plantId, taskId) {
   state.sheetData = { plantId, taskId };
 
   openSheet(`
-    <div class="sheet-title">Add a note <span class="sheet-title-optional">Optional</span></div>
+    <div class="sheet-title">${t('notes.postTask.title')} <span class="sheet-title-optional">${t('notes.optional')}</span></div>
     <div class="form-group">
-      <textarea class="form-textarea" id="post-task-note-text" placeholder="Describe what you observed..." style="min-height:110px"></textarea>
+      <textarea class="form-textarea" id="post-task-note-text" placeholder="${t('notes.placeholder')}" style="min-height:110px"></textarea>
     </div>
-    <button class="btn btn-ghost post-task-photo-btn" disabled>&#128247; Add photo</button>
+    <button class="btn btn-ghost post-task-photo-btn" disabled>&#128247; ${t('notes.addPhoto')}</button>
     <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="sheet-skip-post-task-note">Skip</button>
-      <button class="btn btn-primary" data-action="sheet-save-post-task-note" data-task="${taskId ?? ''}">Save note</button>
+      <button class="btn btn-ghost" data-action="sheet-skip-post-task-note">${t('notes.postTask.skip')}</button>
+      <button class="btn btn-primary" data-action="sheet-save-post-task-note" data-task="${taskId ?? ''}">${t('notes.saveNote')}</button>
     </div>
   `);
 }
@@ -5302,16 +5852,16 @@ function renderAddNoteSheet(plantId) {
   state.sheetData = { plantId, pendingText: state.sheetData?.pendingText ?? '', pendingPhoto: state.sheetData?.pendingPhoto ?? null };
 
   openSheet(`
-    <div class="sheet-title">Add Note</div>
+    <div class="sheet-title">${t('notes.addNote.title')}</div>
     <div class="form-group">
-      <textarea class="form-textarea" id="sheet-note-text" placeholder="Describe what you observed..." style="min-height:110px">${escapeHtml(state.sheetData.pendingText)}</textarea>
+      <textarea class="form-textarea" id="sheet-note-text" placeholder="${t('notes.placeholder')}" style="min-height:110px">${escapeHtml(state.sheetData.pendingText)}</textarea>
     </div>
     <div id="add-note-photo-area" class="add-note-photo-area">${renderAddNotePhotoArea()}</div>
     <div id="add-note-coach" class="add-note-coach">${renderAddNoteCoachTip(null)}</div>
     <input type="file" id="add-note-file-input" accept="image/*" capture="environment" hidden />
     <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="close-sheet">Cancel</button>
-      <button class="btn btn-primary" data-action="sheet-save-note">Save</button>
+      <button class="btn btn-ghost" data-action="close-sheet">${t('taskSheet.cancel')}</button>
+      <button class="btn btn-primary" data-action="sheet-save-note">${t('auth.reset.save')}</button>
     </div>
   `);
 
@@ -5330,31 +5880,31 @@ function renderAddNotePhotoArea() {
       <div class="add-note-photo-preview">
         <img loading="lazy" class="add-note-photo-thumb" src="${escapeHtml(pending.previewUrl)}" alt="" />
         <div class="add-note-photo-meta">
-          <div class="add-note-photo-meta-title">&#10003; Photo added</div>
-          <button type="button" class="add-note-photo-change" data-action="add-note-pick-photo">Tap to change</button>
+          <div class="add-note-photo-meta-title">&#10003; ${t('addPlant.photo.added')}</div>
+          <button type="button" class="add-note-photo-change" data-action="add-note-pick-photo">${t('photos.tapToChange')}</button>
         </div>
-        <button type="button" class="add-note-photo-remove" data-action="add-note-remove-photo">&#10005; Remove</button>
+        <button type="button" class="add-note-photo-remove" data-action="add-note-remove-photo">&#10005; ${t('addPlant.photo.remove')}</button>
       </div>`;
   }
-  return `<button type="button" class="add-note-photo-btn" data-action="add-note-pick-photo">📷 Add photo</button>`;
+  return `<button type="button" class="add-note-photo-btn" data-action="add-note-pick-photo">📷 ${t('notes.addPhoto')}</button>`;
 }
 
 function renderAddNoteCoachTip(lastPhoto) {
   let thumbHtml = '';
   if (lastPhoto?.storage_url) {
     const dateLabel = lastPhoto.created_at
-      ? new Date(lastPhoto.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      ? new Date(lastPhoto.created_at).toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric' })
       : '';
     thumbHtml = `
       <div class="add-note-coach-last">
         <img loading="lazy" class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
-        <div class="add-note-coach-last-label">Last photo${dateLabel ? ' · ' + escapeHtml(dateLabel) : ''}</div>
+        <div class="add-note-coach-last-label">${t('photos.lastPhoto')}${dateLabel ? ' · ' + escapeHtml(dateLabel) : ''}</div>
       </div>`;
   }
   return `
     <div class="add-note-coach-text">
-      <div class="add-note-coach-title">📐 Match your last photo</div>
-      <div class="add-note-coach-body">Use the same angle/distance. Helps to see progress!</div>
+      <div class="add-note-coach-title">📐 ${t('notes.coach.title')}</div>
+      <div class="add-note-coach-body">${t('notes.coach.body')}</div>
     </div>
     ${thumbHtml}`;
 }
@@ -5385,7 +5935,7 @@ async function handleAddNoteFileSelected(file) {
     refreshAddNotePhotoArea();
   } catch (err) {
     console.error('[fileSelected] error:', err);
-    showToast('Could not load that image');
+    showToast(t('menu.toast.couldNotLoadImage'));
   }
 }
 
@@ -5415,14 +5965,14 @@ function openSlideshow(plantId, originPhotoId) {
   overlay.className = 'photo-slideshow-overlay';
   overlay.innerHTML = `
     <div class="slideshow-topbar">
-      <button type="button" class="slideshow-close" aria-label="Close">&times;</button>
+      <button type="button" class="slideshow-close" aria-label="${t('photos.aria.close')}">&times;</button>
       <div class="slideshow-count"></div>
       <div class="slideshow-plant">${escapeHtml(plant.name ?? '')}</div>
     </div>
     <div class="slideshow-photo-area">
       <img loading="lazy" class="slideshow-photo" alt="" />
-      <button type="button" class="slideshow-nav slideshow-nav-prev" aria-label="Previous">&#8249;</button>
-      <button type="button" class="slideshow-nav slideshow-nav-next" aria-label="Next">&#8250;</button>
+      <button type="button" class="slideshow-nav slideshow-nav-prev" aria-label="${t('photos.aria.previous')}">&#8249;</button>
+      <button type="button" class="slideshow-nav slideshow-nav-next" aria-label="${t('photos.aria.next')}">&#8250;</button>
     </div>
     <div class="slideshow-gap"></div>
     <div class="slideshow-panel">
@@ -5432,7 +5982,7 @@ function openSlideshow(plantId, originPhotoId) {
         <span class="slideshow-date"></span>
         <span class="slideshow-avatar"></span>
       </div>
-      <div class="slideshow-note-label">NOTE</div>
+      <div class="slideshow-note-label">${t('photos.slideshow.noteLabel')}</div>
       <div class="slideshow-note-text"></div>
       <div class="slideshow-divider"></div>
       <div class="slideshow-controls">
@@ -5454,10 +6004,10 @@ function openSlideshow(plantId, originPhotoId) {
   const renderCurrent = () => {
     const note = sequence[currentIndex];
     img.src = note.photoUrl;
-    countEl.textContent = `${currentIndex + 1} of ${sequence.length}`;
+    countEl.textContent = t('photos.slideshow.count', { current: currentIndex + 1, total: sequence.length });
 
     dateEl.textContent = note.createdAt
-      ? new Date(note.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      ? new Date(note.createdAt).toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric', year: 'numeric' })
       : '';
 
     const member        = membersCache.find(m => m.id === note.memberId);
@@ -5471,7 +6021,7 @@ function openSlideshow(plantId, originPhotoId) {
       noteTextEl.textContent = noteText;
       noteTextEl.classList.remove('slideshow-note-text--empty');
     } else {
-      noteTextEl.textContent = 'No note added.';
+      noteTextEl.textContent = t('photos.noNote');
       noteTextEl.classList.add('slideshow-note-text--empty');
     }
 
@@ -5564,7 +6114,7 @@ function openPhotoFullscreen(url, noteId = null, plantId = null, bare = false) {
     const div = document.createElement('div');
     div.className = 'photo-fullscreen-overlay is-zoomed';
     div.innerHTML = `
-      <button type="button" class="photo-fullscreen-close" aria-label="Close">&times;</button>
+      <button type="button" class="photo-fullscreen-close" aria-label="${t('photos.aria.close')}">&times;</button>
       <div class="photo-fullscreen-photo-area">
         <img loading="lazy" src="${escapeHtml(url)}" alt="" />
       </div>
@@ -5607,17 +6157,17 @@ function openPhotoFullscreen(url, noteId = null, plantId = null, bare = false) {
           <div class="photo-fullscreen-photo-count">${photoCount} ${photoCount === 1 ? 'photo' : 'photos'}</div>
         </div>
       </div>
-      <button type="button" class="photo-fullscreen-close" aria-label="Close">&times;</button>
+      <button type="button" class="photo-fullscreen-close" aria-label="${t('photos.aria.close')}">&times;</button>
     </div>
     <div class="photo-fullscreen-photo-card">
       <img loading="lazy" src="${escapeHtml(url)}" alt="" />
-      <button type="button" class="photo-fullscreen-prev" aria-label="Previous">&#8249;</button>
-      <button type="button" class="photo-fullscreen-next" aria-label="Next">&#8250;</button>
+      <button type="button" class="photo-fullscreen-prev" aria-label="${t('photos.aria.previous')}">&#8249;</button>
+      <button type="button" class="photo-fullscreen-next" aria-label="${t('photos.aria.next')}">&#8250;</button>
       <div class="photo-fullscreen-zoom-icon">⤢</div>
     </div>
     <div class="photo-fullscreen-thumbs">${thumbsHtml}</div>
     <div class="photo-fullscreen-meta-card">
-      <div class="photo-fullscreen-note-label">NOTE</div>
+      <div class="photo-fullscreen-note-label">${t('photos.slideshow.noteLabel')}</div>
       <div class="photo-fullscreen-note-text"></div>
       <div class="photo-fullscreen-meta-footer">
         <div class="photo-fullscreen-avatar-row">
@@ -5647,7 +6197,7 @@ function openPhotoFullscreen(url, noteId = null, plantId = null, bare = false) {
 
     if (noteTextEl) {
       const text = (note.note ?? '').trim();
-      noteTextEl.textContent = text || 'No note added.';
+      noteTextEl.textContent = text || t('photos.noNote');
     }
 
     const member = membersCache.find(m => m.id === note.memberId);
@@ -5660,7 +6210,7 @@ function openPhotoFullscreen(url, noteId = null, plantId = null, bare = false) {
     }
     if (dateEl) {
       dateEl.textContent = note.createdAt
-        ? new Date(note.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        ? new Date(note.createdAt).toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric', year: 'numeric' })
         : '';
     }
 
@@ -5718,14 +6268,14 @@ function openPhotoFullscreen(url, noteId = null, plantId = null, bare = false) {
 function renderPhotoCapSheet(plantId) {
   state.sheetMode = 'photo-cap';
   openSheet(`
-    <div class="sheet-title">Photo limit reached</div>
+    <div class="sheet-title">${t('photos.cap.title')}</div>
     <div class="photo-cap-body">
-      <div class="photo-cap-msg">Each plant can have up to ${PHOTO_CAP_PER_PLANT} photos. To add a new one, you'll need to remove an existing photo first.</div>
+      <div class="photo-cap-msg">${t('photos.cap.body', { cap: PHOTO_CAP_PER_PLANT })}</div>
     </div>
     <div class="sheet-actions" style="flex-direction:column;gap:8px;">
-      <button class="btn btn-primary" data-action="photo-cap-delete-oldest" data-plant="${escapeHtml(plantId)}">Delete oldest photo</button>
-      <button class="btn btn-ghost" data-action="photo-cap-manage" data-plant="${escapeHtml(plantId)}">Manage photos</button>
-      <button class="btn btn-ghost" data-action="photo-cap-back">Back</button>
+      <button class="btn btn-primary" data-action="photo-cap-delete-oldest" data-plant="${escapeHtml(plantId)}">${t('photos.cap.deleteOldest')}</button>
+      <button class="btn btn-ghost" data-action="photo-cap-manage" data-plant="${escapeHtml(plantId)}">${t('photos.managePhotos')}</button>
+      <button class="btn btn-ghost" data-action="photo-cap-back">${t('taskSheet.back')}</button>
     </div>
   `);
 }
@@ -5733,28 +6283,28 @@ function renderPhotoCapSheet(plantId) {
 async function renderManagePhotosSheet(plantId) {
   state.sheetMode = 'manage-photos';
   openSheet(`
-    <div class="sheet-title">Manage photos</div>
-    <div class="manage-photos-list" id="manage-photos-list"><div class="manage-photos-loading">Loading…</div></div>
+    <div class="sheet-title">${t('photos.managePhotos')}</div>
+    <div class="manage-photos-list" id="manage-photos-list"><div class="manage-photos-loading">${t('photos.loading')}</div></div>
     <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="photo-cap-back">&#8592; Back</button>
+      <button class="btn btn-ghost" data-action="photo-cap-back">&#8592; ${t('taskSheet.back')}</button>
     </div>
   `);
   const photos = await fetchAllPlantPhotos(plantId);
   const list = document.getElementById('manage-photos-list');
   if (!list || state.sheetMode !== 'manage-photos') return;
   if (photos.length === 0) {
-    list.innerHTML = `<div class="manage-photos-empty">No photos yet.</div>`;
+    list.innerHTML = `<div class="manage-photos-empty">${t('photos.noPhotos')}</div>`;
     return;
   }
   list.innerHTML = photos.map(p => {
     const date = p.created_at
-      ? new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      ? new Date(p.created_at).toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric', year: 'numeric' })
       : '';
     return `
       <div class="manage-photos-row" data-photo-id="${escapeHtml(p.id)}">
         <img loading="lazy" class="manage-photos-thumb" src="${escapeHtml(p.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(p.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
         <div class="manage-photos-date">${escapeHtml(date)}</div>
-        <button class="manage-photos-delete" data-action="manage-photos-delete" data-photo-id="${escapeHtml(p.id)}" data-plant="${escapeHtml(plantId)}" data-note-id="${escapeHtml(p.note_id ?? '')}" data-url="${escapeHtml(p.storage_url ?? '')}">Delete</button>
+        <button class="manage-photos-delete" data-action="manage-photos-delete" data-photo-id="${escapeHtml(p.id)}" data-plant="${escapeHtml(plantId)}" data-note-id="${escapeHtml(p.note_id ?? '')}" data-url="${escapeHtml(p.storage_url ?? '')}">${t('photos.delete')}</button>
       </div>`;
   }).join('');
 }
@@ -5763,34 +6313,34 @@ function renderEditNotePhotoSection(note, lastPhoto, photoMeta) {
   if (note.photoUrl) {
     const dateSrc = photoMeta?.created_at ?? note.createdAt;
     const dateLabel = dateSrc
-      ? new Date(dateSrc).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      ? new Date(dateSrc).toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric', year: 'numeric' })
       : '';
     return `
       <div style="display:flex;align-items:center;gap:12px;padding:8px;background:#fff;border:1px solid #e4e9e0;border-radius:10px;">
         <img loading="lazy" class="notes-tab-thumb" src="${escapeHtml(note.photoUrl)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(note.photoUrl)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
         <div style="flex:1;font-size:13px;color:#1a2e1f;">${escapeHtml(dateLabel)}</div>
-        <button class="manage-photos-delete" data-action="edit-note-delete-photo">Delete</button>
+        <button class="manage-photos-delete" data-action="edit-note-delete-photo">${t('photos.delete')}</button>
       </div>`;
   }
   let coachHtml = '';
   if (lastPhoto?.storage_url) {
     const dateLabel = lastPhoto.created_at
-      ? new Date(lastPhoto.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      ? new Date(lastPhoto.created_at).toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric' })
       : '';
     coachHtml = `
       <div class="add-note-coach" style="margin-top:8px;background:#eef5fc;border:1px solid #b8d4f0;">
         <div class="add-note-coach-text">
-          <div class="add-note-coach-title" style="color:#1a4a7a;">💡 Match your last photo</div>
-          <div class="add-note-coach-body" style="color:#2a5a8a;">Same angle helps track progress!</div>
+          <div class="add-note-coach-title" style="color:#1a4a7a;">💡 ${t('notes.coach.title')}</div>
+          <div class="add-note-coach-body" style="color:#2a5a8a;">${t('notes.coach.bodyAlt')}</div>
         </div>
         <div class="add-note-coach-last">
           <img loading="lazy" class="add-note-coach-last-thumb" src="${escapeHtml(lastPhoto.storage_url)}" alt="" data-action="add-note-view-photo" data-url="${escapeHtml(lastPhoto.storage_url)}" style="width:56px;height:56px;border-radius:8px;border:1.5px solid #7a907f;" />
-          <div class="add-note-coach-last-label" style="color:#5a82aa;">Last photo${dateLabel ? ' · ' + escapeHtml(dateLabel) : ''}</div>
+          <div class="add-note-coach-last-label" style="color:#5a82aa;">${t('photos.lastPhoto')}${dateLabel ? ' · ' + escapeHtml(dateLabel) : ''}</div>
         </div>
       </div>`;
   }
   return `
-    <button type="button" class="add-note-photo-btn" data-action="edit-note-pick-photo">📷 Add photo</button>
+    <button type="button" class="add-note-photo-btn" data-action="edit-note-pick-photo">📷 ${t('notes.addPhoto')}</button>
     ${coachHtml}`;
 }
 
@@ -5842,7 +6392,7 @@ async function handleEditNotePhotoFileSelected(file) {
 
   const count = await countPlantPhotos(plantId);
   if (count >= PHOTO_CAP_PER_PLANT) {
-    showToast('Photo limit reached — manage photos first');
+    showToast(t('menu.toast.photoLimitReached'));
     return;
   }
 
@@ -5851,7 +6401,7 @@ async function handleEditNotePhotoFileSelected(file) {
     blob = await compressImage(file, 1200, 0.8);
   } catch (err) {
     console.error('[editNotePhoto] compress error:', err);
-    showToast('Could not load that image');
+    showToast(t('menu.toast.couldNotLoadImage'));
     return;
   }
   if (!blob) return;
@@ -5876,7 +6426,7 @@ async function handleEditNotePhotoFileSelected(file) {
     await refreshEditNotePhotoSection();
   } catch (err) {
     console.error('[editNotePhoto] upload/attach failed:', err);
-    showToast('Could not save photo');
+    showToast(t('menu.toast.couldNotSavePhoto'));
   }
 }
 
@@ -5894,7 +6444,7 @@ function renderEditNoteSheet(plantId, noteId) {
       <span style="width:36px;height:36px;background:#eef3eb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${escapeHtml(plant.emoji ?? '🪴')}</span>
       <div style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;">
         <div style="font-size:15px;font-weight:600;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name ?? '')}</div>
-        <div style="font-size:12px;color:#8a8d86;">Edit note</div>
+        <div style="font-size:12px;color:#8a8d86;">${t('notes.editNote.subtitle')}</div>
       </div>
     </div>
 
@@ -5906,13 +6456,13 @@ function renderEditNoteSheet(plantId, noteId) {
     <input type="file" id="edit-note-file-input" accept="image/*" capture="environment" hidden />
 
     <div class="task-delete-section" style="padding:4px 16px 6px;">
-      <button class="task-delete-link" data-action="sheet-delete-note" data-plant="${escapeHtml(plantId)}" data-note="${escapeHtml(noteId)}" style="font-size:13px;">Delete note</button>
+      <button class="task-delete-link" data-action="sheet-delete-note" data-plant="${escapeHtml(plantId)}" data-note="${escapeHtml(noteId)}" style="font-size:13px;">${t('notes.deleteNote')}</button>
     </div>
 
     <div class="sheet-footer-sticky">
       <div class="sheet-actions" style="padding:8px 16px 14px;">
-        <button class="btn btn-ghost" data-action="sheet-cancel">&#8592; Cancel</button>
-        <button class="btn btn-primary" data-action="sheet-save-edit-note" data-plant="${escapeHtml(plantId)}" data-note="${escapeHtml(noteId)}">Save Changes</button>
+        <button class="btn btn-ghost" data-action="sheet-cancel">&#8592; ${t('taskSheet.cancel')}</button>
+        <button class="btn btn-primary" data-action="sheet-save-edit-note" data-plant="${escapeHtml(plantId)}" data-note="${escapeHtml(noteId)}">${t('taskSheet.saveChanges')}</button>
       </div>
     </div>
   `);
@@ -5923,8 +6473,8 @@ function renderEditNoteSheet(plantId, noteId) {
 function renderEditPlantStep2Html(plant) {
   const sd = state.sheetData;
   const dateDisplay = plant.dateAcquired
-    ? new Date(plant.dateAcquired + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : 'Set date';
+    ? new Date(plant.dateAcquired + 'T12:00:00').toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric', year: 'numeric' })
+    : t('editPlant.setDate');
   const nameValue = sd.editPlantName ?? plant.name;
 
   let iconHtml;
@@ -5932,37 +6482,37 @@ function renderEditPlantStep2Html(plant) {
   if (sd.editIconMode === 'photo') {
     const photoSrc = sd.pendingPlantPhoto?.previewUrl ?? sd.editExistingPhotoUrl ?? '';
     iconHtml = `<img loading="lazy" src="${escapeHtml(photoSrc)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:1.5px solid #c8c8c8;flex-shrink:0;display:block;box-sizing:border-box;" />`;
-    sublabel = 'Tap Change to retake, pick a new one, or use an icon';
+    sublabel = t('editPlant.sublabelPhoto');
   } else {
     const emoji = sd.selectedEmoji ?? plant.emoji ?? '🪴';
     iconHtml = `<div style="width:40px;height:40px;background:#f0f4f0;border:0.5px solid #d0dcd0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:22px;line-height:1;box-sizing:border-box;">${escapeHtml(emoji)}</div>`;
-    sublabel = 'Tap Change to pick a new icon or add a photo';
+    sublabel = t('editPlant.sublabelEmoji');
   }
 
   return `
-    <div class="sheet-title edit-plant-sheet-title">Edit plant</div>
+    <div class="sheet-title edit-plant-sheet-title">${t('plantDetail.aria.editPlant')}</div>
 
-    <div class="edit-plant-field-label">PLANT ICON</div>
+    <div class="edit-plant-field-label">${t('editPlant.iconLabel')}</div>
     <div id="edit-plant-icon-row" style="display:flex;align-items:center;gap:12px;margin-top:4px;padding-bottom:14px;">
       ${iconHtml}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:500;color:#1a1a1a;">Plant icon</div>
+        <div style="font-size:13px;font-weight:500;color:#1a1a1a;">${t('editPlant.plantIcon')}</div>
         <div style="font-size:11px;color:#888;margin-top:2px;">${sublabel}</div>
       </div>
-      <button data-action="edit-plant-change-icon" style="font-size:12px;color:#3a6b3a;background:transparent;border:0.5px solid #a8c4a8;border-radius:8px;padding:5px 10px;cursor:pointer;font-family:inherit;flex-shrink:0;">Change</button>
+      <button data-action="edit-plant-change-icon" style="font-size:12px;color:#3a6b3a;background:transparent;border:0.5px solid #a8c4a8;border-radius:8px;padding:5px 10px;cursor:pointer;font-family:inherit;flex-shrink:0;">${t('editPlant.change')}</button>
     </div>
     <div style="height:0.5px;background:var(--border);margin-bottom:14px;"></div>
 
-    <div class="edit-plant-field-label" style="margin-top:0;">NAME</div>
+    <div class="edit-plant-field-label" style="margin-top:0;">${t('editPlant.nameLabel')}</div>
     <div id="edit-plant-fields">
-      <input type="text" class="form-input" id="sheet-plant-name" value="${escapeHtml(nameValue)}" placeholder="Plant name">
+      <input type="text" class="form-input" id="sheet-plant-name" value="${escapeHtml(nameValue)}" placeholder="${t('editPlant.namePlaceholder')}">
     </div>
 
-    <div class="edit-plant-field-label" style="margin-top:14px;">ARRIVAL DATE</div>
+    <div class="edit-plant-field-label" style="margin-top:14px;">${t('editPlant.arrivalDateLabel')}</div>
     <div class="arrival-step2-row">
       <div class="arrival-step2-left">
         <span>🌱</span>
-        <span>When did it arrive home?</span>
+        <span>${t('editPlant.whenArrive')}</span>
       </div>
       <label class="arrival-optional-pill${plant.dateAcquired ? ' has-value' : ''}" id="edit-plant-arrival-pill" for="sheet-acquired-date">
         <span id="arrival-date-display">${escapeHtml(dateDisplay)}</span>
@@ -5972,20 +6522,20 @@ function renderEditPlantStep2Html(plant) {
 
     <div style="height:0.5px;background:var(--border);margin-top:20px;"></div>
     <div id="edit-plant-delete-wrap">
-      <button data-action="edit-plant-show-delete" id="edit-plant-delete-btn" style="background:transparent;border:none;color:#c04040;font-size:13px;padding:10px 0;width:100%;text-align:left;cursor:pointer;font-family:inherit;">Delete plant</button>
+      <button data-action="edit-plant-show-delete" id="edit-plant-delete-btn" style="background:transparent;border:none;color:#c04040;font-size:13px;padding:10px 0;width:100%;text-align:left;cursor:pointer;font-family:inherit;">${t('editPlant.deletePlant')}</button>
       <div class="edit-plant-delete-confirm" id="edit-plant-delete-confirm" style="display:none;">
-        <div class="edit-plant-delete-confirm-body">This will permanently delete the plant and all its tasks, notes, and care history. This cannot be undone.</div>
+        <div class="edit-plant-delete-confirm-body">${t('editPlant.deleteConfirmBody')}</div>
         <div class="edit-plant-delete-confirm-actions">
-          <button class="btn btn-ghost" data-action="edit-plant-hide-delete" style="flex:1;">Cancel</button>
-          <button class="btn" data-action="delete-plant" data-plant="${escapeHtml(String(plant.id))}" style="flex:1;background:#c62828;color:#fff;">Yes, delete forever</button>
+          <button class="btn btn-ghost" data-action="edit-plant-hide-delete" style="flex:1;">${t('taskSheet.cancel')}</button>
+          <button class="btn" data-action="delete-plant" data-plant="${escapeHtml(String(plant.id))}" style="flex:1;background:#c62828;color:#fff;">${t('editPlant.deleteConfirmYes')}</button>
         </div>
       </div>
     </div>
     <div style="height:0.5px;background:var(--border);"></div>
 
     <div style="margin-top:14px;display:flex;gap:8px;" id="edit-plant-save-row">
-      <button class="btn btn-ghost" data-action="edit-plant-cancel" style="flex:1;">Cancel</button>
-      <button class="btn btn-primary" data-action="sheet-save-plant" style="flex:1;">Save changes</button>
+      <button class="btn btn-ghost" data-action="edit-plant-cancel" style="flex:1;">${t('taskSheet.cancel')}</button>
+      <button class="btn btn-primary" data-action="sheet-save-plant" style="flex:1;">${t('editPlant.saveChanges')}</button>
     </div>`;
 }
 
@@ -6006,7 +6556,7 @@ function renderEditPlantSheet(plantId) {
   };
 
   openSheet(renderEditPlantStep2Html(plant));
-  attachArrivalDateListener('Set date');
+  attachArrivalDateListener(t('editPlant.setDate'));
 }
 
 async function handleSavePlant() {
@@ -6067,7 +6617,7 @@ async function handleSavePlant() {
 
   closeSheet();
   renderPlantDetail(pid);
-  showToast('✅ Plant saved!');
+  showToast(t('menu.toast.plantSaved'));
   } finally {
     isSaving = false;
   }
@@ -6097,7 +6647,7 @@ async function handleAddPlantFileSelected(file) {
     ));
   } catch (err) {
     console.error('[addPlantFileSelected] error:', err);
-    showToast('Could not load that image');
+    showToast(t('menu.toast.couldNotLoadImage'));
   }
 }
 
@@ -6122,7 +6672,7 @@ async function handleSaveNewPlant() {
 
   try {
   const typedName = state.sheetData.plantName || document.getElementById('sheet-plant-name')?.value?.trim();
-  if (!typedName) { alert('Please enter a plant name.'); reEnable(); return; }
+  if (!typedName) { alert(t('dialog.alertPlantNameRequired')); reEnable(); return; }
 
   const isDuplicate = plants.some(p => p.name.toLowerCase() === typedName.toLowerCase());
   let name;
@@ -6196,7 +6746,7 @@ async function handleSaveNewPlant() {
     closeSheet();
     navigateTo('plant', newPlant.id);
   }
-  showToast('🌱 Plant added!');
+  showToast(t('menu.toast.plantAdded'));
   } catch (err) {
     console.error('handleSaveNewPlant:', err);
     reEnable();
@@ -6220,7 +6770,7 @@ async function handleSaveNewTask() {
   let name, icon, type, customName, customIcon;
   if (isCustom) {
     customName = document.getElementById('sheet-custom-name')?.value?.trim();
-    if (!customName) { alert('Please enter a task name.'); return; }
+    if (!customName) { alert(t('dialog.alertTaskNameRequired')); return; }
     customIcon = document.querySelector('#sheet .icon-option.selected')?.dataset.icon ?? '🌿';
     name = customName;
     icon = customIcon;
@@ -6245,15 +6795,15 @@ async function handleSaveNewTask() {
 
   if (recType === 'interval') {
     const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
-    if (!freq || freq < 1) { alert('Please enter a valid frequency (minimum 1 day).'); return; }
+    if (!freq || freq < 1) { alert(t('dialog.alertFrequencyInvalid')); return; }
     frequencyDays = freq;
   } else if (recType === 'weekdays') {
     weekdays = [...document.querySelectorAll('#sheet .weekday-btn.selected')].map(b => parseInt(b.dataset.day));
-    if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
+    if (weekdays.length === 0) { alert(t('dialog.alertWeekdayRequired')); return; }
   } else if (recType === 'yearly') {
     yearlyMonth = parseInt(document.getElementById('yearly-month')?.value ?? '');
     yearlyDay   = parseInt(document.getElementById('yearly-day')?.value ?? '');
-    if (!yearlyMonth || !yearlyDay) { alert('Please select a month and day.'); return; }
+    if (!yearlyMonth || !yearlyDay) { alert(t('dialog.alertMonthDayRequired')); return; }
   }
 
   // Yearly is anchored by month/day; it has no first-due override.
@@ -6340,7 +6890,7 @@ async function handleSaveNewTask() {
     renderPlantDetail(pid);
   }
   setTimeout(() => { _appEl.style.pointerEvents = ''; }, 350);
-  showToast('✅ Task added!');
+  showToast(t('menu.toast.taskAdded'));
   } finally {
     isSaving = false;
   }
@@ -6435,7 +6985,12 @@ async function handleEvent(e) {
       householdId = newId;
       localStorage.setItem('active_household_id', newId);
       activeTab = 'plants';
-      await loadFromSupabase();
+      showReloadIndicator();
+      try {
+        await loadFromSupabase();
+      } finally {
+        hideReloadIndicator();
+      }
       navigateTo('home');
       break;
     }
@@ -6487,7 +7042,7 @@ async function handleEvent(e) {
         await setNotificationsEnabled(true);
         if (currentMemberId) localStorage.setItem(`reminders_card_dismissed_${currentMemberId}`, 'true');
         await markOnboardingCompleteIfNeeded(); // #403: enabling completes onboarding
-        showToast('Notifications enabled');
+        showToast(t('menu.toast.notificationsEnabled'));
       }
       // On false: a denial flips the card to the OS-blocked state on re-render;
       // any other failure (no SW/PushManager) leaves the full card. No toast either way.
@@ -6529,7 +7084,7 @@ async function handleEvent(e) {
       if (ok) await setNotificationsEnabled(true);
       closeSheet();
       renderMenuPanel(); // re-render so the row reflects the real state
-      showToast(ok ? '🔔 Notifications enabled!' : "Notifications weren't enabled");
+      showToast(ok ? t('menu.toast.notificationsEnabledBang') : t('menu.toast.notificationsNotEnabled'));
       break;
     }
 
@@ -6611,7 +7166,7 @@ async function handleEvent(e) {
       // #341: gate the toast + DB write on the real outcome, not an unconditional write.
       const ok = await subscribeToPush();
       if (ok) await setNotificationsEnabled(true);
-      showToast(ok ? 'Notifications enabled' : "Notifications weren't enabled");
+      showToast(ok ? t('menu.toast.notificationsEnabled') : t('menu.toast.notificationsNotEnabled'));
       renderHome();
       break;
     }
@@ -6873,16 +7428,16 @@ async function handleEvent(e) {
       await deletePlant(plantId);
       closeSheet();
       navigateTo('home');
-      showToast(`🗑️ ${deletedName} deleted`);
+      showToast(`🗑️ ${t('menu.toast.plantDeleted', { name: deletedName })}`);
       break;
     }
 
     case 'delete-task':
-      if (confirm('Permanently delete this task? This cannot be undone.')) {
+      if (confirm(t('dialog.confirmDeleteTask'))) {
         deleteTask(plantId, taskId);
         closeSheet();
         renderPlantDetail(state.plantId);
-        showToast('🗑️ Task deleted!');
+        showToast(t('menu.toast.taskDeleted'));
       }
       break;
 
@@ -6955,7 +7510,7 @@ async function handleEvent(e) {
       state.sheetData.step = 2;
       const editPlant = getPlant(state.sheetData.plantId);
       openSheet(renderEditPlantStep2Html(editPlant));
-      attachArrivalDateListener('Set date');
+      attachArrivalDateListener(t('editPlant.setDate'));
       break;
     }
 
@@ -7039,7 +7594,7 @@ async function handleEvent(e) {
       const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
       const noteToDelete = notes.find(n => n.id === noteId);
       if (!noteToDelete || noteToDelete.memberId !== activeMemberId) break;
-      if (confirm('Delete this note?')) {
+      if (confirm(t('dialog.confirmDeleteNote'))) {
         await deleteNote(noteId);
         renderPlantDetail(state.plantId);
       }
@@ -7058,7 +7613,7 @@ async function handleEvent(e) {
       const _nid = target.dataset.note;
       const textarea = document.getElementById('sheet-edit-note-text');
       const newText = textarea?.value?.trim();
-      if (!newText) { alert('Note cannot be empty.'); return; }
+      if (!newText) { alert(t('dialog.alertNoteEmpty')); return; }
       await updateNote(_nid, newText);
       await loadActivityFeed();
       const _restoreTab = sheetEntryTab;
@@ -7074,7 +7629,7 @@ async function handleEvent(e) {
       const activeMemberId = membersCache.find(m => m.display_name === activeUser)?.id;
       const noteToDelete = notes.find(n => n.id === _nid);
       if (!noteToDelete || noteToDelete.memberId !== activeMemberId) break;
-      if (!confirm('Delete this note?')) break;
+      if (!confirm(t('dialog.confirmDeleteNote'))) break;
       await deleteNote(_nid);
       await loadActivityFeed();
       const _restoreTab = sheetEntryTab;
@@ -7096,10 +7651,10 @@ async function handleEvent(e) {
       if (!_nid) break;
       const _note = notes.find(n => n.id === _nid);
       if (!_note?.photoUrl) break;
-      if (!confirm('Delete this photo?')) break;
+      if (!confirm(t('dialog.confirmDeletePhoto'))) break;
       let _meta = state.sheetData?.editNotePhotoMeta;
       if (!_meta?.id) _meta = await fetchPhotoForNote(_nid);
-      if (!_meta?.id) { showToast('Could not find photo'); break; }
+      if (!_meta?.id) { showToast(t('menu.toast.couldNotFindPhoto')); break; }
       await deletePlantPhoto({ id: _meta.id, storage_url: _meta.storage_url, note_id: _nid });
       if (state.sheetData) state.sheetData.editNotePhotoMeta = null;
       await refreshEditNotePhotoSection();
@@ -7145,7 +7700,7 @@ async function handleEvent(e) {
         state.sheetData.subSheetSnapshot = null;
         const editPlant = getPlant(state.sheetData.plantId);
         openSheet(renderEditPlantStep2Html(editPlant));
-        attachArrivalDateListener('Set date');
+        attachArrivalDateListener(t('editPlant.setDate'));
       } else {
         const emoji = state.sheetData.selectedEmoji || '🪴';
         state.sheetData.selectedEmoji = emoji;
@@ -7318,7 +7873,7 @@ async function handleEvent(e) {
         const { plantId: _pid, taskId: _tid } = state.sheetData;
         const _existTask = getTask(_pid, _tid);
         if ((_existTask?.recurrenceType ?? 'interval') !== 'one-off') {
-          if (!confirm('This will remove the recurrence schedule. The task will become a one-off. Continue?')) break;
+          if (!confirm(t('dialog.confirmRemoveRecurrence'))) break;
         }
       }
 
@@ -7381,15 +7936,15 @@ async function handleEvent(e) {
 
       if (recType === 'interval') {
         const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
-        if (!freq || freq < 1) { alert('Please enter a valid frequency (minimum 1 day).'); return; }
+        if (!freq || freq < 1) { alert(t('dialog.alertFrequencyInvalid')); return; }
         frequencyDays = freq;
       } else if (recType === 'weekdays') {
         weekdays = [...document.querySelectorAll('#sheet .weekday-btn.selected')].map(b => parseInt(b.dataset.day));
-        if (weekdays.length === 0) { alert('Please select at least one day of the week.'); return; }
+        if (weekdays.length === 0) { alert(t('dialog.alertWeekdayRequired')); return; }
       } else if (recType === 'yearly') {
         yearlyMonth = parseInt(document.getElementById('yearly-month')?.value ?? '');
         yearlyDay   = parseInt(document.getElementById('yearly-day')?.value ?? '');
-        if (!yearlyMonth || !yearlyDay) { alert('Please select a month and day.'); return; }
+        if (!yearlyMonth || !yearlyDay) { alert(t('dialog.alertMonthDayRequired')); return; }
       }
 
       const selectedOwner = document.querySelector('#sheet .owner-pill.selected, #sheet .owner-option.selected');
@@ -7434,7 +7989,7 @@ async function handleEvent(e) {
         sheetEntryTab = null;
         renderPlantDetail(pid);
       }
-      showToast('✅ Task saved!');
+      showToast(t('menu.toast.taskSaved'));
       break;
     }
 
@@ -7525,42 +8080,6 @@ async function handleEvent(e) {
     case 'sheet-skip-post-task-note':
       closeSheet();
       break;
-
-    case 'export-data': {
-      const data = localStorage.getItem('plant-care-v1') ?? '[]';
-      const blob = new Blob([data], { type: 'application/json' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href     = url;
-      a.download = 'plant-care-backup.json';
-      a.click();
-      URL.revokeObjectURL(url);
-      break;
-    }
-
-    case 'import-data': {
-      const fileInput = document.createElement('input');
-      fileInput.type   = 'file';
-      fileInput.accept = '.json,application/json';
-      fileInput.addEventListener('change', () => {
-        const file = fileInput.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          try {
-            const parsed = JSON.parse(e.target.result);
-            if (!Array.isArray(parsed)) throw new Error('Invalid format');
-            localStorage.setItem('plant-care-v1', JSON.stringify(parsed));
-            location.reload();
-          } catch (_) {
-            alert('Invalid backup file. Please select a valid plant-care-backup.json file.');
-          }
-        };
-        reader.readAsText(file);
-      });
-      fileInput.click();
-      break;
-    }
 
     case 'plant-detail-tab':
       plantDetailTab = target.dataset.tab;
@@ -7755,7 +8274,7 @@ async function markOnboardingCompleteIfNeeded() {
 // THREE-SELECT DATE PICKERS
 // ============================================================
 
-const SEL_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const SEL_MONTH_NAMES = MONTH_NAMES; // shared source (Brief #44a)
 
 function daysInMonth(year, month) {
   return new Date(year, month, 0).getDate(); // month is 1-indexed
@@ -7775,7 +8294,7 @@ function attachDowLabel(prefix) {
     if (!d || !m || !y) { labelEl.textContent = ''; return; }
     const date = new Date(y, m - 1, d);
     if (isNaN(date.getTime()) || date.getDate() !== d) { labelEl.textContent = ''; return; }
-    labelEl.textContent = date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    labelEl.textContent = date.toLocaleDateString(displayLocale(), { weekday: 'long', month: 'short', day: 'numeric' });
   }
 
   dayEl.addEventListener('change',   update);
@@ -7928,8 +8447,7 @@ function attachFutureDateSelectListeners(prefix) {
 // recurrence state: one-off → "Due date", interval → "First due date",
 // weekdays → "Start from".
 // ===== Yearly recurrence UI helpers (Add/Edit Task sheet) =====
-const YEARLY_MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'];
+const YEARLY_MONTH_NAMES = MONTH_NAMES; // shared source (Brief #44a)
 const YEARLY_MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 // Max selectable day per 1-based month. February is 29 so a Feb 29 anchor is
@@ -7983,12 +8501,12 @@ function updateTaskDueLabel() {
   if (!label) return;
   const toggleBtn = document.getElementById('repeating-toggle');
   const isOn = toggleBtn?.getAttribute('aria-checked') === 'true';
-  if (!isOn) { label.textContent = 'Due date'; return; }
+  if (!isOn) { label.textContent = t('taskSheet.field.dueDate'); return; }
   const container = document.getElementById('recurrence-container');
   // Yearly has no first-due-date field (it's hidden), so nothing to relabel.
   if (container?.classList.contains('recurrence-yearly')) return;
   const rtype = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
-  label.textContent = rtype === 'weekdays' ? 'Start from' : 'First due date';
+  label.textContent = rtype === 'weekdays' ? t('taskSheet.field.startFrom') : t('taskSheet.field.firstDueDate');
 }
 
 // Moves the shared task-due field: outside the recurrence block when one-off,
@@ -8027,8 +8545,8 @@ function updateRecurrenceSummary() {
     const day   = parseInt(document.getElementById('yearly-day')?.value ?? '');
     if (!month || !day) { el.style.display = 'none'; return; }
     el.textContent = (month === 2 && day === 29)
-      ? 'Recurs every year on Feb 29 (Mar 1 in non-leap years)'
-      : `Recurs every year on ${YEARLY_MONTH_SHORT[month - 1]} ${day}`;
+      ? t('taskSheet.recSummary.yearlyLeap')
+      : t('taskSheet.recSummary.yearlyOn', { month: YEARLY_MONTH_SHORT[month - 1], day });
     el.style.display = '';
     return;
   }
@@ -8041,13 +8559,13 @@ function updateRecurrenceSummary() {
 
   const rtype = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
   const fmtDow = (d) => new Date(d + 'T12:00:00')
-    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    .toLocaleDateString(displayLocale(), { weekday: 'short', month: 'short', day: 'numeric' });
 
   if (rtype === 'interval') {
     const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
     if (!freq || freq < 1) { el.style.display = 'none'; return; }
-    const tail = `recurs every ${freq} day${freq === 1 ? '' : 's'}`;
-    const verb = el.dataset.started === 'true' ? 'Started' : 'Starts';
+    const tail = tn('taskSheet.recSummary.everyDays', freq);
+    const verb = el.dataset.started === 'true' ? t('taskSheet.recSummary.started') : t('taskSheet.recSummary.starts');
     el.textContent = `${verb} ${fmtDow(firstDue)} · ${tail}`;
   } else {
     const selected = Array.from(document.querySelectorAll('#sheet .weekday-btn.selected'))
@@ -8055,12 +8573,12 @@ function updateRecurrenceSummary() {
       .filter(n => !Number.isNaN(n))
       .sort(compareWeekdaysMonFirst);
     if (selected.length === 0) { el.style.display = 'none'; return; }
-    const SHORT_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const tail = `recurs every ${selected.map(d => SHORT_DOW[d]).join(', ')}`;
+    const SHORT_DOW = WEEKDAY_NAMES_ABBR;
+    const tail = t('taskSheet.recSummary.everyWeekdays', { days: selected.map(d => SHORT_DOW[d]).join(', ') });
     // Resolve the first actual occurrence: first selected weekday on/after the
     // entered date (mirrors computeNextDue's weekday-override snapping, #236).
     const resolved = computeNextDue({ recurrenceType: 'weekdays', weekdays: selected, nextDueOverride: firstDue });
-    el.textContent = `First occurrence: ${fmtDow(resolved)} · ${tail}`;
+    el.textContent = `${t('taskSheet.recSummary.firstOccurrence')} ${fmtDow(resolved)} · ${tail}`;
   }
   el.style.display = '';
 }
@@ -8096,7 +8614,7 @@ function attachRecurrenceSummaryListeners(datePrefix) {
 // ARRIVAL DATE LISTENER
 // ============================================================
 
-function attachArrivalDateListener(emptyText = 'Set date') {
+function attachArrivalDateListener(emptyText = t('editPlant.setDate')) {
   const input = document.getElementById('sheet-acquired-date');
   if (!input) return;
 
@@ -8116,7 +8634,7 @@ function attachArrivalDateListener(emptyText = 'Set date') {
     const display = document.getElementById('arrival-date-display');
     const btn = this.closest('.arrival-date-btn') ?? this.closest('.arrival-optional-pill');
     if (this.value) {
-      if (display) display.textContent = new Date(this.value + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      if (display) display.textContent = new Date(this.value + 'T12:00:00').toLocaleDateString(displayLocale(), { month: 'short', day: 'numeric', year: 'numeric' });
       btn?.classList.add('has-value');
     } else {
       if (display) display.textContent = emptyText;

@@ -22,30 +22,50 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: CORS_HEADERS });
   }
 
-  const { plant_name, task_name, task_type, actor_name, household_id } = await req.json();
+  const {
+    event_type = 'task_done',
+    plant_name,
+    task_name,
+    task_type,
+    actor_name,
+    actor_member_id,
+    recipient_member_id,
+    household_id,
+  } = await req.json();
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  // 1. Fetch all household members except the actor
-  const { data: members, error: membersError } = await supabase
-    .from('household_members')
-    .select('id, display_name')
-    .eq('household_id', household_id)
-    .is('deleted_at', null)
-    .neq('display_name', actor_name);
+  // 1. Resolve recipient household_member ids per event type. Exclusion and
+  //    matching are keyed on household_member_id (not display_name) so members
+  //    who share a name are handled correctly (#357).
+  let recipientIds: string[];
 
-  if (membersError) console.error('notify-care-log: members fetch error:', membersError);
-  if (!members?.length) return new Response('ok', { headers: CORS_HEADERS });
+  if (event_type === 'task_reassigned') {
+    // Reassignment notifies ONLY the new owner — not a broadcast.
+    recipientIds = recipient_member_id ? [recipient_member_id] : [];
+  } else {
+    // task_done + note_added: broadcast to all household members except the actor.
+    const { data: members, error: membersError } = await supabase
+      .from('household_members')
+      .select('id')
+      .eq('household_id', household_id)
+      .is('deleted_at', null)
+      .neq('id', actor_member_id);
+
+    if (membersError) console.error('notify-care-log: members fetch error:', membersError);
+    recipientIds = (members ?? []).map((m) => m.id);
+  }
+
+  if (!recipientIds.length) return new Response('ok', { headers: CORS_HEADERS });
 
   // 2. Fetch push subscriptions for those members
-  const memberIds = members.map((m) => m.id);
   const { data: subscriptions, error: subsError } = await supabase
     .from('push_subscriptions')
     .select('subscription')
-    .in('household_member_id', memberIds);
+    .in('household_member_id', recipientIds);
 
   if (subsError) console.error('notify-care-log: subscriptions fetch error:', subsError);
   if (!subscriptions?.length) return new Response('ok', { headers: CORS_HEADERS });
@@ -57,11 +77,18 @@ Deno.serve(async (req) => {
     Deno.env.get('VAPID_PRIVATE_KEY')!,
   );
 
-  // 4. Build notification body
-  const verb = CARE_VERB[task_type];
-  const body = verb
-    ? `${actor_name} ${verb} ${plant_name}`
-    : `${actor_name} · ${task_name} — ${plant_name}`;
+  // 4. Build notification body per event type
+  let body: string;
+  if (event_type === 'note_added') {
+    body = `${actor_name} added a note on ${plant_name}`;
+  } else if (event_type === 'task_reassigned') {
+    body = `You've been assigned ${task_name} for ${plant_name}`;
+  } else {
+    const verb = CARE_VERB[task_type];
+    body = verb
+      ? `${actor_name} ${verb} ${plant_name}`
+      : `${actor_name} · ${task_name} — ${plant_name}`;
+  }
 
   const payload = JSON.stringify({
     title: 'Plant Care',

@@ -87,20 +87,36 @@ async function previewCounts(admin: Admin, hid: string) {
   };
 }
 
-// Delete every plant-photos object under each plant's prefix. Returns count removed.
-async function removePlantStorage(admin: Admin, ids: string[]): Promise<number> {
+// Delete every plant-photos object under each plant's prefix.
+// Returns { listed, removed }:
+//   listed  = objects found under the prefixes (what we attempted to remove).
+//   removed = objects the Storage API CONFIRMED it deleted — the length of the
+//             remove() response `data`, which contains one entry per object that
+//             actually existed and was removed. This is NOT `paths.length`: a
+//             non-existent path is silently omitted from `data`, so counting
+//             attempts would over-report (the bug flagged in #storage-verify).
+// A whole-batch failure surfaces as a thrown error (rmErr); a partial removal
+// (removed < listed with no error) is logged per-plant and reflected in the counts.
+async function removePlantStorage(admin: Admin, ids: string[]): Promise<{ listed: number; removed: number }> {
+  let listed = 0;
   let removed = 0;
   for (const pid of ids) {
     const { data: files, error } = await admin.storage.from('plant-photos').list(pid, { limit: 1000 });
     if (error) throw new Error(`storage list: ${error.message}`);
     const paths = (files ?? []).map((f: { name: string }) => `${pid}/${f.name}`);
-    if (paths.length) {
-      const { error: rmErr } = await admin.storage.from('plant-photos').remove(paths);
-      if (rmErr) throw new Error(`storage remove: ${rmErr.message}`);
-      removed += paths.length;
+    if (!paths.length) continue;
+    listed += paths.length;
+    const { data: removedObjs, error: rmErr } = await admin.storage.from('plant-photos').remove(paths);
+    if (rmErr) throw new Error(`storage remove (plant ${pid}): ${rmErr.message}`);
+    const confirmed = (removedObjs ?? []).length;
+    removed += confirmed;
+    if (confirmed !== paths.length) {
+      console.warn(
+        `reset-household: storage remove MISMATCH for plant ${pid} — attempted ${paths.length}, confirmed ${confirmed}. Paths: ${JSON.stringify(paths)}`,
+      );
     }
   }
-  return removed;
+  return { listed, removed };
 }
 
 async function deleteByPlant(admin: Admin, table: string, ids: string[]): Promise<number> {
@@ -187,6 +203,13 @@ Deno.serve(async (req) => {
 
     // Deep: hard-delete leaf-first, then remove storage objects.
     const ids = await plantIds(admin, household_id);
+    // Log the household + the exact plant_ids BEFORE any deletion, so a specific
+    // execution stays traceable after the fact even once storage.objects / plant
+    // rows are gone (Storage is keyed by plant_id, so this is the only key that
+    // lets a later audit locate the affected objects). See #storage-verify.
+    console.log(
+      `reset-household: DEEP reset — household=${household_id} name=${JSON.stringify(hh.name)} plant_ids=${JSON.stringify(ids)}`,
+    );
     const care_log = await deleteByPlant(admin, 'care_log', ids);
     const plant_photos = await deleteByPlant(admin, 'plant_photos', ids);
     const notes = await deleteByPlant(admin, 'notes', ids);
@@ -195,11 +218,21 @@ Deno.serve(async (req) => {
       ? await admin.from('plants').delete().eq('household_id', household_id).select('id')
       : { data: [], error: null };
     if (pErr) return json({ error: `plants delete: ${pErr.message}` }, 500, cors);
-    const storage_objects = await removePlantStorage(admin, ids);
+    const storage = await removePlantStorage(admin, ids);
+    console.log(
+      `reset-household: DEEP reset — household=${household_id} storage listed=${storage.listed} confirmed_removed=${storage.removed}`,
+    );
 
     return json({
       mode: 'deep',
-      counts: { plants: (delPlants ?? []).length, tasks, notes, care_log, plant_photos, storage_objects },
+      counts: {
+        plants: (delPlants ?? []).length, tasks, notes, care_log, plant_photos,
+        // storage_objects = objects the Storage API CONFIRMED removed (not attempted).
+        // storage_objects_listed = objects found under the prefixes; a gap between
+        // the two means a partial removal (details in the function logs).
+        storage_objects: storage.removed,
+        storage_objects_listed: storage.listed,
+      },
     }, 200, cors);
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500, cors);

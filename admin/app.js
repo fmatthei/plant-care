@@ -779,9 +779,20 @@ async function openResetDialog(householdId) {
       const payload = await res.json();
       if (!res.ok) { showErr(payload.error || `Reset failed (${res.status}).`); submitBtn.disabled = false; submitBtn.textContent = origLabel; return; }
       const c = payload.counts;
-      const msg = payload.mode === 'shallow'
-        ? `Shallow reset: ${c.plants} plant${c.plants === 1 ? '' : 's'} soft-deleted.`
-        : `Deep reset: deleted ${c.plants} plants, ${c.tasks} tasks, ${c.notes} notes, ${c.care_log} care-log, ${c.plant_photos} photos, ${c.storage_objects} storage files.`;
+      let msg;
+      if (payload.mode === 'shallow') {
+        msg = `Shallow reset: ${c.plants} plant${c.plants === 1 ? '' : 's'} soft-deleted.`;
+      } else {
+        // storage_objects = objects the Storage API confirmed removed. If the
+        // function also reports how many it found (storage_objects_listed) and the
+        // two differ, some objects were NOT confirmed gone — surface that instead
+        // of implying a clean sweep.
+        const listed = c.storage_objects_listed ?? c.storage_objects;
+        const storageStr = listed !== c.storage_objects
+          ? `${c.storage_objects} of ${listed} storage files (${listed - c.storage_objects} NOT confirmed removed — check function logs)`
+          : `${c.storage_objects} storage files`;
+        msg = `Deep reset: deleted ${c.plants} plants, ${c.tasks} tasks, ${c.notes} notes, ${c.care_log} care-log, ${c.plant_photos} photos, ${storageStr}.`;
+      }
       closeResetDialog();
       showToast(msg);
       await reload();

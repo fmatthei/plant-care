@@ -1655,11 +1655,13 @@ async function markTaskDone(plantId, taskId) {
   task.preCompletionNextDueOverride = preCompletionOverride;
 
   const taskCfg = getTaskConfig(task);
+  // #434: attribute the completion to the actual actor (the logged-in member),
+  // not the task's assigned owner. Assignment (task.owner) is unchanged.
   plant.careLog.unshift({
     id: uid(),
     date: todayStr(),
     createdAt: new Date().toISOString(),
-    author: task.owner,
+    author: activeUser,
     taskId: task.id,
     taskName: taskCfg.name,
     taskType: taskCfg.type,
@@ -1667,7 +1669,6 @@ async function markTaskDone(plantId, taskId) {
 
   plant.careLog = plant.careLog.slice(0, 50);
 
-  const member = membersCache.find(m => m.display_name === task.owner);
   await supabaseClient
     .from('tasks')
     .update({
@@ -1683,7 +1684,7 @@ async function markTaskDone(plantId, taskId) {
     .insert({
       plant_id:            plantId,
       task_id:             taskId,
-      household_member_id: member?.id ?? null,
+      household_member_id: currentMemberId,
       task_name:           taskCfg.name,
       task_type:           taskCfg.type,
       date:                todayStr(),
@@ -2711,16 +2712,21 @@ function renderCaringDoneToday() {
 
   for (const { plant, task } of doneItems) {
     const cfg = getTaskConfig(task);
-    const ownerMember  = membersCache.find(m => m.display_name === task.owner);
+    // #434: attribute the completion to the actual actor recorded on today's
+    // care_log entry, not the task's assignee. Fall back to the assignee only
+    // if no matching completion is found.
+    const doneEntry    = plant.careLog.find(e => e.taskId === task.id && e.date === today);
+    const actorName    = doneEntry?.author ?? task.owner;
+    const ownerMember  = membersCache.find(m => m.display_name === actorName);
     const ownerColor   = ownerMember?.color ?? '#888';
-    const ownerInitial = (task.owner ?? '?')[0].toUpperCase();
+    const ownerInitial = (actorName ?? '?')[0].toUpperCase();
     html += `<div class="activity-row home-due-today-row attention-row" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}" style="background:#fff;border-color:#e8ece6;">
       <span style="width:26px;height:26px;border-radius:8px;background:#eaf3de;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>
       <span style="width:1px;height:28px;background:#c0dd97;flex-shrink:0;"></span>
       <span style="width:26px;height:26px;border-radius:8px;background:#eaf3de;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;line-height:1;">${cfg.icon}</span>
       <span class="home-due-today-info">
         <span class="home-due-today-task" style="text-decoration:line-through;text-decoration-color:#aab09f;color:#6b7c61;">${escapeHtml(cfg.name)}</span>
-        <span style="color:#8a9180;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${escapeHtml(task.owner ?? '')}</span>
+        <span style="color:#8a9180;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${escapeHtml(actorName ?? '')}</span>
       </span>
       <button data-action="add-note" data-plant="${plant.id}" style="width:26px;height:26px;border-radius:50%;border:0.5px solid #dde0d9;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;cursor:pointer;padding:0;" aria-label="${t('home.aria.addNote')}"><svg viewBox="0 0 16 16" fill="none" stroke="#8a9180" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg></button>
       <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:#fff;font-size:11px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInitial)}</span>

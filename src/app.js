@@ -582,7 +582,6 @@ const TRANSLATIONS = {
     'careVerb.rotate':    "rotated",
     // Sentence frames — shared by the Home and Summary-tab activity feeds.
     'activityFeed.care':      "{actor} {verb} {plant}",
-    'activityFeed.careSelf':  "You completed {task}",
     'activityFeed.skipped':   "{actor} skipped {task}",
     'activityFeed.careOther': "{actor} · {task} — {plant}",
     'activityFeed.noteOn':    "{actor} on {plant}",
@@ -1209,7 +1208,6 @@ async function loadFromSupabase() {
       date:      r.date,
       createdAt: r.created_at,
       author:    ownerMap[r.household_member_id] ?? t('home.unknownAuthor'),
-      memberId:  r.household_member_id,
       taskId:    r.task_id,
       taskName:  r.task_name,
       taskType:  r.task_type,
@@ -1298,7 +1296,6 @@ function buildActivityFeed(careRows, noteRows, plantMap, ownerMap) {
     taskName:  r.task_name,
     taskType:  r.task_type,
     member:    ownerMap[r.household_member_id] ?? '',
-    memberId:  r.household_member_id,
   }));
 
   const noteItems = (noteRows ?? []).map(r => ({
@@ -1658,20 +1655,19 @@ async function markTaskDone(plantId, taskId) {
   task.preCompletionNextDueOverride = preCompletionOverride;
 
   const taskCfg = getTaskConfig(task);
-  const member = membersCache.find(m => m.display_name === task.owner);
-
   plant.careLog.unshift({
     id: uid(),
     date: todayStr(),
     createdAt: new Date().toISOString(),
     author: task.owner,
-    memberId: member?.id ?? null,
     taskId: task.id,
     taskName: taskCfg.name,
     taskType: taskCfg.type,
   });
 
   plant.careLog = plant.careLog.slice(0, 50);
+
+  const member = membersCache.find(m => m.display_name === task.owner);
   await supabaseClient
     .from('tasks')
     .update({
@@ -2770,14 +2766,11 @@ function renderHomeActivityFeed() {
       const isSkipped = item.taskType === 'skipped';
       const verb = careVerb(item.taskType);
       const icon = CARE_ICON[item.taskType] ?? '🌿';
-      const isSelf = !!currentMemberId && item.memberId === currentMemberId;
       const text = isSkipped
         ? t('activityFeed.skipped', { actor: escapeHtml(item.member), task: escapeHtml(item.taskName) })
-        : isSelf
-          ? t('activityFeed.careSelf', { task: escapeHtml(item.taskName) })
-          : verb
-            ? t('activityFeed.care', { actor: escapeHtml(item.member), verb: escapeHtml(verb), plant: escapeHtml(item.plantName) })
-            : t('activityFeed.careOther', { actor: escapeHtml(item.member), task: escapeHtml(item.taskName), plant: escapeHtml(item.plantName) });
+        : verb
+          ? t('activityFeed.care', { actor: escapeHtml(item.member), verb: escapeHtml(verb), plant: escapeHtml(item.plantName) })
+          : t('activityFeed.careOther', { actor: escapeHtml(item.member), task: escapeHtml(item.taskName), plant: escapeHtml(item.plantName) });
       html += `
       <div class="activity-row activity-row--home${isSkipped ? ' activity-row-skipped' : ''}">
         <span class="activity-icon${isSkipped ? ' activity-icon-skipped' : ''}">${icon}</span>
@@ -3956,14 +3949,11 @@ function renderSummaryTab(plant) {
         const absDate     = e.date ? formatDate(e.date) : '';
         const verb        = careVerb(tType);
         const author      = e.author ?? t('home.authorFallback');
-        const isSelf      = !!currentMemberId && e.memberId === currentMemberId;
         const primary     = isSkipped
           ? t('activityFeed.skipped', { actor: author, task: e.taskName ?? t('home.taskFallback') })
-          : isSelf
-            ? t('activityFeed.careSelf', { task: e.taskName ?? t('home.careFallback') })
-            : verb
-              ? t('activityFeed.care', { actor: author, verb, plant: plant.name })
-              : t('activityFeed.careOther', { actor: author, task: e.taskName ?? t('home.careFallback'), plant: plant.name });
+          : verb
+            ? t('activityFeed.care', { actor: author, verb, plant: plant.name })
+            : t('activityFeed.careOther', { actor: author, task: e.taskName ?? t('home.careFallback'), plant: plant.name });
         const isDoneToday = !isSkipped && e.date === today;
         const tileHtml    = isSkipped
           ? `<span class="activity-icon-skipped" style="width:40px;height:40px;background:#f4f6f2;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${icon}</span>`

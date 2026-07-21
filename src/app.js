@@ -586,6 +586,11 @@ const TRANSLATIONS = {
     'activityFeed.careOther': "{actor} · {task} — {plant}",
     'activityFeed.noteOn':    "{actor} on {plant}",
     'activityFeed.noteAdded': "{actor} added a note",
+    // #435: confirmation before completing a task assigned to another member.
+    // Cancel reuses the shared taskSheet.cancel key.
+    'confirmComplete.title':   "This task is assigned to {name}",
+    'confirmComplete.body':    "Complete it anyway? It will be recorded as done by you.",
+    'confirmComplete.confirm': "Complete",
   },
 };
 let activeLocale = 'en';
@@ -4619,6 +4624,60 @@ function openOverdueActionSheet(plantId, taskId) {
   `);
 }
 
+// #435: guard completion of a task assigned to a different member. Holds the
+// original completion action (animation + markTaskDone + toast) until the actor
+// confirms via the sheet; cleared on any sheet close (see closeSheet).
+let pendingForeignComplete = null;
+
+// Wrap a completion entry point. When the task is assigned to someone other than
+// the current member, show a confirmation sheet and defer `proceed` until the
+// actor taps Complete. Own/unassigned tasks run `proceed` synchronously — zero
+// behavior change. The reschedule sheet (fired inside markTaskDone for late
+// tasks) therefore appears AFTER this confirmation.
+function maybeConfirmForeignComplete(plantId, taskId, proceed) {
+  const task = getTask(plantId, taskId);
+  const assignee = task ? membersCache.find(m => m.display_name === task.owner) : null;
+  if (!assignee || assignee.id === currentMemberId) { proceed(); return; }
+  pendingForeignComplete = proceed;
+  openConfirmCompleteSheet(plantId, task, assignee);
+}
+
+function openConfirmCompleteSheet(plantId, task, assignee) {
+  const plant = getPlant(plantId);
+  const cfg   = getTaskConfig(task);
+
+  const d = daysUntilDue(task);
+  let status = '';
+  if (d < 0)                    status = tn('status.badge.daysOverdue', Math.abs(d), { manual: '' });
+  else if (d === 0)             status = t('status.badge.dueToday',   { manual: '' });
+  else if (d === 1)             status = t('status.badge.dueTomorrow', { manual: '' });
+  else if (Number.isFinite(d))  status = t('status.badge.inDays', { n: d, manual: '' });
+  const recurrence = recurrenceLabel(task, RECURRENCE_VERBOSE_OPTS);
+  const subtitle   = status ? `${recurrence} · ${status}` : recurrence;
+
+  const color   = assignee.color ?? '#888';
+  const initial = (assignee.display_name ?? '?')[0].toUpperCase();
+
+  openSheet(`
+    <div style="background:#f4f7f4;border:1px solid #e3e8e3;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <span style="width:44px;height:44px;background:#eef3eb;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">${cfg.icon}</span>
+      <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+        <div style="font-size:16px;font-weight:600;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)} · ${escapeHtml(plant?.name ?? '')}</div>
+        <div style="font-size:13px;color:#7a837c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(subtitle)}</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
+      <span style="width:26px;height:26px;border-radius:50%;background:${escapeHtml(color)};color:#fff;font-size:13px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(initial)}</span>
+      <span style="font-size:17px;font-weight:600;color:#1a1a1a;">${t('confirmComplete.title', { name: escapeHtml(assignee.display_name ?? '') })}</span>
+    </div>
+    <div style="font-size:14px;color:#5c665e;text-align:center;margin:0 8px 20px;">${t('confirmComplete.body')}</div>
+    <div style="display:flex;gap:12px;">
+      <button class="btn btn-ghost" data-action="close-sheet" style="flex:1;">&#8592; ${t('taskSheet.cancel')}</button>
+      <button class="btn btn-primary" data-action="confirm-complete" style="flex:1;">${t('confirmComplete.confirm')}</button>
+    </div>
+  `);
+}
+
 // ============================================================
 // RESCHEDULE PROMPT (off-schedule mark-done)
 // ============================================================
@@ -4931,6 +4990,7 @@ function closeReschedulePrompt() {
 }
 
 function closeSheet() {
+  pendingForeignComplete = null; // #435: cancel any deferred foreign-completion
   const sheet = document.getElementById('sheet');
   sheet.style.transform = '';
   sheet.classList.remove('active');
@@ -7171,19 +7231,21 @@ async function handleEvent(e) {
       const _doneTask = getTask(plantId, taskId);
       const _doneName = getTaskConfig(_doneTask)?.name ?? _doneTask?.name ?? 'Task';
       const _isOnboardingDone = getOnboardingStep() === 3 && taskId === getOnboardingTaskId();
-      markTaskDone(plantId, taskId);
-      if (_isOnboardingDone) {
-        setOnboardingStep(4);
-        localStorage.setItem(`onboarding_coordination_shown_${currentMemberId}`, '1');
-        // #329: no celebration overlay — write the coach-mark trigger flag and
-        // render home directly. renderHome's existing read-and-delete trigger
-        // (:2291) picks it up and fires the activity-feed coach-mark.
-        localStorage.setItem(`onboarding_show_coachmark_${currentMemberId}`, 'true');
-        navigateTo('home');
-      } else {
-        renderPlantDetail(state.plantId);
-        showDoneToast(plantId, taskId, _doneName);
-      }
+      maybeConfirmForeignComplete(plantId, taskId, () => {
+        markTaskDone(plantId, taskId);
+        if (_isOnboardingDone) {
+          setOnboardingStep(4);
+          localStorage.setItem(`onboarding_coordination_shown_${currentMemberId}`, '1');
+          // #329: no celebration overlay — write the coach-mark trigger flag and
+          // render home directly. renderHome's existing read-and-delete trigger
+          // (:2291) picks it up and fires the activity-feed coach-mark.
+          localStorage.setItem(`onboarding_show_coachmark_${currentMemberId}`, 'true');
+          navigateTo('home');
+        } else {
+          renderPlantDetail(state.plantId);
+          showDoneToast(plantId, taskId, _doneName);
+        }
+      });
       break;
     }
 
@@ -7200,8 +7262,10 @@ async function handleEvent(e) {
     }
 
     case 'mark-done-with-note':
-      markTaskDone(plantId, taskId);
-      renderPostTaskNoteSheet(plantId, taskId);
+      maybeConfirmForeignComplete(plantId, taskId, () => {
+        markTaskDone(plantId, taskId);
+        renderPostTaskNoteSheet(plantId, taskId);
+      });
       break;
 
     case 'undo-mark-done':
@@ -7213,21 +7277,23 @@ async function handleEvent(e) {
       const _tasksRow = target.closest('.task-row');
       const _tasksList = _tasksRow?.parentElement;
       if (!_tasksRow || !_tasksList || _tasksRow.dataset.sliding === '1') break;
-      const _rowRect  = _tasksRow.getBoundingClientRect();
-      const _listRect = _tasksList.getBoundingClientRect();
-      const _dy = Math.max(0, _listRect.bottom - _rowRect.bottom);
-      _tasksRow.dataset.sliding = '1';
-      _tasksRow.style.pointerEvents = 'none';
-      _tasksRow.style.transition = 'transform 300ms ease, opacity 300ms ease';
-      target.classList.add('done');
-      requestAnimationFrame(() => {
-        _tasksRow.style.transform = `translateY(${_dy}px)`;
-        _tasksRow.style.opacity = '0';
+      maybeConfirmForeignComplete(plantId, taskId, () => {
+        const _rowRect  = _tasksRow.getBoundingClientRect();
+        const _listRect = _tasksList.getBoundingClientRect();
+        const _dy = Math.max(0, _listRect.bottom - _rowRect.bottom);
+        _tasksRow.dataset.sliding = '1';
+        _tasksRow.style.pointerEvents = 'none';
+        _tasksRow.style.transition = 'transform 300ms ease, opacity 300ms ease';
+        target.classList.add('done');
+        requestAnimationFrame(() => {
+          _tasksRow.style.transform = `translateY(${_dy}px)`;
+          _tasksRow.style.opacity = '0';
+        });
+        setTimeout(() => {
+          markTaskDone(plantId, taskId);
+          renderPlantDetail(state.plantId);
+        }, 300);
       });
-      setTimeout(() => {
-        markTaskDone(plantId, taskId);
-        renderPlantDetail(state.plantId);
-      }, 300);
       break;
     }
 
@@ -7242,14 +7308,16 @@ async function handleEvent(e) {
       const _homeTask = getTask(plantId, taskId);
       const _homeName = getTaskConfig(_homeTask)?.name ?? _homeTask?.name ?? 'Task';
       const _homePlantName = getPlant(plantId)?.name ?? '';
-      target.classList.add('done');
-      _homeRow.style.height = _homeRow.offsetHeight + 'px';
-      _homeRow.style.overflow = 'hidden';
-      requestAnimationFrame(() => { _homeRow.classList.add('marking-done'); });
-      setTimeout(() => {
-        markTaskDone(plantId, taskId);
-        showUndoDoneToast(plantId, taskId, _homeName, _homePlantName);
-      }, 280);
+      maybeConfirmForeignComplete(plantId, taskId, () => {
+        target.classList.add('done');
+        _homeRow.style.height = _homeRow.offsetHeight + 'px';
+        _homeRow.style.overflow = 'hidden';
+        requestAnimationFrame(() => { _homeRow.classList.add('marking-done'); });
+        setTimeout(() => {
+          markTaskDone(plantId, taskId);
+          showUndoDoneToast(plantId, taskId, _homeName, _homePlantName);
+        }, 280);
+      });
       break;
     }
 
@@ -7258,15 +7326,17 @@ async function handleEvent(e) {
       if (!_sumRow || _sumRow.classList.contains('marking-done')) break;
       const _sumTask = getTask(plantId, taskId);
       const _sumName = getTaskConfig(_sumTask)?.name ?? _sumTask?.name ?? 'Task';
-      target.classList.add('done');
-      _sumRow.style.height = _sumRow.offsetHeight + 'px';
-      _sumRow.style.overflow = 'hidden';
-      requestAnimationFrame(() => { _sumRow.classList.add('marking-done'); });
-      setTimeout(() => {
-        markTaskDone(plantId, taskId);
-        showDoneToast(plantId, taskId, _sumName);
-        renderPlantDetail(state.plantId);
-      }, 320);
+      maybeConfirmForeignComplete(plantId, taskId, () => {
+        target.classList.add('done');
+        _sumRow.style.height = _sumRow.offsetHeight + 'px';
+        _sumRow.style.overflow = 'hidden';
+        requestAnimationFrame(() => { _sumRow.classList.add('marking-done'); });
+        setTimeout(() => {
+          markTaskDone(plantId, taskId);
+          showDoneToast(plantId, taskId, _sumName);
+          renderPlantDetail(state.plantId);
+        }, 320);
+      });
       break;
     }
 
@@ -7286,9 +7356,11 @@ async function handleEvent(e) {
     case 'schedule-mark-done': {
       const _schedTask = getTask(plantId, taskId);
       const _schedName = getTaskConfig(_schedTask)?.name ?? _schedTask?.name ?? 'Task';
-      markTaskDone(plantId, taskId);
-      renderHome();
-      showDoneToast(plantId, taskId, _schedName);
+      maybeConfirmForeignComplete(plantId, taskId, () => {
+        markTaskDone(plantId, taskId);
+        renderHome();
+        showDoneToast(plantId, taskId, _schedName);
+      });
       break;
     }
 
@@ -7300,10 +7372,15 @@ async function handleEvent(e) {
       const _caTask = getTask(plantId, taskId);
       const _caName = getTaskConfig(_caTask)?.name ?? _caTask?.name ?? 'Task';
       const _caPlantName = getPlant(plantId)?.name ?? '';
-      closeSheet();
-      markTaskDone(plantId, taskId);
-      renderApp();
-      showUndoDoneToast(plantId, taskId, _caName, _caPlantName);
+      // Foreign path replaces the overdue sheet with the confirm sheet in place
+      // (openSheet overwrites content) — closeSheet stays in the thunk so it runs
+      // only once the actor confirms, matching today's own-task behavior.
+      maybeConfirmForeignComplete(plantId, taskId, () => {
+        closeSheet();
+        markTaskDone(plantId, taskId);
+        renderApp();
+        showUndoDoneToast(plantId, taskId, _caName, _caPlantName);
+      });
       break;
     }
 
@@ -7572,6 +7649,16 @@ async function handleEvent(e) {
     case 'close-sheet':
       closeSheet();
       break;
+
+    case 'confirm-complete': {
+      // #435: actor confirmed completing another member's task. Capture the
+      // deferred action before closeSheet() clears it, then run it — the
+      // original completion flow (incl. reschedule sheet) proceeds unchanged.
+      const proceed = pendingForeignComplete;
+      closeSheet();
+      if (proceed) proceed();
+      break;
+    }
 
     case 'summary-carelog-add-note':
       if (document.querySelector('.coach-overlay, .notif-overlay')) return;

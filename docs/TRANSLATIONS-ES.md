@@ -1,8 +1,8 @@
 # TRANSLATIONS.es — Spanish translation (#44f)
 
 **Register:** tú · **Variant:** Neutral Latin American Spanish · **Voice:** warm-but-neutral
-**Source of truth:** `i18n-es-worksheet.md` (base 429 keys, 22 namespaces) + July 22 delta below
-**Status:** ✅ COMPLETE — all namespaces + date-name arrays + TASK_CONFIG presets translated and approved. **Dictionary now 432 keys** (July 22, 2026: `activityFeed.careSelf` removed via decision B / #44f-feedName; `confirmComplete.*` trio added via #435).
+**Source of truth:** `i18n-es-worksheet.md` (worksheet base 429 keys, 22 namespaces) + deltas below → live dictionary **440**
+**Status:** ✅ COMPLETE — all namespaces + date-name arrays + TASK_CONFIG presets translated and approved. **Dictionary now 440 keys** (EN↔ES parity **440/440**). **Lineage:** approved namespace baseline **432** (tabled below; July 22 content delta — `activityFeed.careSelf` removed via decision B / #44f-feedName, −1; `confirmComplete.*` trio added via #435, +3) → **+1** `menu.language` (#44g) → **+7** `taskSheet` recurrence-summary keys (#440) = **440**. **Updated:** 2026-07-22.
 
 ## Standing terms (locked — apply consistently across all namespaces)
 
@@ -101,11 +101,11 @@
 | # | Namespace | Keys | Status |
 |---|-----------|-----:|--------|
 | 1 | `onboarding` | 36 | ✅ Approved |
-| 2 | `taskSheet` | 33 | ✅ Approved |
+| 2 | `taskSheet` | 40 | ✅ Approved _(+7 recurrence-summary keys — #440)_ |
 | 3 | `addPlant` | 27 | ✅ Approved |
 | 4 | `auth` | 15 | ✅ Approved |
 | 5 | `install` | 18 | ✅ Approved |
-| 6 | `menu` | 38 | ✅ Approved |
+| 6 | `menu` | 39 | ✅ Approved _(+1 `menu.language` — #44g)_ |
 | 7 | `calendarSync` | 41 | ✅ Approved |
 | 8 | `home` | 27 | ✅ Approved |
 | 9 | `caring` | 6 | ✅ Approved |
@@ -124,7 +124,7 @@
 | 22 | `activityFeed` | 5 | ✅ Approved _(careSelf removed July 22 — decision B)_ |
 | 23 | `confirmComplete` | 3 | ✅ Approved July 22 (#435) |
 
-Approved: **432 / 432** ✅ COMPLETE — plus date-name arrays and TASK_CONFIG presets (see clusters below)
+Approved: **440 / 440** ✅ COMPLETE — plus date-name arrays and TASK_CONFIG presets (see clusters below)
 
 ---
 

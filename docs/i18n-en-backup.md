@@ -1,6 +1,6 @@
 # i18n — English Dictionary Snapshot (`TRANSLATIONS.en`)
 
-- **Generated:** 2026-07-10
+- **Generated:** 2026-07-22
 - **Source:** `TRANSLATIONS.en` in `src/app.js`
 - **Key count:** 440 (36 `onboarding.*` + 40 `taskSheet.*` + 27 `addPlant.*` + 15 `auth.*` + 18 `install.*` + 39 `menu.*` + 41 `calendarSync.*` + 27 `home.*` + 6 `caring.*` + 27 `plantDetail.*` + 4 `taskCard.*` + 13 `manageHouseholds.*` + 15 `notes.*` + 15 `photos.*` + 14 `editPlant.*` + 1 `emojiPicker.*` + 35 `status.*` + 17 `relativeTime.*` + 23 `reschedule.*` + 11 `dialog.*` + 8 `careVerb.*` + 5 `activityFeed.*` + 3 `confirmComplete.*`)
 

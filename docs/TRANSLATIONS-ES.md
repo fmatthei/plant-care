@@ -1,8 +1,8 @@
 # TRANSLATIONS.es — Spanish translation (#44f)
 
 **Register:** tú · **Variant:** Neutral Latin American Spanish · **Voice:** warm-but-neutral
-**Source of truth:** `i18n-es-worksheet.md` (429 keys, 22 namespaces)
-**Status:** in progress — approved namespaces recorded below as they are locked.
+**Source of truth:** `i18n-es-worksheet.md` (base 429 keys, 22 namespaces) + July 22 delta below
+**Status:** ✅ COMPLETE — all namespaces + date-name arrays + TASK_CONFIG presets translated and approved. **Dictionary now 432 keys** (July 22, 2026: `activityFeed.careSelf` removed via decision B / #44f-feedName; `confirmComplete.*` trio added via #435).
 
 ## Standing terms (locked — apply consistently across all namespaces)
 
@@ -16,12 +16,15 @@
 | sync / in sync | sincronía / en sincronía |
 | watered | regó |
 | "live here" (metaphor) | viven aquí |
-| Done (finish/confirm button) | Listo _(vs Hecha = task-status label, pending taskCard)_ |
+| Done (finish/confirm button) | Listo _(button sense only)_ |
+| Done / completed (task-status) | Realizada _(app-wide completion word — realizar family; NOT "hecha")_ |
+| Mark done (action/aria) | Marcar realizada |
 | Add Task | Agregar Tarea |
 | Owner | Responsable |
 | due / due date | vencimiento / vence family |
 | Repeating / recurrence (adj) | recurrente |
 | Skip | Omitir |
+| Skipped (task-status) | Omitida |
 | Resume | reanudar |
 | Delete | Eliminar |
 | Remove (undo selection) | Quitar _(vs Eliminar = destructive delete)_ |
@@ -65,6 +68,32 @@
 | Close | Cerrar |
 | Settings | Configuración _(Google)_ / Ajustes _(Apple)_ |
 | Caring (tab) | Cuidados |
+| Care Log / care history | Registro de Cuidados / historial de cuidados |
+| completed (tasks) | realizadas _(realizar family — unified completion word app-wide)_ |
+| selected users | usuarios seleccionados |
+| "No … yet" | Aún no hay… |
+| pending (tasks, generic) | pendientes |
+| Photo timeline | Photo timeline _(kept English — one-off feature label)_ |
+| "This cannot be undone" | Esta acción es irreversible _(delete confirmations)_ |
+| take a photo | sacar (una foto) |
+| Remove (photos context) | Eliminar _(real deletion; Quitar only for undoing a pending selection)_ |
+| overdue (state) | Vencida / vencida |
+| overdue duration / late | de retraso |
+| early | de adelanto |
+| due today / tomorrow / {date} | vence hoy / vence mañana / vence {date} |
+| One-off | Única vez |
+| {manual} suffix | " (manual)" _(untranslated, leading space preserved)_ |
+| "done N days ago" | Realizada hace {n} días |
+| "N ago" | hace {n}… construction |
+| "About a [period] ago" | Hace [period] aprox. |
+| Schedule (recurrence) | Programa _(vs Calendario = calendar app)_ |
+| Missed (occurrence) | No realizada _(vs Omitida = skipped)_ |
+| anchor (yearly) | fecha base |
+| later / earlier | después / antes |
+| "Please" (in alerts) | dropped _(imperative register)_ |
+| enter (form input) / select | Ingresa / Selecciona |
+| note creation | crear una nota |
+| months | init caps (Enero, Febrero…); abbreviations Feb/Mar also capitalized |
 | **Capitalization rule** | **mirror English case: title case → title case (Spanish connectors lowercase), sentence case → sentence case** |
 
 ## Progress
@@ -79,22 +108,23 @@
 | 6 | `menu` | 38 | ✅ Approved |
 | 7 | `calendarSync` | 41 | ✅ Approved |
 | 8 | `home` | 27 | ✅ Approved |
-| 9 | `caring` | 6 | ⏳ Pending |
-| 10 | `plantDetail` | 27 | ⏳ Pending |
-| 11 | `taskCard` | 4 | ⏳ Pending |
-| 12 | `manageHouseholds` | 13 | ⏳ Pending |
-| 13 | `notes` | 15 | ⏳ Pending |
-| 14 | `photos` | 15 | ⏳ Pending |
-| 15 | `editPlant` | 14 | ⏳ Pending |
-| 16 | `emojiPicker` | 1 | ⏳ Pending |
-| 17 | `status` | 35 | ⏳ Pending |
-| 18 | `relativeTime` | 17 | ⏳ Pending |
-| 19 | `reschedule` | 23 | ⏳ Pending |
-| 20 | `dialog` | 11 | ⏳ Pending |
-| 21 | `careVerb` | 8 | ⏳ Pending |
-| 22 | `activityFeed` | 5 | ⏳ Pending |
+| 9 | `caring` | 6 | ✅ Approved |
+| 10 | `plantDetail` | 27 | ✅ Approved |
+| 11 | `taskCard` | 4 | ✅ Approved |
+| 12 | `manageHouseholds` | 13 | ✅ Approved |
+| 13 | `notes` | 15 | ✅ Approved |
+| 14 | `photos` | 15 | ✅ Approved |
+| 15 | `editPlant` | 14 | ✅ Approved |
+| 16 | `emojiPicker` | 1 | ✅ Approved |
+| 17 | `status` | 35 | ✅ Approved |
+| 18 | `relativeTime` | 17 | ✅ Approved |
+| 19 | `reschedule` | 23 | ✅ Approved |
+| 20 | `dialog` | 11 | ✅ Approved |
+| 21 | `careVerb` | 8 | ✅ Approved |
+| 22 | `activityFeed` | 5 | ✅ Approved _(careSelf removed July 22 — decision B)_ |
+| 23 | `confirmComplete` | 3 | ✅ Approved July 22 (#435) |
 
-Approved so far: **241 / 429**
+Approved: **432 / 432** ✅ COMPLETE — plus date-name arrays and TASK_CONFIG presets (see clusters below)
 
 ---
 
@@ -113,7 +143,7 @@ Approved so far: **241 / 429**
 | `onboarding.banner.step2` | Crea una tarea para regar tu planta cada 3 días. |
 | `onboarding.banner.step2Cta` | Crea una tarea → |
 | `onboarding.banner.step3` | Presiona ✓ Listo abajo para terminar la configuración ↓ |
-| `onboarding.inlineTask.markDone` | Marcar como hecha |
+| `onboarding.inlineTask.markDone` | Marcar realizada |
 | `onboarding.reminders.noteText` | Puedes activar las notificaciones cuando quieras desde el menú. |
 | `onboarding.reminders.blockedTitle` | Las notificaciones están desactivadas |
 | `onboarding.reminders.blockedBody` | Para activarlas: <strong>{path}</strong>. |
@@ -168,7 +198,7 @@ Approved so far: **241 / 429**
 | `taskSheet.cancel` | Cancelar |
 | `taskSheet.back` | Atrás |
 | `taskSheet.saveChanges` | Guardar Cambios |
-| `taskSheet.recSummary.yearlyLeap` | Se repite cada año el 29 de feb (1 de mar en años no bisiestos) |
+| `taskSheet.recSummary.yearlyLeap` | Se repite cada año el 29 de Feb (1 de Mar en años no bisiestos) |
 | `taskSheet.recSummary.yearlyOn` | Se repite cada año el {day} de {month} |
 | `taskSheet.recSummary.everyDays.one` | se repite cada {n} día |
 | `taskSheet.recSummary.everyDays.other` | se repite cada {n} días |
@@ -283,7 +313,7 @@ Approved so far: **241 / 429**
 | `menu.changePassword.confirmLabel` | Confirma la contraseña |
 | `menu.changePassword.confirmPlaceholder` | Repite la nueva contraseña |
 | `menu.changePassword.errorTooShort` | La contraseña debe tener al menos 8 caracteres. |
-| `menu.toast.markedDone` | {task} hecha |
+| `menu.toast.markedDone` | {task} realizada |
 | `menu.toast.addNotePrompt` | ¿Agregar una nota? |
 | `menu.toast.undo` | Deshacer |
 | `menu.toast.noteAdded` | Nota agregada |
@@ -376,7 +406,7 @@ Approved so far: **241 / 429**
 | `home.viewMore` | Ver Más |
 | `home.activityEmpty` | Las acciones de cuidado aparecerán aquí |
 | `home.aria.reportBug` | Reportar un error |
-| `home.aria.markDone` | Marcar como hecha |
+| `home.aria.markDone` | Marcar realizada |
 | `home.aria.addNote` | Agregar nota |
 | `home.aria.resume` | Reanudar |
 | `home.aria.dismiss` | Descartar |
@@ -389,14 +419,367 @@ Approved so far: **241 / 429**
 
 ---
 
-## Open agreement notes (revisit when the relevant namespace comes up)
+## 9. `caring` (6) ✅
 
-- **`activityFeed.care` — "Tú regó {plant}" agreement wrinkle.** `youFallback` ("Tú") slots into `{actor}`, but the verb is fixed 3rd-person. Decide at `activityFeed`.
-- **`taskCard.done`** — "Done" as task-status → likely **Hecha** (vs Listo for buttons). Confirm at `taskCard`.
-- **`status.recurrence.everyYearOn`** — apply "{day} de {month}" reorder.
-- **`status.recurrence.everyWeekdays`** — apply "los {days}" pattern.
-- **Month abbreviations** (feb, mar…) — lowercase, must match `taskSheet.recSummary.yearlyLeap` when translating `MONTH_NAMES`.
-- **`calendarSync.switch.intro` {scope} interpolation** — renders awkwardly in both languages ("el feed Mis tareas actual"); QA-pass item, not a translation fix.
-- **`home.recentActivity` vs feed de actividad** — section header uses "Actividad Reciente"; the feed concept stays "feed de actividad."
-- **CTA voice** — verb CTAs imperative (Agrega, Crea).
-- **Capitalization audit applied July 14, 2026** — all title-case English strings mirrored in Spanish; iOS literal-label exception on `install.steps.addToHomeLabel`.
+| Key | Spanish |
+|-----|---------|
+| `caring.doneToday` | Realizadas hoy |
+| `caring.emptyTitle` | Aquí cuidas tus plantas |
+| `caring.emptySub` | Las tareas pendientes aparecerán aquí |
+| `caring.upcoming` | Próximamente |
+| `caring.allClear` | Todo al día |
+| `caring.noTasksToday` | Sin tareas hoy |
+
+---
+
+## 10. `plantDetail` (27) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `plantDetail.aria.editPlant` | Editar planta |
+| `plantDetail.tabSummary` | Resumen |
+| `plantDetail.tabTasks` | Tareas |
+| `plantDetail.tabNotes` | Notas |
+| `plantDetail.tabCareLog` | Registro de Cuidados |
+| `plantDetail.addTask` | Agregar tarea |
+| `plantDetail.aria.addFab` | Agregar |
+| `plantDetail.summary.homeTitle` | Tu {name} está en casa |
+| `plantDetail.summary.emptySub` | Agrega una tarea para empezar a registrar su cuidado. Tu progreso aparecerá aquí. |
+| `plantDetail.summary.daysOfCare` | días de cuidado |
+| `plantDetail.summary.homeSince` | En casa desde {date} |
+| `plantDetail.summary.arrivalPromptSub` | Establece una fecha de llegada para empezar a registrar los días de cuidado. |
+| `plantDetail.summary.photoTimeline` | Photo timeline |
+| `plantDetail.summary.photoCount` | {n} fotos · presiona para ver |
+| `plantDetail.summary.needsAttention` | Necesita atención hoy |
+| `plantDetail.summary.noUpcoming` | Sin tareas próximas |
+| `plantDetail.summary.noActivity` | Aún no hay actividad |
+| `plantDetail.tasks.emptyTitle` | Aún no hay tareas |
+| `plantDetail.tasks.emptySub` | Agrega una tarea de cuidado para empezar a registrar lo que tu {name} necesita. |
+| `plantDetail.tasks.noneForFilter` | Sin tareas para los usuarios seleccionados |
+| `plantDetail.tasks.listHeader` | Lista de tareas |
+| `plantDetail.notes.emptyTitle` | Aún no hay notas |
+| `plantDetail.notes.emptySub` | Anota observaciones sobre tu {name} — crecimiento, salud, cualquier cosa que valga la pena recordar. Presiona el botón de abajo para agregar una. |
+| `plantDetail.notes.noneForFilter` | Sin notas para los usuarios seleccionados |
+| `plantDetail.careLog.emptyTitle` | El historial de cuidados de tu planta |
+| `plantDetail.careLog.emptySub` | Tus tareas realizadas y notas aparecerán aquí. |
+| `plantDetail.careLog.skipped` | Omitida |
+
+---
+
+## 11. `taskCard` (4) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `taskCard.paused` | Pausada |
+| `taskCard.done` | Realizada |
+| `taskCard.plusNote` | + Nota |
+| `taskCard.resume` | Reanudar |
+
+---
+
+## 12. `manageHouseholds` (13) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `manageHouseholds.title` | Administrar Hogares |
+| `manageHouseholds.yourHousehold` | Tu hogar |
+| `manageHouseholds.editName` | Editar Nombre |
+| `manageHouseholds.membersLabel` | Miembros |
+| `manageHouseholds.unknownMember` | Desconocido |
+| `manageHouseholds.role` | Miembro |
+| `manageHouseholds.youBadge` | TÚ |
+| `manageHouseholds.activityTitle` | Actividad del hogar |
+| `manageHouseholds.noActivity` | Aún no hay actividad. |
+| `manageHouseholds.noActivityFiltered` | Aún no hay actividad para los usuarios seleccionados. |
+| `manageHouseholds.careFallback` | Cuidado |
+| `manageHouseholds.memberCount.one` | {n} miembro |
+| `manageHouseholds.memberCount.other` | {n} miembros |
+
+_Note: `activityTitle` uses "del hogar" (non-possessive generic header) — a deliberate exception to the "de tu hogar" rule, which governs only possessive "your household."_
+
+---
+
+## 13. `notes` (15) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `notes.postTask.title` | Agregar una nota |
+| `notes.optional` | Opcional |
+| `notes.placeholder` | Describe lo que observaste... |
+| `notes.addPhoto` | Agregar foto |
+| `notes.postTask.skip` | Omitir |
+| `notes.saveNote` | Guardar nota |
+| `notes.addNote.title` | Agregar Nota |
+| `notes.coach.title` | Replica tu última foto |
+| `notes.coach.body` | Usa el mismo ángulo/distancia. ¡Ayuda a ver el progreso! |
+| `notes.coach.bodyAlt` | ¡El mismo ángulo ayuda a registrar el progreso! |
+| `notes.editNote.subtitle` | Editar nota |
+| `notes.deleteNote` | Eliminar nota |
+| `notes.noteTaskMeta` | después de {task} |
+| `notes.saving` | Guardando… |
+| `notes.editTooltip` | Editar |
+
+---
+
+## 14. `photos` (15) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `photos.tapToChange` | Presiona para cambiar |
+| `photos.lastPhoto` | Última foto |
+| `photos.aria.close` | Cerrar |
+| `photos.aria.previous` | Anterior |
+| `photos.aria.next` | Siguiente |
+| `photos.slideshow.noteLabel` | NOTA |
+| `photos.slideshow.count` | {current} de {total} |
+| `photos.noNote` | Sin nota. |
+| `photos.cap.title` | Límite de fotos alcanzado |
+| `photos.cap.body` | Cada planta puede tener hasta {cap} fotos. Para agregar una nueva, primero debes eliminar una foto existente. |
+| `photos.cap.deleteOldest` | Eliminar la foto más antigua |
+| `photos.managePhotos` | Administrar fotos |
+| `photos.loading` | Cargando… |
+| `photos.noPhotos` | Aún no hay fotos. |
+| `photos.delete` | Eliminar |
+
+---
+
+## 15. `editPlant` (14) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `editPlant.setDate` | Establecer fecha |
+| `editPlant.sublabelPhoto` | Presiona Cambiar para volver a sacarla, elegir una nueva o usar un ícono |
+| `editPlant.sublabelEmoji` | Presiona Cambiar para elegir un nuevo ícono o agregar una foto |
+| `editPlant.iconLabel` | ÍCONO DE LA PLANTA |
+| `editPlant.plantIcon` | Ícono de la planta |
+| `editPlant.change` | Cambiar |
+| `editPlant.nameLabel` | NOMBRE |
+| `editPlant.namePlaceholder` | Nombre de la planta |
+| `editPlant.arrivalDateLabel` | FECHA DE LLEGADA |
+| `editPlant.whenArrive` | ¿Cuándo llegó a casa? |
+| `editPlant.deletePlant` | Eliminar planta |
+| `editPlant.deleteConfirmBody` | Esto eliminará permanentemente la planta y todas sus tareas, notas e historial de cuidados. Esta acción es irreversible. |
+| `editPlant.deleteConfirmYes` | Sí, eliminar para siempre |
+| `editPlant.saveChanges` | Guardar cambios |
+
+---
+
+## 16. `emojiPicker` (1) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `emojiPicker.pastePlaceholder` | O pega un emoji personalizado |
+
+---
+
+## 17. `status` (35) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `status.recurrence.oneOff` | Única vez |
+| `status.recurrence.noDaysSet` | Sin días seleccionados |
+| `status.recurrence.daysOfWeek` | Días de la semana |
+| `status.recurrence.everyWeekdays` | Los {days} |
+| `status.recurrence.everyYearOn` | Cada año el {day} de {month} |
+| `status.recurrence.everyYear` | Cada año |
+| `status.recurrence.everyDays.one` | Cada {n} día |
+| `status.recurrence.everyDays.other` | Cada {n} días |
+| `status.badge.done` | Realizada |
+| `status.badge.inDaysOneOff.one` | En {n} día — única vez |
+| `status.badge.inDaysOneOff.other` | En {n} días — única vez |
+| `status.badge.dueTodayOneOff` | Vence hoy — única vez |
+| `status.badge.overdueOneOff` | Vencida — única vez |
+| `status.badge.dueTodayNeverDone` | Vence hoy — nunca realizada |
+| `status.badge.daysOverdue.one` | {n} día de retraso{manual} |
+| `status.badge.daysOverdue.other` | {n} días de retraso{manual} |
+| `status.badge.dueToday` | Vence hoy{manual} |
+| `status.badge.dueTomorrow` | Vence mañana{manual} |
+| `status.badge.inDays` | En {n} días{manual} |
+| `status.badge.manualSuffix` |  (manual) |
+| `status.lastDone.never` | Nunca realizada |
+| `status.lastDone.yesterday` | Realizada ayer |
+| `status.lastDone.daysAgo` | Realizada hace {n} días |
+| `status.home.daysLate.one` | {n} día de retraso |
+| `status.home.daysLate.other` | {n} días de retraso |
+| `status.home.dueToday` | vence hoy |
+| `status.pill.overdue` | {n} vencidas |
+| `status.pill.dueToday` | {n} vencen hoy |
+| `status.row.doneToday` | ✓ realizada hoy |
+| `status.row.done` | ✓ realizada |
+| `status.row.dueDate` | vence {date} |
+| `status.row.dueTomorrow` | vence mañana |
+| `status.row.dueToday` | vence hoy |
+| `status.row.overdue` | vencida |
+| `status.row.dueInDays` | vence en {n} días |
+
+_Note: `status.badge.manualSuffix` preserves a leading space — " (manual)" — so it concatenates onto the preceding badge text._
+
+---
+
+## 18. `relativeTime` (17) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `relativeTime.today` | Hoy |
+| `relativeTime.yesterday` | Ayer |
+| `relativeTime.someTimeAgo` | hace algún tiempo |
+| `relativeTime.daysAgo.one` | hace {n} día |
+| `relativeTime.daysAgo.other` | hace {n} días |
+| `relativeTime.activity.justNow` | Recién |
+| `relativeTime.activity.minutesAgo` | hace {n}m |
+| `relativeTime.activity.hoursAgo` | hace {n}h |
+| `relativeTime.arrival.aboutAWeek` | Hace una semana aprox. |
+| `relativeTime.arrival.weeksAgo.one` | hace {n} semana |
+| `relativeTime.arrival.weeksAgo.other` | hace {n} semanas |
+| `relativeTime.arrival.aboutAMonth` | Hace un mes aprox. |
+| `relativeTime.arrival.monthsAgo.one` | hace {n} mes |
+| `relativeTime.arrival.monthsAgo.other` | hace {n} meses |
+| `relativeTime.arrival.aboutAYear` | Hace un año aprox. |
+| `relativeTime.arrival.yearsAgo.one` | Hace {n} año aprox. |
+| `relativeTime.arrival.yearsAgo.other` | Hace {n} años aprox. |
+
+---
+
+## 19. `reschedule` (23) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `reschedule.keepOriginal.title` | Mantener Programa Original |
+| `reschedule.acceptModified.title` | Aceptar Programa Modificado |
+| `reschedule.todayIs` | Hoy es {date} |
+| `reschedule.nextDue` | Próximo vencimiento: {date} |
+| `reschedule.summaryDue` | vence {date} |
+| `reschedule.recurrenceEveryDays.one` | Cada {n} día |
+| `reschedule.recurrenceEveryDays.other` | Cada {n} días |
+| `reschedule.runningLate.one` | {n} día de retraso |
+| `reschedule.runningLate.other` | {n} días de retraso |
+| `reschedule.daysEarly.one` | {n} día de adelanto |
+| `reschedule.daysEarly.other` | {n} días de adelanto |
+| `reschedule.deltaLater.one` | → {n} día después |
+| `reschedule.deltaLater.other` | → {n} días después |
+| `reschedule.deltaEarlier.one` | ← {n} día antes |
+| `reschedule.deltaEarlier.other` | ← {n} días antes |
+| `reschedule.legend.missed` | No realizada |
+| `reschedule.legend.nextOccurrences` | Próximas ocurrencias |
+| `reschedule.yearly.everyYearOn` | Cada año el {anchor} |
+| `reschedule.yearly.runningLate.one` | {n} día de retraso |
+| `reschedule.yearly.runningLate.other` | {n} días de retraso |
+| `reschedule.yearly.runningEarly.one` | {n} día de adelanto |
+| `reschedule.yearly.runningEarly.other` | {n} días de adelanto |
+| `reschedule.yearly.moveAnchor` | Mover la fecha base al {date} cada año |
+
+---
+
+## 20. `dialog` (11) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `dialog.confirmDeleteTask` | ¿Eliminar esta tarea permanentemente? Esta acción es irreversible. |
+| `dialog.confirmDeleteNote` | ¿Eliminar esta nota? |
+| `dialog.confirmDeletePhoto` | ¿Eliminar esta foto? |
+| `dialog.confirmRemoveRecurrence` | Esto quitará la recurrencia. ¿Continuar? |
+| `dialog.alertNoteOrPhoto` | Agrega una nota o una foto. |
+| `dialog.alertNoteEmpty` | La nota no puede estar vacía. |
+| `dialog.alertPlantNameRequired` | Ingresa un nombre para la planta. |
+| `dialog.alertTaskNameRequired` | Ingresa un nombre para la tarea. |
+| `dialog.alertFrequencyInvalid` | Ingresa una frecuencia válida (mínimo 1 día). |
+| `dialog.alertWeekdayRequired` | Selecciona al menos un día de la semana. |
+| `dialog.alertMonthDayRequired` | Selecciona un mes y un día. |
+
+---
+
+## 21. `careVerb` (8) ✅
+
+_3rd-person singular past, actor-subject. Consumed by `activityFeed.care` ({actor} {verb} {plant})._
+
+| Key | Spanish |
+|-----|---------|
+| `careVerb.water` | regó |
+| `careVerb.refill` | rellenó |
+| `careVerb.fertilize` | abonó |
+| `careVerb.check` | revisó |
+| `careVerb.repot` | trasplantó |
+| `careVerb.prune` | podó |
+| `careVerb.pest` | revisó plagas en |
+| `careVerb.rotate` | rotó |
+
+---
+
+## 22. `activityFeed` (5) ✅
+
+| Key | Spanish |
+|-----|---------|
+| `activityFeed.care` | {actor} {verb} {plant} |
+| `activityFeed.skipped` | {actor} omitió {task} |
+| `activityFeed.careOther` | {actor} realizó {task} en {plant} |
+| `activityFeed.noteOn` | {actor} creó una nota en {plant} |
+| `activityFeed.noteAdded` | {actor} creó una nota |
+
+_`careSelf` **removed** July 22, 2026 (decision B, #44f-feedName): the feed always shows the actor's display name, including for the current user's own actions ("Matu regó Monstera" — never "Realizaste…"). Third-person frames are always grammatical in Spanish, so the "Tú regó" agreement problem vanishes by construction. No self-frame exists in the dictionary._
+
+---
+
+## 23. `confirmComplete` (3) ✅ — added July 22, 2026 (#435)
+
+_Confirm sheet shown before completing another member's task._
+
+| Key | Spanish |
+|-----|---------|
+| `confirmComplete.title` | Esta tarea está asignada a {name} |
+| `confirmComplete.body` | ¿Quieres completarla de todos modos? Se registrará como realizada por ti. |
+| `confirmComplete.cta` | Completar |
+
+_⚠️ Verify exact key names against `docs/i18n-en-backup.md` before transcription — the trio's English keys were added by #435; the names above are the expected shape, not confirmed against source._
+
+---
+
+## Cluster A — Date-name arrays (constants)
+
+**MONTH_NAMES** (fills `{month}`; init caps):
+Enero, Febrero, Marzo, Abril, Mayo, Junio, Julio, Agosto, Septiembre, Octubre, Noviembre, Diciembre
+
+**WEEKDAY_NAMES_ABBR** (3-letter, fills `{days}`; matches calendarSync "Lun – Vie" / "Sáb & Dom"):
+Dom, Lun, Mar, Mié, Jue, Vie, Sáb
+
+**WEEKDAY_NAMES** (2-letter minimal):
+Do, Lu, Ma, Mi, Ju, Vi, Sá
+
+_`SEL_MONTH_NAMES` and `YEARLY_MONTH_NAMES` are aliases of MONTH_NAMES. Abbreviated months used in `taskSheet.recSummary.yearlyLeap` (Feb, Mar) follow the same init-caps convention._
+
+---
+
+## Cluster B — TASK_CONFIG preset display names (display-only; storage stays English)
+
+| Storage key (English, unchanged) | Spanish display |
+|----------------------------------|-----------------|
+| `normal-water` | Riego |
+| `refill-pot` | Rellenar maceta autorregante |
+| `fertilize` | Abonar |
+| `check` | Revisar |
+| `repot` | Trasplantar |
+| `prune` | Podar |
+| `check-pests` | Revisar plagas |
+| `rotate` | Rotar |
+
+_Infinitive/noun label forms (distinct from the past-tense `careVerb.*` forms). Per settled decision, `tasks.name` storage stays English; only the type-picker display is translated._
+
+---
+
+## Open agreement notes (all resolved as of completion)
+
+- **✅ `dialog.confirmDeleteTask`** — resolved: "Esta acción es irreversible" (matches `editPlant.deleteConfirmBody`).
+- **✅ `status.row.done` / `status.row.doneToday`** — resolved: "realizada" (app-wide completion word).
+- **✅ `activityFeed.care` "Tú regó" wrinkle** — resolved via **decision B** (July 22, supersedes the earlier #44f-careSelf approach): the feed always shows the actor's display name, never "You"/"Tú" frames. Third-person is always grammatical; `careSelf` removed from code and dictionary (#44f-feedName).
+- **✅ `status.recurrence.everyYearOn`** — "{day} de {month}" reorder applied.
+- **✅ `status.recurrence.everyWeekdays`** — "Los {days}" pattern applied.
+- **✅ Month abbreviations** — now init caps (Feb, Mar) matching the MONTH_NAMES init-caps decision; `taskSheet.recSummary.yearlyLeap` updated accordingly.
+
+## Remaining QA-pass items (Phase 3, #44g QA — cosmetic, not translation gaps)
+
+- **Text overflow** — Spanish runs ~15–20% longer; watch `calendarSync.calendarCard.*`, `reminders.subtitle`, longer `getHelp` items, `plantDetail.notes.emptySub`.
+- **`calendarSync.switch.intro` {scope} interpolation** — "el feed Mis tareas actual" reads awkwardly (structural, affects English too).
+- **`{task}` mid-sentence capitalization** — user task names render with stored caps in `activityFeed.careOther` ("realizó Rociar hojas") — same as English, cosmetic.
+- **Legacy preset task names stay English after locale switch (#438)** — preset names are *stored* at creation, so pre-existing preset tasks keep "Watering" etc. while the type picker shows "Riego"; fresh creates are Spanish. Names are now locked (not user-editable) for preset types. Verify this reads acceptably in live UI; a one-time migration or display-derive-from-type is a possible future item, not in scope.
+- **`.toUpperCase()` width** on month/weekday abbreviations in tight grid/picker cells.
+- **Months init caps mid-phrase** — "el 5 de Marzo" departs from standard Spanish orthography (lowercase) per the init-caps decision; confirm acceptable in live UI.
+- **Capitalization audit (July 14)** — title-case English mirrored in Spanish; iOS literal-label exception on `install.steps.addToHomeLabel`.

@@ -1568,6 +1568,9 @@ async function loadFromSupabase() {
   if (!user) { renderLoginScreen(); return; }
   currentUserId = user.id;
   isAdmin = user.app_metadata?.is_admin === true;
+  // Flag internal/QA sessions so PostHog can filter them out. Covers
+  // qa-bot@plantcare.test, qa-bot-2@plantcare.test, and any @plantcare.test email.
+  const isTestUser = /@plantcare\.test$/i.test(user.email ?? '');
 
   // 2. Resolve household_id from auth user — needed to scope subsequent queries
   const { data: userMemberRows } = await supabaseClient
@@ -1663,6 +1666,7 @@ async function loadFromSupabase() {
         display_name:   currentMember.display_name,
         household_id:   householdId,
         household_name: householdName,
+        is_test:        isTestUser,
       });
     }
     return;
@@ -1794,6 +1798,7 @@ async function loadFromSupabase() {
       display_name:   currentMember.display_name,
       household_id:   householdId,
       household_name: householdName,
+      is_test:        isTestUser,
     });
   }
 
@@ -7575,7 +7580,7 @@ async function handleEvent(e) {
       break;
 
     case 'sign-out':
-      supabaseClient.auth.signOut().then(() => renderLoginScreen());
+      supabaseClient.auth.signOut().then(() => { posthog.reset(); renderLoginScreen(); });
       break;
 
     case 'feedback':
@@ -7734,7 +7739,7 @@ async function handleEvent(e) {
     case 'menu-sign-out':
       closeMenu();
       localStorage.removeItem('active_household_id');
-      supabaseClient.auth.signOut().then(() => renderLoginScreen());
+      supabaseClient.auth.signOut().then(() => { posthog.reset(); renderLoginScreen(); });
       break;
 
     case 'open-calendar-sync':

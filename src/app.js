@@ -149,6 +149,7 @@ const TRANSLATIONS = {
     'taskSheet.field.dueDate':             "Due date",
     'taskSheet.field.startFrom':           "Start from",
     'taskSheet.field.firstDueDate':        "First due date",
+    'taskSheet.field.nextDueDate':         "Next due date", // #440: state (c) label
     'taskSheet.field.repeating':           "Repeating task",
     'taskSheet.icon.tapToChange':          "tap icon to change",
     'taskSheet.recurrence.interval':       "Every X days",
@@ -170,6 +171,13 @@ const TRANSLATIONS = {
     'taskSheet.recSummary.started':        "Started",
     'taskSheet.recSummary.starts':         "Starts",
     'taskSheet.recSummary.firstOccurrence':"First occurrence:",
+    // #440: state-aware honest schedule summary (interval/weekday Edit sheet)
+    'taskSheet.recSummary.firstDueWasLate.one':   "First due was {date} — {n} day late.",
+    'taskSheet.recSummary.firstDueWasLate.other': "First due was {date} — {n} days late.",
+    'taskSheet.recSummary.lastDoneNextDue':       "Last done {lastDone} · next due {nextDue}",
+    'taskSheet.recSummary.lateKeepHint':          "Leaving the date untouched keeps this schedule. Changing it restarts from the new date.",
+    'taskSheet.recSummary.lastDoneLate.one':      "Last done {date} — {n} day late.",
+    'taskSheet.recSummary.lastDoneLate.other':    "Last done {date} — {n} days late.",
     // Overdue-task action sheet (openOverdueActionSheet) — reuses home.aria.markDone + taskSheet.cancel
     'taskSheet.overdueSheet.skip':         "Skip this time",
     'taskSheet.overdueSheet.editTask':     "Edit task",
@@ -696,6 +704,7 @@ const TRANSLATIONS = {
     'taskSheet.field.dueDate': "Fecha de vencimiento",
     'taskSheet.field.startFrom': "Comenzar desde",
     'taskSheet.field.firstDueDate': "Primera fecha de vencimiento",
+    'taskSheet.field.nextDueDate': "Próxima fecha de vencimiento",
     'taskSheet.field.repeating': "Tarea recurrente",
     'taskSheet.icon.tapToChange': "presiona el ícono para cambiarlo",
     'taskSheet.recurrence.interval': "Cada X días",
@@ -716,6 +725,12 @@ const TRANSLATIONS = {
     'taskSheet.recSummary.started': "Comenzó",
     'taskSheet.recSummary.starts': "Comienza",
     'taskSheet.recSummary.firstOccurrence': "Primera vez:",
+    'taskSheet.recSummary.firstDueWasLate.one': "La primera fecha de vencimiento era el {date} — {n} día de retraso.",
+    'taskSheet.recSummary.firstDueWasLate.other': "La primera fecha de vencimiento era el {date} — {n} días de retraso.",
+    'taskSheet.recSummary.lastDoneNextDue': "Realizada por última vez el {lastDone} · vence {nextDue}",
+    'taskSheet.recSummary.lateKeepHint': "Si no cambias la fecha, se mantiene este programa. Si la cambias, se reinicia desde la nueva fecha.",
+    'taskSheet.recSummary.lastDoneLate.one': "Realizada por última vez el {date} — {n} día de retraso.",
+    'taskSheet.recSummary.lastDoneLate.other': "Realizada por última vez el {date} — {n} días de retraso.",
     'taskSheet.overdueSheet.skip': "Omitir esta vez",
     'taskSheet.overdueSheet.editTask': "Editar tarea",
 
@@ -6167,7 +6182,24 @@ function renderEditTaskSheet(plantId, taskId) {
   const yDay   = task.recurrenceDay   ?? new Date().getDate();
 
   const isCustom    = isCustomTaskType(task.type); // #438: by type, not id
-  const overrideDate = task.nextDueOverride && task.nextDueOverride >= todayStr() ? task.nextDueOverride : null;
+
+  // #440: honest three-state schedule display. State is read from the REAL task
+  // (last_done + stored override), independent of the field's clamped value:
+  //   (a) never done, override >= today → future first due
+  //   (b) never done, override <  today → overdue first due
+  //   (c) last_done set (or legacy both-null) → next due, via computeNextDue
+  const _today       = todayStr();
+  const _resolvedDue = computeNextDue(task);            // honest first/next due
+  const schedState   = task.lastDone            ? 'c'
+                     : task.nextDueOverride == null ? 'c' // legacy both-null → (c)
+                     : task.nextDueOverride >= _today ? 'a'
+                     :                                  'b';
+  // Field seed: (a) stored override; (b) today (pass null → min-today clamp holds);
+  // (c) computeNextDue clamped to today when past (null → today). Never persisted
+  // unless the user actually edits the field (#439).
+  const overrideDate = schedState === 'a' ? task.nextDueOverride
+                     : schedState === 'b' ? null
+                     : (_resolvedDue && _resolvedDue >= _today) ? _resolvedDue : null;
 
   const rowLabelStyle = 'display:block;font-size:11px;color:#8a8d86;margin:0 0 4px;text-transform:none;font-weight:500;letter-spacing:normal;';
 
@@ -6229,7 +6261,7 @@ function renderEditTaskSheet(plantId, taskId) {
             <div class="weekday-picker">${weekdayBtns}</div>
           </div>
           ${yearlySectionHtml(yMonth, yDay)}
-          <div id="recurrence-summary" data-started="${task.lastDone ? 'true' : 'false'}" style="display:none;background:#eef3eb;border-radius:8px;padding:5px 8px;margin:8px 0 0;font-size:12px;color:#3a6b3a;"></div>
+          <div id="recurrence-summary" data-sched-state="${schedState}" data-orig-due="${_resolvedDue ?? ''}" data-last-done="${task.lastDone ?? ''}" style="display:none;background:#eef3eb;border-radius:8px;padding:5px 8px;margin:8px 0 0;font-size:12px;line-height:1.45;color:#3a6b3a;"></div>
         </div>
       </div>
     </div>
@@ -9180,6 +9212,13 @@ function updateTaskDueLabel() {
   // Yearly has no first-due-date field (it's hidden), so nothing to relabel.
   if (container?.classList.contains('recurrence-yearly')) return;
   const rtype = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
+  // #440: state (c) (completed / legacy) → "Next due date"; states (a)/(b) keep the
+  // existing per-type label (interval → first-due, weekday → start-from). The Add
+  // sheet has no data-sched-state, so it falls through unchanged.
+  if (document.getElementById('recurrence-summary')?.dataset.schedState === 'c') {
+    label.textContent = t('taskSheet.field.nextDueDate');
+    return;
+  }
   label.textContent = rtype === 'weekdays' ? t('taskSheet.field.startFrom') : t('taskSheet.field.firstDueDate');
 }
 
@@ -9234,6 +9273,60 @@ function updateRecurrenceSummary() {
   const rtype = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
   const fmtDow = (d) => new Date(d + 'T12:00:00')
     .toLocaleDateString(displayLocale(), { weekday: 'short', month: 'short', day: 'numeric' });
+
+  // #440: honest state-aware summary for the Edit sheet while the date is UNTOUCHED.
+  // Wording is read from the stored task (data-* stashed at render), not the clamped
+  // field. A user-touched date, or the Add sheet (no data-sched-state), falls through
+  // to the original "Starts / First occurrence" restart wording below — unchanged.
+  const schedState = el.dataset.schedState;
+  if (schedState && !userTouchedTaskDueDate) {
+    const origDue  = el.dataset.origDue  || null;   // computeNextDue of the stored task
+    const lastDone = el.dataset.lastDone || null;
+    const today    = todayStr();
+    const recursTail = () => {
+      if (rtype === 'weekdays') {
+        const sel = Array.from(document.querySelectorAll('#sheet .weekday-btn.selected'))
+          .map(b => parseInt(b.dataset.day)).filter(n => !Number.isNaN(n)).sort(compareWeekdaysMonFirst);
+        if (!sel.length) return '';
+        const SHORT = localeWeekdayNamesAbbr();
+        return t('taskSheet.recSummary.everyWeekdays', { days: sel.map(d => SHORT[d]).join(', ') });
+      }
+      const f = parseInt(document.getElementById('sheet-frequency')?.value ?? '');
+      return (f >= 1) ? tn('taskSheet.recSummary.everyDays', f) : '';
+    };
+    const startLead = (d) => rtype === 'weekdays'
+      ? `${t('taskSheet.recSummary.firstOccurrence')} ${fmtDow(d)}`
+      : `${t('taskSheet.recSummary.starts')} ${fmtDow(d)}`;
+    const green = (lead) => { const tl = recursTail(); return { amber: false, html: `<b>${lead}</b>${tl ? ` · ${tl}` : ''}` }; };
+
+    let out = null;
+    if (schedState === 'a' && origDue) {
+      out = green(startLead(origDue));
+    } else if (schedState === 'b' && origDue) {
+      const n = daysBetween(origDue, today);
+      out = { amber: true, html: `<b>${tn('taskSheet.recSummary.firstDueWasLate', n, { date: fmtDow(origDue) })}</b><br>${t('taskSheet.recSummary.lateKeepHint')}` };
+    } else if (schedState === 'c') {
+      if (lastDone && origDue && origDue < today) {           // completed but overdue
+        const n = daysBetween(origDue, today);
+        out = { amber: true, html: `<b>${tn('taskSheet.recSummary.lastDoneLate', n, { date: fmtDow(lastDone) })}</b><br>${t('taskSheet.recSummary.lateKeepHint')}` };
+      } else if (lastDone && origDue) {                        // completed, on schedule
+        const tl = recursTail();
+        out = { amber: false, html: `<b>${t('taskSheet.recSummary.lastDoneNextDue', { lastDone: fmtDow(lastDone), nextDue: fmtDow(origDue) })}</b>${tl ? ` · ${tl}` : ''}` };
+      } else {                                                 // legacy both-null (no last_done)
+        out = green(startLead(origDue || today));
+      }
+    }
+    if (out) {
+      if (out.amber) { el.style.background = '#fdf1dd'; el.style.color = '#8a5a0f'; }
+      else           { el.style.background = '#eef3eb'; el.style.color = '#3a6b3a'; }
+      el.innerHTML = out.html;
+      el.style.display = '';
+      return;
+    }
+  }
+  // Restore green for the Edit sheet's restart/touched wording (a prior render may
+  // have left it amber). The Add sheet has no data-sched-state — left untouched.
+  if (schedState) { el.style.background = '#eef3eb'; el.style.color = '#3a6b3a'; }
 
   if (rtype === 'interval') {
     const freq = parseInt(document.getElementById('sheet-frequency')?.value ?? '');

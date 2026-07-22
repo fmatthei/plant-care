@@ -2,7 +2,7 @@
 
 - **Generated:** 2026-07-10
 - **Source:** `TRANSLATIONS.en` in `src/app.js`
-- **Key count:** 433 (36 `onboarding.*` + 33 `taskSheet.*` + 27 `addPlant.*` + 15 `auth.*` + 18 `install.*` + 39 `menu.*` + 41 `calendarSync.*` + 27 `home.*` + 6 `caring.*` + 27 `plantDetail.*` + 4 `taskCard.*` + 13 `manageHouseholds.*` + 15 `notes.*` + 15 `photos.*` + 14 `editPlant.*` + 1 `emojiPicker.*` + 35 `status.*` + 17 `relativeTime.*` + 23 `reschedule.*` + 11 `dialog.*` + 8 `careVerb.*` + 5 `activityFeed.*` + 3 `confirmComplete.*`)
+- **Key count:** 440 (36 `onboarding.*` + 40 `taskSheet.*` + 27 `addPlant.*` + 15 `auth.*` + 18 `install.*` + 39 `menu.*` + 41 `calendarSync.*` + 27 `home.*` + 6 `caring.*` + 27 `plantDetail.*` + 4 `taskCard.*` + 13 `manageHouseholds.*` + 15 `notes.*` + 15 `photos.*` + 14 `editPlant.*` + 1 `emojiPicker.*` + 35 `status.*` + 17 `relativeTime.*` + 23 `reschedule.*` + 11 `dialog.*` + 8 `careVerb.*` + 5 `activityFeed.*` + 3 `confirmComplete.*`)
 
 > **Keep this current:** re-run this export after each future `#44*` brief. Documentation only — not imported.
 
@@ -54,7 +54,7 @@
 
 ---
 
-## `taskSheet.*` — Task create/edit sheets (Briefs #44b-2, #44-extract-final) · 33 keys
+## `taskSheet.*` — Task create/edit sheets (Briefs #44b-2, #44-extract-final, #440) · 40 keys
 
 | Key | English value |
 | --- | --- |
@@ -69,6 +69,7 @@
 | `taskSheet.field.dueDate` | `Due date` |
 | `taskSheet.field.startFrom` | `Start from` |
 | `taskSheet.field.firstDueDate` | `First due date` |
+| `taskSheet.field.nextDueDate` | `Next due date` |
 | `taskSheet.field.repeating` | `Repeating task` |
 | `taskSheet.icon.tapToChange` | `tap icon to change` |
 | `taskSheet.recurrence.interval` | `Every X days` |
@@ -89,6 +90,12 @@
 | `taskSheet.recSummary.started` | `Started` |
 | `taskSheet.recSummary.starts` | `Starts` |
 | `taskSheet.recSummary.firstOccurrence` | `First occurrence:` |
+| `taskSheet.recSummary.firstDueWasLate.one` | `First due was {date} — {n} day late.` |
+| `taskSheet.recSummary.firstDueWasLate.other` | `First due was {date} — {n} days late.` |
+| `taskSheet.recSummary.lastDoneNextDue` | `Last done {lastDone} · next due {nextDue}` |
+| `taskSheet.recSummary.lateKeepHint` | `Leaving the date untouched keeps this schedule. Changing it restarts from the new date.` |
+| `taskSheet.recSummary.lastDoneLate.one` | `Last done {date} — {n} day late.` |
+| `taskSheet.recSummary.lastDoneLate.other` | `Last done {date} — {n} days late.` |
 | `taskSheet.overdueSheet.skip` | `Skip this time` |
 | `taskSheet.overdueSheet.editTask` | `Edit task` |
 

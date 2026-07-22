@@ -15,6 +15,14 @@ const TASK_CONFIG = {
   'rotate':       { name: 'Rotate',                    icon: '🔄', type: 'rotate' },
 };
 
+// #438: preset vs. custom is determined by a task's TYPE, never its id. DB task
+// ids are UUIDs, so the old `TASK_CONFIG[task.id]` lookup never matched a preset
+// and every task was wrongly treated as custom (editable name/icon). A task is a
+// preset iff its type is one of the 8 built-ins; anything else (type 'custom') is
+// user-created. Derived from TASK_CONFIG so it stays in sync with the presets.
+const PRESET_TASK_TYPES = new Set(Object.values(TASK_CONFIG).map(c => c.type));
+function isCustomTaskType(type) { return !PRESET_TASK_TYPES.has(type); }
+
 // ── Shared date-name sources (Brief #44a) ───────────────────────────────────
 // Single source of truth for weekday/month names. Sunday-indexed (index 0 = Sun)
 // to match JS Date.getDay(). English values for now; Phase-2 i18n makes these
@@ -738,6 +746,7 @@ let openedFromCareLog = false;
 let sheetEntryTab = null;
 let householdName = null;
 let userTouchedArrivalDate = false;
+let userTouchedTaskDueDate = false; // #439: Edit-sheet due date is programmatically seeded; only a real user change may persist next_due_override
 let manageHouseholdsEditingName = false;
 let lastSyncedAt = null; // ms timestamp of the last completed loadFromSupabase()
 let remindersCardCollapsed = false; // #339: in-session only (Full→Note). Resets on reload; no flag written.
@@ -5615,6 +5624,7 @@ function renderEditTaskSheet(plantId, taskId) {
   state.sheetMode = 'edit-task';
   state.sheetData = { plantId, taskId };
   sheetEntryTab = plantDetailTab;
+  userTouchedTaskDueDate = false; // #439: the due-date field is seeded programmatically below
 
   const weekdayBtns = [1, 2, 3, 4, 5, 6, 0].map((d) => {
     const sel = (task.weekdays ?? []).includes(d) ? 'selected' : '';
@@ -5625,7 +5635,7 @@ function renderEditTaskSheet(plantId, taskId) {
   const yMonth = task.recurrenceMonth ?? (new Date().getMonth() + 1);
   const yDay   = task.recurrenceDay   ?? new Date().getDate();
 
-  const isCustom    = !TASK_CONFIG[task.id];
+  const isCustom    = isCustomTaskType(task.type); // #438: by type, not id
   const overrideDate = task.nextDueOverride && task.nextDueOverride >= todayStr() ? task.nextDueOverride : null;
 
   const rowLabelStyle = 'display:block;font-size:11px;color:#8a8d86;margin:0 0 4px;text-transform:none;font-weight:500;letter-spacing:normal;';
@@ -5645,12 +5655,12 @@ function renderEditTaskSheet(plantId, taskId) {
       ${CUSTOM_ICONS.map(ic =>
         `<div class="icon-option${ic === cfg.icon ? ' selected' : ''}" data-action="edit-task-pick-icon" data-icon="${ic}">${ic}</div>`
       ).join('')}
-    </div>
+    </div>` : ''}
 
     <div style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
       <label class="form-label" style="${rowLabelStyle}">${t('taskSheet.field.taskName')}</label>
-      <input type="text" class="form-input" id="sheet-task-name" value="${escapeHtml(task.name ?? '')}" style="background:#f8f8f6;border:0.5px solid #e0e0dc;border-radius:8px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box;">
-    </div>` : ''}
+      <input type="text" class="form-input" id="sheet-task-name" value="${escapeHtml(task.name ?? '')}"${isCustom ? '' : ' disabled'} style="background:${isCustom ? '#f8f8f6' : '#f0f0ee'};border:0.5px solid #e0e0dc;border-radius:8px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box;${isCustom ? '' : 'color:#8a8d86;cursor:not-allowed;'}">
+    </div>
 
     <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
       <label class="form-label" style="font-size:11px;color:#8a8d86;margin:0;text-transform:none;font-weight:500;letter-spacing:normal;flex-shrink:0;">${t('taskSheet.field.owner')}</label>
@@ -8061,14 +8071,26 @@ async function handleEvent(e) {
         recurrenceMonth: yearlyMonth,
         recurrenceDay: yearlyDay,
         owner: selectedOwner?.dataset.owner ?? 'Matu',
-        // Yearly is anchored by month/day; clear any first-due override.
-        nextDueOverride: recType === 'yearly' ? null : (overrideVal || null),
       };
+      // #439: only write next_due_override when yearly (anchored by month/day →
+      // always clear it) or when the user actually edited the date field. If the
+      // field was left at its programmatic seed, omit the key entirely so
+      // updateTask never touches next_due_override — this preserves the task's
+      // true computed schedule (no silent re-anchor to today) and keeps any
+      // legitimate existing future override intact.
+      if (recType === 'yearly') {
+        taskUpdates.nextDueOverride = null;
+      } else if (userTouchedTaskDueDate) {
+        taskUpdates.nextDueOverride = overrideVal || null;
+      }
       if (lastDoneEl) taskUpdates.lastDone = lastDoneEl.value || null;
       const pauseToggleEl = document.getElementById('pause-toggle');
       if (pauseToggleEl) taskUpdates.paused = pauseToggleEl.getAttribute('aria-checked') === 'true';
 
-      if (!TASK_CONFIG[tid]) {
+      // #438: only custom tasks persist an edited name/icon. Preset tasks render
+      // the name disabled and the icon tile inert, so their name is never in the
+      // save payload (their type-derived name/icon stay locked).
+      if (isCustomTaskType(getTask(pid, tid)?.type)) {
         const nameVal = document.getElementById('sheet-task-name')?.value?.trim();
         if (nameVal) taskUpdates.name = nameVal;
         const iconVal = document.querySelector('#sheet .edit-task-icon-tile')?.dataset.emoji;
@@ -8507,7 +8529,12 @@ function attachFutureDateSelectListeners(prefix) {
   const yearEl  = document.getElementById(`${prefix}-year`);
   if (!dayEl || !monthEl || !yearEl) return;
 
-  function refresh() {
+  // #439: setFlag marks a real user edit (mirrors attachArrivalSelectListeners).
+  // Only a user-initiated change sets userTouchedTaskDueDate; the init call and
+  // the internal past-snap re-call pass false so the programmatic seed and its
+  // constraint clamp never count as "touched".
+  function refresh(setFlag) {
+    if (setFlag) userTouchedTaskDueDate = true;
     const y = parseInt(yearEl.value);
     const m = parseInt(monthEl.value);
     const d = parseInt(dayEl.value);
@@ -8535,14 +8562,14 @@ function attachFutureDateSelectListeners(prefix) {
     const built = `${y}-${String(curM).padStart(2, '0')}-${String(curD).padStart(2, '0')}`;
     if (built < today) {
       yearEl.value = String(ty);
-      refresh();
+      refresh(false);
     }
   }
 
-  yearEl.addEventListener('change',  refresh);
-  monthEl.addEventListener('change', refresh);
-  dayEl.addEventListener('change',   refresh);
-  refresh(); // apply initial constraints
+  yearEl.addEventListener('change',  () => refresh(true));
+  monthEl.addEventListener('change', () => refresh(true));
+  dayEl.addEventListener('change',   () => refresh(true));
+  refresh(false); // apply initial constraints without marking as touched
 }
 
 // Rebuilds the Edit/Add Task recurrence summary line from current DOM state.

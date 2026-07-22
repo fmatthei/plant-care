@@ -1668,6 +1668,8 @@ async function loadFromSupabase() {
         household_name: householdName,
         is_test:        isTestUser,
       });
+      // #445: stamp household onto every subsequent event as super properties.
+      posthog.register({ household_id: householdId, household_name: householdName });
     }
     return;
   }
@@ -1800,6 +1802,8 @@ async function loadFromSupabase() {
       household_name: householdName,
       is_test:        isTestUser,
     });
+    // #445: stamp household onto every subsequent event as super properties.
+    posthog.register({ household_id: householdId, household_name: householdName });
   }
 
   lastSyncedAt = Date.now();
@@ -6001,6 +6005,7 @@ function openCalendarSyncSheet() {
       const useGoogle = isIOS() ? (calendarAppChoice === 'google') : true;
       window.open(useGoogle ? googleUrl : webcalUrl);
       localStorage.setItem(subKey, 'true');
+      posthog.capture('calendar_subscribed', { scope });
       setApp(scope, isIOS() ? calendarAppChoice : 'google');   // persist per-scope app (#432)
       view = 'options';
       cameFromOptions = false;
@@ -8953,6 +8958,9 @@ async function setNotificationsEnabled(enabled) {
     .update({ notifications_enabled: enabled })
     .eq('id', currentMemberId);
   if (error) console.error('notifications_enabled save failed:', error);
+  // #445: single shared success point for both enable callers — fire only when
+  // enabling actually persisted. The one false caller (QA reset) is excluded.
+  else if (enabled) posthog.capture('notification_enabled');
 }
 
 // #403: stamp first onboarding completion on the current member's

@@ -67,8 +67,8 @@
 | Troubleshooting | Solución de problemas |
 | Close | Cerrar |
 | Settings | Configuración _(Google)_ / Ajustes _(Apple)_ |
-| Caring (tab) | Cuidados |
-| Care Log / care history | Registro de Cuidados / historial de cuidados |
+| Caring (tab) | Cuidar |
+| Care Log / care history | Historial / historial de cuidados |
 | completed (tasks) | realizadas _(realizar family — unified completion word app-wide)_ |
 | selected users | usuarios seleccionados |
 | "No … yet" | Aún no hay… |
@@ -393,7 +393,7 @@ Approved: **432 / 432** ✅ COMPLETE — plus date-name arrays and TASK_CONFIG p
 | `home.yourHouseholds` | Tus hogares |
 | `home.manageHouseholds` | Administrar hogares |
 | `home.tabPlants` | Mis plantas |
-| `home.tabCaring` | Cuidados |
+| `home.tabCaring` | Cuidar |
 | `home.emptyTitle` | Tus plantas viven aquí |
 | `home.emptySub` | Agrega una planta para empezar a registrar su cuidado. |
 | `home.myPlants` | Mis plantas |
@@ -440,7 +440,7 @@ Approved: **432 / 432** ✅ COMPLETE — plus date-name arrays and TASK_CONFIG p
 | `plantDetail.tabSummary` | Resumen |
 | `plantDetail.tabTasks` | Tareas |
 | `plantDetail.tabNotes` | Notas |
-| `plantDetail.tabCareLog` | Registro de Cuidados |
+| `plantDetail.tabCareLog` | Historial |
 | `plantDetail.addTask` | Agregar tarea |
 | `plantDetail.aria.addFab` | Agregar |
 | `plantDetail.summary.homeTitle` | Tu {name} está en casa |
@@ -460,7 +460,7 @@ Approved: **432 / 432** ✅ COMPLETE — plus date-name arrays and TASK_CONFIG p
 | `plantDetail.notes.emptyTitle` | Aún no hay notas |
 | `plantDetail.notes.emptySub` | Anota observaciones sobre tu {name} — crecimiento, salud, cualquier cosa que valga la pena recordar. Presiona el botón de abajo para agregar una. |
 | `plantDetail.notes.noneForFilter` | Sin notas para los usuarios seleccionados |
-| `plantDetail.careLog.emptyTitle` | El historial de cuidados de tu planta |
+| `plantDetail.careLog.emptyTitle` | Aún no hay cuidados registrados |
 | `plantDetail.careLog.emptySub` | Tus tareas realizadas y notas aparecerán aquí. |
 | `plantDetail.careLog.skipped` | Omitida |
 

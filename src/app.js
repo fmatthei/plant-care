@@ -889,7 +889,7 @@ const TRANSLATIONS = {
     'home.yourHouseholds': "Tus hogares",
     'home.manageHouseholds': "Administrar hogares",
     'home.tabPlants': "Mis plantas",
-    'home.tabCaring': "Cuidados",
+    'home.tabCaring': "Cuidar",
     'home.emptyTitle': "Tus plantas viven aquí",
     'home.emptySub': "Agrega una planta para empezar a registrar su cuidado.",
     'home.myPlants': "Mis plantas",
@@ -926,7 +926,7 @@ const TRANSLATIONS = {
     'plantDetail.tabSummary': "Resumen",
     'plantDetail.tabTasks': "Tareas",
     'plantDetail.tabNotes': "Notas",
-    'plantDetail.tabCareLog': "Registro de Cuidados",
+    'plantDetail.tabCareLog': "Historial",
     'plantDetail.addTask': "Agregar tarea",
     'plantDetail.aria.addFab': "Agregar",
     'plantDetail.summary.homeTitle': "Tu {name} está en casa",
@@ -946,7 +946,7 @@ const TRANSLATIONS = {
     'plantDetail.notes.emptyTitle': "Aún no hay notas",
     'plantDetail.notes.emptySub': "Anota observaciones sobre tu {name} — crecimiento, salud, cualquier cosa que valga la pena recordar. Presiona el botón de abajo para agregar una.",
     'plantDetail.notes.noneForFilter': "Sin notas para los usuarios seleccionados",
-    'plantDetail.careLog.emptyTitle': "El historial de cuidados de tu planta",
+    'plantDetail.careLog.emptyTitle': "Aún no hay cuidados registrados",
     'plantDetail.careLog.emptySub': "Tus tareas realizadas y notas aparecerán aquí.",
     'plantDetail.careLog.skipped': "Omitida",
 
@@ -9973,6 +9973,33 @@ async function seedHeavyV4() {
     rec: { type: 'one-off' },
     owner: memberA, ld: addDays(today, -30),
   });
+
+  // --- #440 test-matrix coverage (3 tasks) ---
+
+  // State (a): never done, future first-due, INTERVAL → green "starts …"
+  await insertTask(cactus.id, 3, {
+    name: 'New Feeding', icon: '🌿', type: 'fertilize',
+    rec: { type: 'interval', every: 14, unit: 'days', days: [] },
+    owner: memberB, ld: null, ndo: addDays(today, 7),
+  });
+
+  // State (b): never done, OVERDUE, INTERVAL → primary #439 re-anchor + #440 amber.
+  // 5 days late; a re-anchor bug would collapse "first due was late" to on-time.
+  await insertTask(cactus.id, 4, {
+    name: 'Initial Inspection', icon: '🔍', type: 'check',
+    rec: { type: 'interval', every: 10, unit: 'days', days: [] },
+    owner: memberA, ld: null, ndo: addDays(today, -5),
+  });
+
+  // Yearly + both-null (never done): fills the yearly cell AND the both-null
+  // (c) legacy-fallback branch at once. ld null + yearly override null → schedState 'c'
+  // via computeNextDue(anchor); renders green "starts {anchor}".
+  await insertTask(cactus.id, 5, {
+    name: 'Annual Repot Review', icon: '🪴', type: 'repot',
+    rec: { type: 'yearly', month: 3, day: 15 },
+    owner: memberB, ld: null,
+  });
+
   await logCare(cactus.id, cacWater.id,  memberA, 'Watering', 'water', 2);
   await logCare(cactus.id, cacWater.id,  memberA, 'Watering', 'water', 9);
   await logCare(cactus.id, cacWater.id,  memberB, 'Watering', 'water', 16);

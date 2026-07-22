@@ -2,7 +2,7 @@
 
 - **Generated:** 2026-07-10
 - **Source:** `TRANSLATIONS.en` in `src/app.js`
-- **Key count:** 432 (36 `onboarding.*` + 33 `taskSheet.*` + 27 `addPlant.*` + 15 `auth.*` + 18 `install.*` + 38 `menu.*` + 41 `calendarSync.*` + 27 `home.*` + 6 `caring.*` + 27 `plantDetail.*` + 4 `taskCard.*` + 13 `manageHouseholds.*` + 15 `notes.*` + 15 `photos.*` + 14 `editPlant.*` + 1 `emojiPicker.*` + 35 `status.*` + 17 `relativeTime.*` + 23 `reschedule.*` + 11 `dialog.*` + 8 `careVerb.*` + 5 `activityFeed.*` + 3 `confirmComplete.*`)
+- **Key count:** 433 (36 `onboarding.*` + 33 `taskSheet.*` + 27 `addPlant.*` + 15 `auth.*` + 18 `install.*` + 39 `menu.*` + 41 `calendarSync.*` + 27 `home.*` + 6 `caring.*` + 27 `plantDetail.*` + 4 `taskCard.*` + 13 `manageHouseholds.*` + 15 `notes.*` + 15 `photos.*` + 14 `editPlant.*` + 1 `emojiPicker.*` + 35 `status.*` + 17 `relativeTime.*` + 23 `reschedule.*` + 11 `dialog.*` + 8 `careVerb.*` + 5 `activityFeed.*` + 3 `confirmComplete.*`)
 
 > **Keep this current:** re-run this export after each future `#44*` brief. Documentation only — not imported.
 
@@ -175,7 +175,7 @@
 
 ---
 
-## `menu.*` — Menu, notifications, change-password, toasts (Brief #44b-6) · 38 keys
+## `menu.*` — Menu, notifications, change-password, toasts (Brief #44b-6, #44g) · 39 keys
 
 | Key | English value |
 | --- | --- |
@@ -185,6 +185,7 @@
 | `menu.item.syncCalendar` | `Sync to Calendar` |
 | `menu.item.changePassword` | `Change Password` |
 | `menu.item.signOut` | `Sign Out` |
+| `menu.language` | `Language` |
 | `menu.notifications.label` | `Notifications` |
 | `menu.notifications.blocked` | `Blocked` |
 | `menu.notifications.on` | `On` |

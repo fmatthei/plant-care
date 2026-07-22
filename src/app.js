@@ -66,6 +66,15 @@ const TASK_CONFIG_NAMES_BY_LOCALE = {
   en: Object.fromEntries(Object.entries(TASK_CONFIG).map(([k, v]) => [k, v.name])),
   es: TASK_CONFIG_NAMES_ES,
 };
+// #44g: locale-aware accessors for the date-name arrays. Resolved at call time
+// against activeLocale so a language switch flips weekday/month labels on the
+// next render; en falls through to the English source arrays. (Consuming the
+// dormant maps #44f staged.) YEARLY_MONTH_SHORT_BY_LOCALE is defined alongside
+// YEARLY_MONTH_SHORT further down — referenced here only at call time.
+function localeWeekdayNames()     { return WEEKDAY_NAMES_BY_LOCALE[activeLocale]      ?? WEEKDAY_NAMES; }
+function localeWeekdayNamesAbbr() { return WEEKDAY_NAMES_ABBR_BY_LOCALE[activeLocale] ?? WEEKDAY_NAMES_ABBR; }
+function localeMonthNames()       { return MONTH_NAMES_BY_LOCALE[activeLocale]        ?? MONTH_NAMES; }
+function localeMonthShort()       { return YEARLY_MONTH_SHORT_BY_LOCALE[activeLocale] ?? YEARLY_MONTH_SHORT; }
 
 // ── i18n foundation (Brief #44a) ────────────────────────────────────────────
 // Minimal translation shell. `t(key, vars)` looks up `key` in the active-locale
@@ -252,6 +261,7 @@ const TRANSLATIONS = {
     'menu.item.syncCalendar':               "Sync to Calendar",
     'menu.item.changePassword':             "Change Password",
     'menu.item.signOut':                    "Sign Out",
+    'menu.language':                        "Language", // #44g: option values are untranslated endonyms (English / Español)
 
     'menu.notifications.label':             "Notifications",
     'menu.notifications.blocked':           "Blocked",
@@ -782,6 +792,7 @@ const TRANSLATIONS = {
     'menu.item.syncCalendar': "Sincronizar con el Calendario",
     'menu.item.changePassword': "Cambiar Contraseña",
     'menu.item.signOut': "Cerrar Sesión",
+    'menu.language': "Idioma",
     'menu.notifications.label': "Notificaciones",
     'menu.notifications.blocked': "Bloqueadas",
     'menu.notifications.on': "Activadas",
@@ -1117,7 +1128,10 @@ const TRANSLATIONS = {
     'confirmComplete.confirm': "Completar",
   },
 };
-let activeLocale = 'en';
+// #44g: device-persisted UI language. Absent → 'en' (existing default). Explicit
+// choice only — no auto-detection from navigator.language. Storage/computation
+// locale (en-CA, noon-anchor) is unaffected; this drives display strings/dates.
+let activeLocale = localStorage.getItem('locale') === 'es' ? 'es' : 'en';
 
 function t(key, vars) {
   const dict = TRANSLATIONS[activeLocale] ?? TRANSLATIONS.en;
@@ -2057,13 +2071,13 @@ function recurrenceLabel(task, opts = {}) {
     if (filterInvalid) days = days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6);
     days = days.slice().sort(compareWeekdaysMonFirst);
     if (days.length === 0) return t(weekdaysEmptyKey);
-    const arr = weekdayStyle === 'abbr' ? WEEKDAY_NAMES_ABBR : WEEKDAY_NAMES;
+    const arr = weekdayStyle === 'abbr' ? localeWeekdayNamesAbbr() : localeWeekdayNames();
     const list = days.map(d => arr[d]).join(', ');
     return everyPrefix ? t('status.recurrence.everyWeekdays', { days: list }) : list;
   }
   if (recType === 'yearly') {
     const m = task.recurrenceMonth, d = task.recurrenceDay;
-    return (m && d) ? t('status.recurrence.everyYearOn', { month: YEARLY_MONTH_NAMES[m - 1], day: d }) : t('status.recurrence.everyYear');
+    return (m && d) ? t('status.recurrence.everyYearOn', { month: localeMonthNames()[m - 1], day: d }) : t('status.recurrence.everyYear');
   }
   return tn('status.recurrence.everyDays', task.frequencyDays ?? freqFallback);
 }
@@ -5337,7 +5351,7 @@ function showReschedulePrompt(plantId, taskId, displacement, mostRecentDueDate) 
     const origSorted = sortAndDedupe(origWd);
     const modSorted  = sortAndDedupe(shiftedWeekdays);
     shiftedWeekdays = modSorted;
-    const full = WEEKDAY_NAMES_ABBR;
+    const full = localeWeekdayNamesAbbr();
     originalWeekdaysLabel = origSorted.slice().sort(compareWeekdaysMonFirst).map(d => full[d]).join(' & ');
     modifiedWeekdaysLabel = modSorted.slice().sort(compareWeekdaysMonFirst).map(d => full[d]).join(' & ');
     originalDates = weekdayOccurrencesAfterToday(origSorted, gridEnd);
@@ -6055,6 +6069,7 @@ function renderMenuPanel() {
     <div class="menu-section">
       <div class="menu-section-title">${t('menu.section.account')}</div>
       <button class="menu-item" data-action="change-password">${t('menu.item.changePassword')}</button>
+      <button class="menu-item" data-action="toggle-language">🌐 ${t('menu.language')} &middot; <span style="color:#aaa;">${activeLocale === 'es' ? 'Español' : 'English'}</span></button>
       <button class="menu-item menu-item-danger" data-action="menu-sign-out">${t('menu.item.signOut')}</button>
     </div>
   `;
@@ -6144,7 +6159,7 @@ function renderEditTaskSheet(plantId, taskId) {
 
   const weekdayBtns = [1, 2, 3, 4, 5, 6, 0].map((d) => {
     const sel = (task.weekdays ?? []).includes(d) ? 'selected' : '';
-    return `<button class="weekday-btn ${sel}" data-action="sheet-toggle-weekday" data-day="${d}">${WEEKDAY_NAMES[d]}</button>`;
+    return `<button class="weekday-btn ${sel}" data-action="sheet-toggle-weekday" data-day="${d}">${localeWeekdayNames()[d]}</button>`;
   }).join('');
 
   // Yearly anchor prefill: from the task if set, else today's month/day.
@@ -6303,7 +6318,7 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
   state.sheetData = { plantId, typeKey };
 
   const weekdayBtns = [1, 2, 3, 4, 5, 6, 0].map((d) =>
-    `<button class="weekday-btn" data-action="sheet-toggle-weekday" data-day="${d}">${WEEKDAY_NAMES[d]}</button>`
+    `<button class="weekday-btn" data-action="sheet-toggle-weekday" data-day="${d}">${localeWeekdayNames()[d]}</button>`
   ).join('');
 
   // Yearly anchor default: today's month/day (yearly is never a default type).
@@ -7607,6 +7622,16 @@ async function handleEvent(e) {
       closeMenu();
       renderChangePasswordSheet();
       break;
+
+    case 'toggle-language': {
+      // #44g: only two locales — tap toggles. Persist (device-fact), then
+      // re-render the menu (reflects new selection + language) and the live view.
+      activeLocale = activeLocale === 'en' ? 'es' : 'en';
+      localStorage.setItem('locale', activeLocale);
+      renderMenuPanel();
+      renderApp();
+      break;
+    }
 
     case 'menu-notifications':
       // #358: OS-blocked state is informational only — subscribeToPush() can't
@@ -8957,7 +8982,7 @@ function renderDateSelectHtml(prefix, initialDate, yearMin, yearMax) {
     return `<option value="${v}"${v === initDay ? ' selected' : ''}>${v}</option>`;
   }).join('');
 
-  const monthOpts = SEL_MONTH_NAMES.map((name, i) => {
+  const monthOpts = localeMonthNames().map((name, i) => {
     const v = i + 1;
     return `<option value="${v}"${v === initMonth ? ' selected' : ''}>${name}</option>`;
   }).join('');
@@ -9005,7 +9030,7 @@ function attachArrivalSelectListeners() {
     // Constrain month options: if year == today's year, max month = today's month
     const maxM = (y === ty) ? tm : 12;
     const curM = Math.min(m, maxM);
-    monthEl.innerHTML = SEL_MONTH_NAMES.map((name, i) => {
+    monthEl.innerHTML = localeMonthNames().map((name, i) => {
       const v = i + 1;
       if (v > maxM) return '';
       return `<option value="${v}"${v === curM ? ' selected' : ''}>${name}</option>`;
@@ -9058,7 +9083,7 @@ function attachFutureDateSelectListeners(prefix) {
     // Constrain month options: if year == today's year, min month = today's month
     const minM = (y === ty) ? tm : 1;
     const curM = Math.max(m, minM);
-    monthEl.innerHTML = SEL_MONTH_NAMES.map((name, i) => {
+    monthEl.innerHTML = localeMonthNames().map((name, i) => {
       const v = i + 1;
       if (v < minM) return '';
       return `<option value="${v}"${v === curM ? ' selected' : ''}>${name}</option>`;
@@ -9105,7 +9130,7 @@ const YEARLY_MONTH_MAXDAY = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 function yearlyMaxDay(month) { return YEARLY_MONTH_MAXDAY[(month || 1) - 1] ?? 31; }
 
 function yearlyMonthOptionsHtml(selMonth) {
-  return YEARLY_MONTH_NAMES
+  return localeMonthNames()
     .map((n, i) => `<option value="${i + 1}"${i + 1 === selMonth ? ' selected' : ''}>${n}</option>`)
     .join('');
 }
@@ -9195,7 +9220,7 @@ function updateRecurrenceSummary() {
     if (!month || !day) { el.style.display = 'none'; return; }
     el.textContent = (month === 2 && day === 29)
       ? t('taskSheet.recSummary.yearlyLeap')
-      : t('taskSheet.recSummary.yearlyOn', { month: YEARLY_MONTH_SHORT[month - 1], day });
+      : t('taskSheet.recSummary.yearlyOn', { month: localeMonthShort()[month - 1], day });
     el.style.display = '';
     return;
   }
@@ -9222,7 +9247,7 @@ function updateRecurrenceSummary() {
       .filter(n => !Number.isNaN(n))
       .sort(compareWeekdaysMonFirst);
     if (selected.length === 0) { el.style.display = 'none'; return; }
-    const SHORT_DOW = WEEKDAY_NAMES_ABBR;
+    const SHORT_DOW = localeWeekdayNamesAbbr();
     const tail = t('taskSheet.recSummary.everyWeekdays', { days: selected.map(d => SHORT_DOW[d]).join(', ') });
     // Resolve the first actual occurrence: first selected weekday on/after the
     // entered date (mirrors computeNextDue's weekday-override snapping, #236).

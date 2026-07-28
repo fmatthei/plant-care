@@ -645,6 +645,7 @@ const TRANSLATIONS = {
     'activityFeed.care':      "{actor} {verb} {plant}",
     'activityFeed.skipped':   "{actor} skipped {task}",
     'activityFeed.careOther': "{actor} · {task} — {plant}",
+    'activityFeed.careCustom': "{actor} completed {task} for {plant}",
     'activityFeed.noteOn':    "{actor} on {plant}",
     'activityFeed.noteAdded': "{actor} added a note",
     // #435: confirmation before completing a task assigned to another member.
@@ -1134,6 +1135,7 @@ const TRANSLATIONS = {
     'activityFeed.care': "{actor} {verb} {plant}",
     'activityFeed.skipped': "{actor} omitió {task}",
     'activityFeed.careOther': "{actor} realizó {task} en {plant}",
+    'activityFeed.careCustom': "{actor} realizó {task} en {plant}",
     'activityFeed.noteOn': "{actor} creó una nota en {plant}",
     'activityFeed.noteAdded': "{actor} creó una nota",
 
@@ -3344,7 +3346,9 @@ function renderHomeActivityFeed() {
         ? t('activityFeed.skipped', { actor: escapeHtml(item.member), task: escapeHtml(item.taskName) })
         : verb
           ? t('activityFeed.care', { actor: escapeHtml(item.member), verb: escapeHtml(verb), plant: escapeHtml(item.plantName) })
-          : t('activityFeed.careOther', { actor: escapeHtml(item.member), task: escapeHtml(item.taskName), plant: escapeHtml(item.plantName) });
+          : item.taskType === 'custom'
+            ? t('activityFeed.careCustom', { actor: escapeHtml(item.member), task: escapeHtml(item.taskName), plant: escapeHtml(item.plantName) })
+            : t('activityFeed.careOther', { actor: escapeHtml(item.member), task: escapeHtml(item.taskName), plant: escapeHtml(item.plantName) });
       html += `
       <div class="activity-row activity-row--home${isSkipped ? ' activity-row-skipped' : ''}">
         <span class="activity-icon${isSkipped ? ' activity-icon-skipped' : ''}">${icon}</span>
@@ -4527,7 +4531,9 @@ function renderSummaryTab(plant) {
           ? t('activityFeed.skipped', { actor: author, task: e.taskName ?? t('home.taskFallback') })
           : verb
             ? t('activityFeed.care', { actor: author, verb, plant: plant.name })
-            : t('activityFeed.careOther', { actor: author, task: e.taskName ?? t('home.careFallback'), plant: plant.name });
+            : tType === 'custom'
+              ? t('activityFeed.careCustom', { actor: author, task: e.taskName ?? t('home.careFallback'), plant: plant.name })
+              : t('activityFeed.careOther', { actor: author, task: e.taskName ?? t('home.careFallback'), plant: plant.name });
         const isDoneToday = !isSkipped && e.date === today;
         const tileHtml    = isSkipped
           ? `<span class="activity-icon-skipped" style="width:40px;height:40px;background:#f4f6f2;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${icon}</span>`

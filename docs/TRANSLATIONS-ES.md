@@ -1,8 +1,8 @@
 # TRANSLATIONS.es — Spanish translation (#44f)
 
 **Register:** tú · **Variant:** Neutral Latin American Spanish · **Voice:** warm-but-neutral
-**Source of truth:** `i18n-es-worksheet.md` (worksheet base 429 keys, 22 namespaces) + deltas below → live dictionary **440**
-**Status:** ✅ COMPLETE — all namespaces + date-name arrays + TASK_CONFIG presets translated and approved. **Dictionary now 440 keys** (EN↔ES parity **440/440**). **Lineage:** approved namespace baseline **432** (tabled below; July 22 content delta — `activityFeed.careSelf` removed via decision B / #44f-feedName, −1; `confirmComplete.*` trio added via #435, +3) → **+1** `menu.language` (#44g) → **+7** `taskSheet` recurrence-summary keys (#440) = **440**. **Updated:** 2026-07-22.
+**Source of truth:** `i18n-es-worksheet.md` (worksheet base 429 keys, 22 namespaces) + deltas below → live dictionary **441**
+**Status:** ✅ COMPLETE — all namespaces + date-name arrays + TASK_CONFIG presets translated and approved. **Dictionary now 441 keys** (EN↔ES parity **441/441**). **Lineage:** approved namespace baseline **432** (tabled below; July 22 content delta — `activityFeed.careSelf` removed via decision B / #44f-feedName, −1; `confirmComplete.*` trio added via #435, +3) → **+1** `menu.language` (#44g) → **+7** `taskSheet` recurrence-summary keys (#440) → **+1** `activityFeed.careCustom` (#245) = **441**. **Updated:** 2026-07-28.
 
 ## Standing terms (locked — apply consistently across all namespaces)
 
@@ -121,10 +121,10 @@
 | 19 | `reschedule` | 23 | ✅ Approved |
 | 20 | `dialog` | 11 | ✅ Approved |
 | 21 | `careVerb` | 8 | ✅ Approved |
-| 22 | `activityFeed` | 5 | ✅ Approved _(careSelf removed July 22 — decision B)_ |
+| 22 | `activityFeed` | 6 | ✅ Approved _(careSelf removed July 22 — decision B; careCustom added #245)_ |
 | 23 | `confirmComplete` | 3 | ✅ Approved July 22 (#435) |
 
-Approved: **440 / 440** ✅ COMPLETE — plus date-name arrays and TASK_CONFIG presets (see clusters below)
+Approved: **441 / 441** ✅ COMPLETE — plus date-name arrays and TASK_CONFIG presets (see clusters below)
 
 ---
 
@@ -705,13 +705,14 @@ _3rd-person singular past, actor-subject. Consumed by `activityFeed.care` ({acto
 
 ---
 
-## 22. `activityFeed` (5) ✅
+## 22. `activityFeed` (6) ✅
 
 | Key | Spanish |
 |-----|---------|
 | `activityFeed.care` | {actor} {verb} {plant} |
 | `activityFeed.skipped` | {actor} omitió {task} |
 | `activityFeed.careOther` | {actor} realizó {task} en {plant} |
+| `activityFeed.careCustom` | {actor} realizó {task} en {plant} |
 | `activityFeed.noteOn` | {actor} creó una nota en {plant} |
 | `activityFeed.noteAdded` | {actor} creó una nota |
 

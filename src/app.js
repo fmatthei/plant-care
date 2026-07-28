@@ -1624,7 +1624,7 @@ async function loadFromSupabase() {
       .is('deleted_at', null),
     supabaseClient
       .from('household_members')
-      .select('id, display_name, color, user_id, calendar_time, calendar_weekend_time, notifications_enabled, onboarding_completed_at')
+      .select('id, display_name, color, user_id, calendar_time, calendar_weekend_time, notifications_enabled, onboarding_completed_at, reminders_card_resolved_at, reminders_card_resolution')
       .eq('household_id', householdId)
       .is('deleted_at', null),
     supabaseClient
@@ -3841,10 +3841,14 @@ function showCaringTabCoachMark() {
   document.body.appendChild(overlayEl);
   document.body.appendChild(bubbleEl);
 
-  document.getElementById('caring-cm-got-it').addEventListener('click', () => {
+  document.getElementById('caring-cm-got-it').addEventListener('click', async () => {
     overlayEl.remove();
     bubbleEl.remove();
     if (currentMemberId) localStorage.setItem(`onboarding_session6_done_${currentMemberId}`, '1');
+    // #448: the caring coach-mark "Got it" is the real tour-completion point —
+    // stamp onboarding_completed_at here (moved off the later, optional
+    // reminders-card resolution). Set-only-if-null inside the helper.
+    await markOnboardingCompleteIfNeeded();
     renderHome();
   });
 }
@@ -7696,7 +7700,7 @@ async function handleEvent(e) {
       if (ok) {
         await setNotificationsEnabled(true);
         if (currentMemberId) localStorage.setItem(`reminders_card_dismissed_${currentMemberId}`, 'true');
-        await markOnboardingCompleteIfNeeded(); // #403: enabling completes onboarding
+        await markRemindersCardResolved('enabled'); // #448: record the card outcome (onboarding already completed at the coach-mark)
         showToast(t('menu.toast.notificationsEnabled'));
       }
       // On false: a denial flips the card to the OS-blocked state on re-render;
@@ -7714,7 +7718,7 @@ async function handleEvent(e) {
     case 'reminders-note-dismiss':
       // #339: Note → Gone, permanent.
       if (currentMemberId) localStorage.setItem(`reminders_card_dismissed_${currentMemberId}`, 'true');
-      await markOnboardingCompleteIfNeeded(); // #403: dismissing the card completes onboarding
+      await markRemindersCardResolved('dismissed'); // #448: record the card outcome (onboarding already completed at the coach-mark)
       renderHome();
       break;
 
@@ -8987,6 +8991,25 @@ async function markOnboardingCompleteIfNeeded() {
   if (error) console.error('onboarding_completed_at save failed:', error);
 }
 
+// #448: record how/when the reminders card was resolved ('enabled' | 'dismissed'),
+// separate from onboarding completion (which now stamps at the caring coach-mark).
+// Same set-only-if-null semantics as markOnboardingCompleteIfNeeded: the first
+// resolution sticks (repeat dismisses / a second device don't overwrite it), via
+// the cache short-circuit plus the DB-level `.is(null)` guard.
+async function markRemindersCardResolved(resolution) {
+  if (!currentMemberId) return;
+  const m = membersCache.find(mm => mm.id === currentMemberId);
+  if (m?.reminders_card_resolved_at) return;
+  const nowIso = new Date().toISOString();
+  if (m) { m.reminders_card_resolved_at = nowIso; m.reminders_card_resolution = resolution; }
+  const { error } = await supabaseClient
+    .from('household_members')
+    .update({ reminders_card_resolved_at: nowIso, reminders_card_resolution: resolution })
+    .eq('id', currentMemberId)
+    .is('reminders_card_resolved_at', null);
+  if (error) console.error('reminders_card_resolved_at save failed:', error);
+}
+
 // ============================================================
 // THREE-SELECT DATE PICKERS
 // ============================================================
@@ -9565,14 +9588,15 @@ async function runOnboardingReset() {
     }
 
     // 2. Server: null the completion column so reconcileOnboardingFromServer()
-    //    early-returns and the local flags drive a fresh tour.
+    //    early-returns and the local flags drive a fresh tour. #448: also clear
+    //    the reminders-card resolution so a reset member can re-resolve the card.
     const { error: obErr } = await supabaseClient
       .from('household_members')
-      .update({ onboarding_completed_at: null })
+      .update({ onboarding_completed_at: null, reminders_card_resolved_at: null, reminders_card_resolution: null })
       .eq('id', currentMemberId);
     if (obErr) throw obErr;
     const m = membersCache.find(mm => mm.id === currentMemberId);
-    if (m) m.onboarding_completed_at = null;
+    if (m) { m.onboarding_completed_at = null; m.reminders_card_resolved_at = null; m.reminders_card_resolution = null; }
 
     // 3. Server: if notifications were on, turn them off and remove the push sub.
     //    Skip entirely (no-op) when already off.

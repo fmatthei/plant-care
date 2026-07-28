@@ -151,11 +151,13 @@ function enumerateOccurrences(
   }
 
   // yearly: a single occurrence per year. `first` is already the next yearly
-  // occurrence (computeNextDue → nextYearlyOccurrence). Emit iff inside the
-  // window; the caller's windowStart post-filter handles the lower bound (as
-  // with one-off). Never step.
+  // occurrence (computeNextDue → nextYearlyOccurrence). Emitted UNCONDITIONALLY,
+  // ignoring the 14-day `until` bound (#446): yearly tasks are seasonal and
+  // usually fall months out, so window-gating them made them invisible in the
+  // synced calendar for most of the year. `first` is always on/after today, so
+  // the caller's windowStart post-filter never drops it. Never step.
   if (recType === 'yearly') {
-    return first <= until ? [first] : [];
+    return [first];
   }
 
   if (first > until) return [];

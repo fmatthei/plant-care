@@ -269,6 +269,11 @@ const TRANSLATIONS = {
     'menu.item.syncCalendar':               "Sync to Calendar",
     'menu.item.changePassword':             "Change Password",
     'menu.item.signOut':                    "Sign Out",
+    'profile.editTitle':                    "Edit Profile",
+    'profile.displayNameLabel':             "Display name",
+    'profile.avatarInitialLabel':           "Avatar initial",
+    'profile.avatarInitialHint':            "Shown in your avatar circle. One character.",
+    'profile.nameRequired':                 "Please enter a display name.",
     'menu.language':                        "Language", // #44g: option values are untranslated endonyms (English / Español)
 
     'menu.notifications.label':             "Notifications",
@@ -808,6 +813,11 @@ const TRANSLATIONS = {
     'menu.item.syncCalendar': "Sincronizar con el Calendario",
     'menu.item.changePassword': "Cambiar Contraseña",
     'menu.item.signOut': "Cerrar Sesión",
+    'profile.editTitle': "Editar Perfil",
+    'profile.displayNameLabel': "Nombre",
+    'profile.avatarInitialLabel': "Inicial del avatar",
+    'profile.avatarInitialHint': "Se muestra en tu círculo de avatar. Un carácter.",
+    'profile.nameRequired': "Ingresa un nombre.",
     'menu.language': "Idioma",
     'menu.notifications.label': "Notificaciones",
     'menu.notifications.blocked': "Bloqueadas",
@@ -1624,7 +1634,7 @@ async function loadFromSupabase() {
       .is('deleted_at', null),
     supabaseClient
       .from('household_members')
-      .select('id, display_name, color, user_id, calendar_time, calendar_weekend_time, notifications_enabled, onboarding_completed_at, reminders_card_resolved_at, reminders_card_resolution')
+      .select('id, display_name, color, user_id, calendar_time, calendar_weekend_time, notifications_enabled, onboarding_completed_at, reminders_card_resolved_at, reminders_card_resolution, avatar_initial')
       .eq('household_id', householdId)
       .is('deleted_at', null),
     supabaseClient
@@ -2169,6 +2179,17 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+// #449: resolve the avatar letter for a member name. Prefers the member's
+// stored `avatar_initial` (set once they visit Edit Profile) and falls back to
+// the derived first letter while it's null — the state for every existing user
+// until they customize it. Names arrive live-resolved from membersCache
+// (ownerMap keys on household_member_id → display_name), so the lookup matches.
+function avatarInitial(name) {
+  const m = membersCache.find(mm => mm.display_name === name);
+  if (m && m.avatar_initial) return m.avatar_initial;
+  return (name ?? '?')[0].toUpperCase();
 }
 
 // Returns config for a task, falling back to task.customName/customIcon for custom tasks
@@ -3158,7 +3179,7 @@ const CHEVRON_RIGHT_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill=
 function renderHeaderRight() {
   const activeMember = membersCache.find(m => m.display_name === activeUser);
   const userColor    = activeMember?.color ?? '#2e7d51';
-  const initial      = (activeUser ?? '?')[0].toUpperCase();
+  const initial      = avatarInitial(activeUser);
   return `
     <div class="header-right">
       <button class="header-flag-btn" data-action="feedback" aria-label="${t('home.aria.reportBug')}">🚩</button>
@@ -3226,7 +3247,7 @@ function renderHomeDueToday() {
     const cfg = getTaskConfig(task);
     const ownerMember = membersCache.find(m => m.display_name === task.owner);
     const ownerColor = ownerMember?.color ?? '#888';
-    const ownerInitial = (task.owner ?? '?')[0].toUpperCase();
+    const ownerInitial = avatarInitial(task.owner);
     const daysLate = Math.abs(days);
     const urgencyRowCls = overdue ? 'attention-row--overdue' : 'attention-row--duetoday';
     const subtitleHtml = overdue
@@ -3289,7 +3310,7 @@ function renderCaringDoneToday() {
     const actorName    = doneEntry?.author ?? task.owner;
     const ownerMember  = membersCache.find(m => m.display_name === actorName);
     const ownerColor   = ownerMember?.color ?? '#888';
-    const ownerInitial = (actorName ?? '?')[0].toUpperCase();
+    const ownerInitial = avatarInitial(actorName);
     html += `<div class="activity-row home-due-today-row attention-row" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}" style="background:#fff;border-color:#e8ece6;">
       <span style="width:26px;height:26px;border-radius:8px;background:#eaf3de;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;line-height:1;">${plant.emoji}</span>
       <span style="width:1px;height:28px;background:#c0dd97;flex-shrink:0;"></span>
@@ -3926,7 +3947,7 @@ function renderSchedule() {
         const cfg = getTaskConfig(task);
         const ownerMember = membersCache.find(m => m.display_name === task.owner);
         const ownerColor  = ownerMember?.color ?? '#888';
-        const ownerInitial = (task.owner ?? '?')[0].toUpperCase();
+        const ownerInitial = avatarInitial(task.owner);
         html += `<div class="upcoming-row" data-action="caring-open-edit-task" data-plant="${plant.id}" data-task="${task.id}">
           ${dateColHtml()}
           <div class="upcoming-card">
@@ -3963,7 +3984,7 @@ function renderPlantDetail(plantId) {
 
   const activeMember = membersCache.find(m => m.display_name === activeUser);
   const userColor    = activeMember?.color ?? '#2e7d51';
-  const initial      = (activeUser ?? '?')[0].toUpperCase();
+  const initial      = avatarInitial(activeUser);
 
   let html = `
   <div class="app-header app-header--plant-detail">
@@ -4062,7 +4083,7 @@ function renderManageHouseholds() {
        </div>`;
 
   const memberRows = membersCache.map(m => {
-    const initial = (m.display_name ?? '?')[0].toUpperCase();
+    const initial = avatarInitial(m.display_name);
     const color = m.color ?? '#2e7d51';
     const isYou = m.id === currentMemberId;
     return `
@@ -4104,7 +4125,7 @@ function renderManageHouseholds() {
 function buildHouseholdActivityContent() {
   const activeMember = membersCache.find(m => m.display_name === activeUser);
   const userColor    = activeMember?.color ?? '#2e7d51';
-  const initial      = (activeUser ?? '?')[0].toUpperCase();
+  const initial      = avatarInitial(activeUser);
 
   const filtered = activityFeed.filter(item => matchesFilter(item.member));
 
@@ -4148,7 +4169,7 @@ function buildHouseholdActivityContent() {
 
       const member       = membersCache.find(m => m.display_name === item.member);
       const ownerColor   = member?.color ?? '#888';
-      const ownerInitial = (item.member ?? '?')[0].toUpperCase();
+      const ownerInitial = avatarInitial(item.member);
 
       let titleText, subtitleText, taskIcon, photoThumbHtml = '';
       const isSkipped = item.type === 'care' && item.taskType === 'skipped';
@@ -4391,7 +4412,7 @@ function renderSummaryTab(plant) {
         const cfg         = getTaskConfig(task);
         const ownerMember = membersCache.find(m => m.display_name === task.owner);
         const ownerColor  = ownerMember?.color ?? '#888';
-        const ownerInit   = (task.owner ?? '?')[0].toUpperCase();
+        const ownerInit   = avatarInitial(task.owner);
         const d           = daysUntilDue(task);
         const daysLate    = Math.abs(d);
         const status      = d < 0 ? tn('status.badge.daysOverdue', daysLate, { manual: '' }) : t('status.badge.dueToday', { manual: '' });
@@ -4477,7 +4498,7 @@ function renderSummaryTab(plant) {
       const cfg         = getTaskConfig(task);
       const ownerMember = membersCache.find(m => m.display_name === task.owner);
       const ownerColor  = ownerMember?.color ?? '#888';
-      const ownerInit   = (task.owner ?? '?')[0].toUpperCase();
+      const ownerInit   = avatarInitial(task.owner);
       const dObj        = new Date(date + 'T12:00:00');
       const monAbbr     = dObj.toLocaleDateString(displayLocale(), { month: 'short' });
       const dayAbbr     = dObj.toLocaleDateString(displayLocale(), { weekday: 'short' });
@@ -4695,7 +4716,7 @@ function renderNotesTab(plant) {
     // Owner circle
     const member  = membersCache.find(m2 => m2.display_name === note.author);
     const color   = member?.color ?? '#888';
-    const initial = (note.author ?? '?')[0].toUpperCase();
+    const initial = avatarInitial(note.author);
 
     const isOwn     = note.memberId && note.memberId === activeMemberId;
     const rowAction = isOwn
@@ -4805,7 +4826,7 @@ function renderCareLogNewRow(entry, plant) {
   const taskType    = isSkipped ? 'skipped' : (cfg?.type ?? entry.taskType);
   const member      = membersCache.find(m => m.display_name === entry.author);
   const color       = member?.color ?? '#888';
-  const initial     = (entry.author ?? '?')[0].toUpperCase();
+  const initial     = avatarInitial(entry.author);
 
   const dateStr = entry.date ?? (entry.createdAt ? entry.createdAt.split('T')[0] : null);
   let dayAbbr = '—';
@@ -4841,7 +4862,7 @@ function renderCareLogNewRow(entry, plant) {
 function renderCareLogNoteRow(note) {
   const member  = membersCache.find(m => m.display_name === note.author);
   const color   = member?.color ?? '#888';
-  const initial = (note.author ?? '?')[0].toUpperCase();
+  const initial = avatarInitial(note.author);
 
   const dateStr = note.createdAt ? note.createdAt.split('T')[0] : null;
   let dayAbbr = '—';
@@ -5079,7 +5100,7 @@ function renderTaskRow(plantId, task) {
   // Owner circle
   const ownerMember = membersCache.find(m => m.display_name === task.owner);
   const ownerColor  = ownerMember?.color ?? '#888';
-  const ownerInit   = (task.owner ?? '?')[0].toUpperCase();
+  const ownerInit   = avatarInitial(task.owner);
 
   // Right-edge button: pause-badge for paused tasks (resumes on tap). No button otherwise.
   const rightHtml = isPaused
@@ -5229,7 +5250,7 @@ function openConfirmCompleteSheet(plantId, task, assignee) {
   const subtitle   = status ? `${recurrence} · ${status}` : recurrence;
 
   const color   = assignee.color ?? '#888';
-  const initial = (assignee.display_name ?? '?')[0].toUpperCase();
+  const initial = avatarInitial(assignee.display_name);
 
   openSheet(`
     <div style="background:#f4f7f4;border:1px solid #e3e8e3;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:16px;">
@@ -6089,7 +6110,10 @@ function renderMenuPanel() {
     <button class="menu-close" data-action="close-menu">&#10005;</button>
     <div class="menu-section">
       <div class="menu-section-title">${t('menu.section.profile')}</div>
-      <div class="menu-user-name">&#128100; ${escapeHtml(activeUser)}</div>
+      <button class="menu-item" data-action="open-edit-profile" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <span>&#128100; ${escapeHtml(activeUser)}</span>
+        <span style="color:#bbb;font-size:18px;">&#8250;</span>
+      </button>
     </div>
     <div class="menu-section">
       <div class="menu-section-title">${t('menu.section.reminders')}</div>
@@ -6108,6 +6132,92 @@ function renderMenuPanel() {
       <button class="menu-item menu-item-danger" data-action="menu-sign-out">${t('menu.item.signOut')}</button>
     </div>
   `;
+}
+
+// #449: Edit Profile — a full-screen slide-up (mirrors the Household Activity
+// overlay pattern) reached by tapping the menu PROFILE row. Lets a member edit
+// their display name and the single-character avatar initial.
+function buildEditProfileContent() {
+  const m       = membersCache.find(mm => mm.id === currentMemberId);
+  const name    = m?.display_name ?? activeUser ?? '';
+  const color   = m?.color ?? '#2e7d51';
+  const initial = avatarInitial(name); // stored value if set, else derived
+  return `
+  <div class="app-header app-header--household-activity">
+    <button class="back-btn" data-action="close-edit-profile" aria-label="${t('taskSheet.back')}">&#8249;</button>
+    <span class="household-activity-title">${t('profile.editTitle')}</span>
+    <span class="user-initial-circle" style="background:${escapeHtml(color)};pointer-events:none;">${escapeHtml(initial)}</span>
+  </div>
+  <div style="padding:20px 16px 80px;">
+    <div class="form-group">
+      <label class="form-label" for="profile-name-input">${t('profile.displayNameLabel')}</label>
+      <input type="text" class="form-input" id="profile-name-input" maxlength="50" autocomplete="given-name" value="${escapeHtml(name)}">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="profile-initial-input">${t('profile.avatarInitialLabel')}</label>
+      <input type="text" class="form-input" id="profile-initial-input" maxlength="1" style="width:64px;text-align:center;text-transform:uppercase;" value="${escapeHtml(initial)}">
+      <div style="font-size:12px;color:#999;margin-top:6px;">${t('profile.avatarInitialHint')}</div>
+    </div>
+    <div id="profile-error" style="color:var(--due);font-size:14px;margin-bottom:8px;display:none;"></div>
+    <button class="btn btn-primary" style="width:100%;" data-action="save-profile">${t('auth.reset.save')}</button>
+  </div>`;
+}
+
+function openEditProfile() {
+  if (document.getElementById('edit-profile-overlay')) return;
+  closeMenu();
+  const overlay = document.createElement('div');
+  overlay.id = 'edit-profile-overlay';
+  overlay.className = 'household-activity-overlay';
+  overlay.innerHTML = buildEditProfileContent();
+  overlay.addEventListener('click', handleEvent);
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('open'));
+}
+
+function closeEditProfile() {
+  const overlay = document.getElementById('edit-profile-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+}
+
+async function handleSaveProfile() {
+  if (isSaving) return;
+  const nameInput = document.getElementById('profile-name-input');
+  const initInput = document.getElementById('profile-initial-input');
+  const errorEl   = document.getElementById('profile-error');
+  const name      = nameInput?.value?.trim() ?? '';
+  // avatar_initial: first char of the (prefilled) input, else derive from name.
+  // Stored explicitly either way so it's non-null and authoritative after save.
+  const initial   = ((initInput?.value ?? '').trim().slice(0, 1)) || (name[0] ?? '?').toUpperCase();
+
+  if (!name || !currentMemberId) {
+    if (errorEl) { errorEl.textContent = t('profile.nameRequired'); errorEl.style.display = 'block'; }
+    return;
+  }
+
+  isSaving = true;
+  try {
+    const { error } = await supabaseClient
+      .from('household_members')
+      .update({ display_name: name, avatar_initial: initial })
+      .eq('id', currentMemberId);
+    if (error) { showToast(t('menu.toast.couldNotSavePleaseRetry')); return; }
+
+    // Local immediacy, then a full reload so every derived name string
+    // (activityFeed, plant task owners, care log authors) picks up the new name.
+    const m = membersCache.find(mm => mm.id === currentMemberId);
+    if (m) { m.display_name = name; m.avatar_initial = initial; }
+    activeUser = name;
+
+    closeEditProfile();
+    await loadFromSupabase();
+    renderHome();
+    renderMenuPanel(); // refresh the (still-open) menu so its PROFILE row reflects the new name
+  } finally {
+    isSaving = false;
+  }
 }
 
 function renderNotificationsSheet() {
@@ -6169,7 +6279,7 @@ async function handleChangePassword() {
 function renderOwnerPills(selectedOwner) {
   return membersCache.map(m => {
     const color = m.color ?? '#2e7d51';
-    const initial = (m.display_name ?? '?')[0].toUpperCase();
+    const initial = avatarInitial(m.display_name);
     const sel = m.display_name === selectedOwner ? 'selected' : '';
     return `<div class="owner-pill ${sel}" data-action="sheet-set-owner" data-owner="${escapeHtml(m.display_name)}" style="--pill-color:${escapeHtml(color)}">` +
       `<span class="owner-pill-check">✓</span>` +
@@ -6661,7 +6771,7 @@ function openSlideshow(plantId, originPhotoId) {
 
     const member        = membersCache.find(m => m.id === note.memberId);
     const memberColor   = member?.color ?? '#888';
-    const memberInitial = (member?.display_name ?? note.author ?? '?')[0].toUpperCase();
+    const memberInitial = avatarInitial(member?.display_name ?? note.author);
     avatarEl.style.background = memberColor;
     avatarEl.textContent = memberInitial;
 
@@ -6852,7 +6962,7 @@ function openPhotoFullscreen(url, noteId = null, plantId = null, bare = false) {
     const member = membersCache.find(m => m.id === note.memberId);
     if (avatarEl) {
       avatarEl.style.background = member?.color ?? '#888';
-      avatarEl.textContent = (member?.display_name ?? note.author ?? '?')[0].toUpperCase();
+      avatarEl.textContent = avatarInitial(member?.display_name ?? note.author);
     }
     if (memberEl) {
       memberEl.textContent = member?.display_name ?? note.author ?? '';
@@ -7673,6 +7783,18 @@ async function handleEvent(e) {
     case 'change-password':
       closeMenu();
       renderChangePasswordSheet();
+      break;
+
+    case 'open-edit-profile':
+      openEditProfile();
+      break;
+
+    case 'close-edit-profile':
+      closeEditProfile();
+      break;
+
+    case 'save-profile':
+      await handleSaveProfile();
       break;
 
     case 'toggle-language': {

@@ -158,6 +158,14 @@ const TRANSLATIONS = {
     'taskSheet.recurrence.weekdays':       "Days of week",
     'taskSheet.recurrence.yearly':         "Yearly",
     'taskSheet.recurrence.daysBetween':    "days between tasks",
+    'taskSheet.instructions.label':        "Instructions", // #456-1: disclosure row under Task name
+    'taskSheet.instructions.subtitle':     "How to perform this task",
+    'taskSheet.instructions.placeholder':  "e.g. Water slowly until it drains from the bottom",
+    'taskSheet.instructions.counter':      "{n} / {max}",
+    'taskSheet.instructions.viewerTitle':  "Instructions", // #456-2: read-only viewer
+    'taskSheet.instructions.updatedBy':    "Last edited by {name} · {date}",
+    'taskSheet.instructions.close':        "Close",
+    'taskSheet.instructions.viewAria':     "View instructions",
     'taskSheet.pause.label':               "Pause task",
     'taskSheet.pause.subtitle':            "Skip until resumed",
     'taskSheet.delete':                    "Delete task",
@@ -625,6 +633,7 @@ const TRANSLATIONS = {
     'dialog.confirmDeleteNote':       "Delete this note?",
     'dialog.confirmDeletePhoto':      "Delete this photo?",
     'dialog.confirmRemoveRecurrence': "This will remove the recurrence schedule. The task will become a one-off. Continue?",
+    'dialog.confirmClearInstructions': "This will delete the instructions. Continue?", // #456-1
     'dialog.alertNoteOrPhoto':        "Please add a note or photo.",
     'dialog.alertNoteEmpty':          "Note cannot be empty.",
     'dialog.alertPlantNameRequired':  "Please enter a plant name.",
@@ -721,6 +730,14 @@ const TRANSLATIONS = {
     'taskSheet.recurrence.weekdays': "Días fijos", // #452: shortened from "Días de la semana" — it wrapped at 390pt and, in the equal-height chooser grid, doubled all four pills
     'taskSheet.recurrence.yearly': "Anual",
     'taskSheet.recurrence.daysBetween': "días entre tareas",
+    'taskSheet.instructions.label': "Instrucciones",
+    'taskSheet.instructions.subtitle': "Cómo hacer esta tarea",
+    'taskSheet.instructions.placeholder': "ej. Regar despacio hasta que drene por abajo",
+    'taskSheet.instructions.counter': "{n} / {max}",
+    'taskSheet.instructions.viewerTitle': "Instrucciones",
+    'taskSheet.instructions.updatedBy': "Última edición por {name} · {date}",
+    'taskSheet.instructions.close': "Cerrar",
+    'taskSheet.instructions.viewAria': "Ver instrucciones",
     'taskSheet.pause.label': "Pausar tarea",
     'taskSheet.pause.subtitle': "Omitir hasta reanudar",
     'taskSheet.delete': "Eliminar tarea",
@@ -1127,6 +1144,7 @@ const TRANSLATIONS = {
     'dialog.confirmDeleteNote': "¿Eliminar esta nota?",
     'dialog.confirmDeletePhoto': "¿Eliminar esta foto?",
     'dialog.confirmRemoveRecurrence': "Esto quitará la recurrencia. ¿Continuar?",
+    'dialog.confirmClearInstructions': "Esto borrará las instrucciones. ¿Continuar?",
     'dialog.alertNoteOrPhoto': "Agrega una nota o una foto.",
     'dialog.alertNoteEmpty': "La nota no puede estar vacía.",
     'dialog.alertPlantNameRequired': "Ingresa un nombre para la planta.",
@@ -1248,10 +1266,10 @@ const DEFAULT_PLANTS = [
     emoji: '🍊',
     dateAcquired: '',
     tasks: [
-      { id: 'normal-water', recurrenceType: 'interval', frequencyDays: 2,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
-      { id: 'refill-pot',   recurrenceType: 'interval', frequencyDays: 7,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
-      { id: 'fertilize',    recurrenceType: 'interval', frequencyDays: 14, weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
-      { id: 'check',        recurrenceType: 'interval', frequencyDays: 3,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: 'Check leaf color, pests, and soil condition' },
+      { id: 'normal-water', recurrenceType: 'interval', frequencyDays: 2,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu' },
+      { id: 'refill-pot',   recurrenceType: 'interval', frequencyDays: 7,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu' },
+      { id: 'fertilize',    recurrenceType: 'interval', frequencyDays: 14, weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu' },
+      { id: 'check',        recurrenceType: 'interval', frequencyDays: 3,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu' },
     ],
     careLog: [],
   },
@@ -1261,10 +1279,10 @@ const DEFAULT_PLANTS = [
     emoji: '🌺',
     dateAcquired: '',
     tasks: [
-      { id: 'normal-water', recurrenceType: 'interval', frequencyDays: 3,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
-      { id: 'refill-pot',   recurrenceType: 'interval', frequencyDays: 7,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
-      { id: 'fertilize',    recurrenceType: 'interval', frequencyDays: 14, weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: '' },
-      { id: 'check',        recurrenceType: 'interval', frequencyDays: 7,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu', note: 'Check for blooms and overall health' },
+      { id: 'normal-water', recurrenceType: 'interval', frequencyDays: 3,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu' },
+      { id: 'refill-pot',   recurrenceType: 'interval', frequencyDays: 7,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu' },
+      { id: 'fertilize',    recurrenceType: 'interval', frequencyDays: 14, weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu' },
+      { id: 'check',        recurrenceType: 'interval', frequencyDays: 7,  weekdays: [], lastDone: null, nextDueOverride: null, paused: false, owner: 'Matu' },
     ],
     careLog: [],
   },
@@ -1775,7 +1793,11 @@ async function loadFromSupabase() {
       preCompletionNextDueOverride: t.pre_completion_next_due_override ?? null,
       paused:          t.paused            ?? false,
       owner:           ownerMap[t.owner_id] ?? '',
-      note:            t.note              ?? '',
+      instructions:    t.instructions      ?? '',
+      // #456-2: the viewer's attribution footer resolves updated_by through
+      // membersCache; #456-1 shipped the column but deferred the in-memory map.
+      instructionsUpdatedBy: t.instructions_updated_by ?? null,
+      instructionsUpdatedAt: t.instructions_updated_at ?? null,
       name:            t.name,
       icon:            t.icon              ?? '',
       type:            t.type              ?? 'custom',
@@ -2538,7 +2560,12 @@ async function updateTask(plantId, taskId, updates) {
   if ('lastDone'        in updates) dbUpdates.last_done         = updates.lastDone;
   if ('nextDueOverride' in updates) dbUpdates.next_due_override = updates.nextDueOverride;
   if ('paused'          in updates) dbUpdates.paused            = updates.paused;
-  if ('note'            in updates) dbUpdates.note              = updates.note;
+  // #456-1: the three instructions columns move as a unit — `sheet-save-task`
+  // includes all three or none, mirroring the #439 omit-unless-touched pattern,
+  // so an untouched field never rewrites authorship.
+  if ('instructions'          in updates) dbUpdates.instructions            = updates.instructions;
+  if ('instructionsUpdatedBy' in updates) dbUpdates.instructions_updated_by = updates.instructionsUpdatedBy;
+  if ('instructionsUpdatedAt' in updates) dbUpdates.instructions_updated_at = updates.instructionsUpdatedAt;
   if ('name'            in updates) dbUpdates.name              = updates.name;
   if ('icon'            in updates) dbUpdates.icon              = updates.icon;
 
@@ -3254,9 +3281,10 @@ function renderHomeDueToday() {
     const ownerInitial = avatarInitial(task.owner);
     const daysLate = Math.abs(days);
     const urgencyRowCls = overdue ? 'attention-row--overdue' : 'attention-row--duetoday';
-    const subtitleHtml = overdue
+    // #456-2 (variation D): owner avatar moves inline, before the subtitle text.
+    const subtitleHtml = subtitleWithOwnerHtml(ownerColor, ownerInitial, overdue
       ? `<span style="color:#c0392b;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${tn('status.home.daysLate', daysLate)}</span>`
-      : `<span style="color:#b07a2a;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${t('status.home.dueToday')}</span>`;
+      : `<span style="color:#b07a2a;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${t('status.home.dueToday')}</span>`);
     const rowAction = overdue ? 'caring-overdue-row-tap' : 'caring-open-edit-task';
 
     html += `<div class="activity-row home-due-today-row attention-row ${urgencyRowCls}" data-action="${rowAction}" data-plant="${plant.id}" data-task="${task.id}">
@@ -3269,7 +3297,7 @@ function renderHomeDueToday() {
         <span class="home-due-today-task">${escapeHtml(cfg.name)}</span>
         ${subtitleHtml}
       </span>
-      <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:4px;">${escapeHtml(ownerInitial)}</span>
+      ${instructionsIndicatorHtml(plant.id, task)}
       <button class="attention-check-circle" data-action="home-mark-done" data-plant="${plant.id}" data-task="${task.id}" aria-label="${t('home.aria.markDone')}">
         <span class="attention-check-icon">✓</span>
       </button>
@@ -3280,6 +3308,10 @@ function renderHomeDueToday() {
   return html;
 }
 
+// #456-2: Caring Done Today is a DELIBERATE exception — no instructions indicator.
+// The task is already complete, the rail already carries two controls (add-note,
+// undo), and "how do I do this" is not a question anyone asks after the fact. Its
+// attribution is already inline in the subtitle, so variation D leaves it as-is.
 function renderCaringDoneToday() {
   const today = todayStr();
   const doneItems = [];
@@ -3962,9 +3994,9 @@ function renderSchedule() {
             <span class="upcoming-card-icon">${cfg.icon}</span>
             <span class="home-due-today-info">
               <span style="font-size:13px;font-weight:500;color:#1a1a1a;">${escapeHtml(cfg.name)}</span>
-              <span class="home-due-today-plant">${escapeHtml(plant.name)}</span>
+              ${subtitleWithOwnerHtml(ownerColor, ownerInitial, `<span class="home-due-today-plant">${escapeHtml(plant.name)}</span>`)}
             </span>
-            <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:4px;">${escapeHtml(ownerInitial)}</span>
+            ${instructionsIndicatorHtml(plant.id, task)}
             <button class="attention-check-circle" data-action="home-mark-done" data-plant="${plant.id}" data-task="${task.id}" aria-label="${t('home.aria.markDone')}">
               <span class="attention-check-icon">✓</span>
             </button>
@@ -4428,9 +4460,9 @@ function renderSummaryTab(plant) {
           <span style="width:1px;height:28px;background:rgba(0,0,0,0.12);flex-shrink:0;"></span>
           <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
             <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</span>
-            <span style="font-size:11px;color:#8a5a0f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(metaText)}</span>
+            ${subtitleWithOwnerHtml(ownerColor, ownerInit, `<span style="font-size:11px;color:#8a5a0f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(metaText)}</span>`)}
           </span>
-          <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInit)}</span>
+          ${instructionsIndicatorHtml(plant.id, task)}
           <button class="attention-check-circle" data-action="summary-mark-done" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}" aria-label="${t('home.aria.markDone')}">
             <span class="attention-check-icon">✓</span>
           </button>
@@ -4522,9 +4554,9 @@ function renderSummaryTab(plant) {
         <span style="width:36px;height:36px;background:#f0f0f0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${cfg.icon}</span>
         <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
           <span style="font-size:13px;font-weight:500;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</span>
-          <span style="font-size:11px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(recurrenceLabel(task, RECURRENCE_VERBOSE_OPTS))}</span>
+          ${subtitleWithOwnerHtml(ownerColor, ownerInit, `<span style="font-size:11px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(recurrenceLabel(task, RECURRENCE_VERBOSE_OPTS))}</span>`)}
         </span>
-        <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInit)}</span>
+        ${instructionsIndicatorHtml(plant.id, task)}
         <button class="attention-check-circle" data-action="summary-mark-done" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}" aria-label="${t('home.aria.markDone')}">
           <span class="attention-check-icon">✓</span>
         </button>
@@ -5036,10 +5068,6 @@ function renderTaskCard(plantId, task, onboardingMode = false) {
     html += `<div class="task-due-label ${dueCls}">${dueIcon} ${escapeHtml(dueLabel)}</div>`;
   }
 
-  if (task.note) {
-    html += `<div class="task-note-text">${escapeHtml(task.note)}</div>`;
-  }
-
   if (onboardingMode) {
     html += `
         <div class="task-actions">
@@ -5127,9 +5155,9 @@ function renderTaskRow(plantId, task) {
   <span class="task-row-divider"></span>
   <div class="task-row-content">
     <div class="task-row-name">${escapeHtml(cfg.name)}</div>
-    <div class="task-row-meta" style="color:#8a8d86;">${escapeHtml(recText)} &middot; ${escapeHtml(urgencyText)}</div>
+    ${subtitleWithOwnerHtml(ownerColor, ownerInit, `<div class="task-row-meta" style="color:#8a8d86;">${escapeHtml(recText)} &middot; ${escapeHtml(urgencyText)}</div>`)}
   </div>
-  <div class="task-row-owner" style="background:${escapeHtml(ownerColor)};">${escapeHtml(ownerInit)}</div>
+  ${instructionsIndicatorHtml(plantId, task)}
   ${rightHtml}
 </div>`;
 }
@@ -5198,6 +5226,48 @@ function openSheet(contentHtml) {
   document.getElementById('sheet-content').innerHTML = contentHtml;
   document.getElementById('sheet').classList.add('active');
   document.getElementById('overlay').classList.add('active');
+}
+
+// #456-2: READ-ONLY instructions viewer. Deliberately carries no edit affordance —
+// authoring lives solely in the Edit Task sheet (renderInstructionsRow). A second
+// write path to the same field is how #438's dead lock arose.
+function renderInstructionsViewerSheet(plantId, taskId) {
+  const plant = getPlant(plantId);
+  const task  = plant?.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  const cfg = getTaskConfig(task);
+
+  // Attribution resolves updated_by → household_members(id) → display_name.
+  // Both columns are nullable (nothing was backfilled), so the footer is omitted
+  // rather than rendered half-empty when either side is missing.
+  const editor   = membersCache.find(m => m.id === task.instructionsUpdatedBy);
+  const editedAt = task.instructionsUpdatedAt;
+  const footerHtml = (editor && editedAt)
+    ? `<div style="margin-top:14px;padding-top:10px;border-top:0.5px solid #f0f0ee;font-size:11px;color:#8a8d86;">${t('taskSheet.instructions.updatedBy', { name: escapeHtml(editor.display_name), date: escapeHtml(formatNoteDate(editedAt)) })}</div>`
+    : '';
+
+  state.sheetMode = 'instructions-viewer';
+  state.sheetData = { plantId, taskId };
+
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:0.5px solid #e8ece6;">
+      <span style="width:36px;height:36px;background:#eef3eb;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${cfg.icon}</span>
+      <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+        <div style="font-size:15px;font-weight:600;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(cfg.name)}</div>
+        <div style="font-size:12px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant?.name ?? '')}</div>
+      </div>
+    </div>
+
+    <div style="padding:14px 16px 4px;">
+      <div style="font-size:11px;color:#8a8d86;font-weight:500;margin-bottom:6px;">${t('taskSheet.instructions.viewerTitle')}</div>
+      <div style="font-size:14px;color:#1a2e1a;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;">${escapeHtml(task.instructions ?? '')}</div>
+      ${footerHtml}
+    </div>
+
+    <div class="sheet-actions" style="padding:12px 16px 14px;">
+      <button class="btn btn-ghost" data-action="close-sheet" style="width:100%;text-align:center;padding:14px;font-size:15px;">${t('taskSheet.instructions.close')}</button>
+    </div>
+  `);
 }
 
 function openOverdueActionSheet(plantId, taskId) {
@@ -6288,6 +6358,106 @@ async function handleChangePassword() {
   }
 }
 
+// ============================================================
+// #456-1: TASK INSTRUCTIONS — disclosure row (Add + Edit sheets)
+// ============================================================
+
+const INSTRUCTIONS_MAX      = 1000;
+const INSTRUCTIONS_COUNTER_AT = 800;   // counter stays hidden below this length
+
+// Single-line collapsed preview. The row is one line tall, so trim newlines to
+// spaces before letting CSS ellipsis handle the overflow.
+function instructionsPreview(text) {
+  return (text ?? '').replace(/\s+/g, ' ').trim();
+}
+
+// #456-2: TRUTHINESS on a non-empty string, never existence. All 71 pre-#456-1
+// rows hold '' (the column is a revived dead field), so `'instructions' in task`
+// or a bare null-check would light the indicator on every task in the app — the
+// exact trap #438 fell into. Whitespace-only counts as undocumented.
+function hasInstructions(task) {
+  return typeof task?.instructions === 'string' && task.instructions.trim() !== '';
+}
+
+// #456-2: the owner avatar, inline in the subtitle line at 14px (variation D).
+// It is inert on every row variant, so it belongs in the content column, not in
+// the action rail alongside real controls. Rendered on EVERY row regardless of
+// whether the task is documented, so the layout never shifts.
+function inlineOwnerAvatarHtml(ownerColor, ownerInitial) {
+  return `<span style="width:14px;height:14px;border-radius:50%;background:${escapeHtml(ownerColor)};color:#fff;font-size:8px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;">${escapeHtml(ownerInitial)}</span>`;
+}
+
+// #456-2: wraps a row's existing subtitle span so the 14px avatar sits immediately
+// before it. The text span keeps its own ellipsis; the avatar stays fixed-width.
+function subtitleWithOwnerHtml(ownerColor, ownerInitial, subtitleInnerHtml) {
+  return `<span style="display:flex;align-items:center;gap:4px;min-width:0;">${inlineOwnerAvatarHtml(ownerColor, ownerInitial)}${subtitleInnerHtml}</span>`;
+}
+
+// #456-2: the action-rail indicator. Follows the .care-log-thumb nested-target
+// convention exactly — it re-declares data-plant/data-task rather than inheriting
+// (handleEvent reads dataset off the closest('[data-action]') match, which is this
+// button), carries zero padding so the tap area is the visual area, and relies on
+// purely structural shadowing. No stopPropagation/preventDefault anywhere.
+// Returns '' for undocumented tasks so those rows render no gap or placeholder.
+function instructionsIndicatorHtml(plantId, task) {
+  if (!hasInstructions(task)) return '';
+  return `<button class="task-instructions-badge" data-action="open-task-instructions" data-plant="${escapeHtml(plantId)}" data-task="${escapeHtml(task.id)}" aria-label="${t('taskSheet.instructions.viewAria')}">i</button>`;
+}
+
+// Shared by both sheets so the markup, ids and cap can never drift apart.
+// `value` seeds the textarea; the row renders collapsed regardless (expansion is
+// local UI state and is deliberately never persisted).
+function renderInstructionsRow(value) {
+  const val     = value ?? '';
+  const preview = instructionsPreview(val);
+  const overCounterThreshold = val.length >= INSTRUCTIONS_COUNTER_AT;
+
+  return `
+    <div id="task-instructions-block" style="border-bottom:0.5px solid #f0f0ee;">
+      <div id="instructions-toggle-row" class="task-toggle-row" data-action="toggle-task-instructions" style="margin:10px 16px;background:#f6f5f0;">
+        <div style="min-width:0;flex:1;">
+          <div class="task-toggle-label">${t('taskSheet.instructions.label')}</div>
+          <div class="task-toggle-subtitle" id="instructions-collapsed-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${
+            preview ? escapeHtml(preview) : t('taskSheet.instructions.subtitle')
+          }</div>
+        </div>
+        <span id="instructions-chevron" style="font-size:18px;color:#8a8d86;line-height:1;flex-shrink:0;margin-left:8px;transition:transform 0.18s ease;">&#8250;</span>
+      </div>
+      <div id="instructions-expanded" style="display:none;padding:0 16px 10px;">
+        <textarea class="form-textarea" id="sheet-task-instructions" maxlength="${INSTRUCTIONS_MAX}" placeholder="${t('taskSheet.instructions.placeholder')}" style="width:100%;box-sizing:border-box;min-height:96px;background:#f8f8f6;border:0.5px solid #e0e0dc;border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit;line-height:1.45;resize:vertical;">${escapeHtml(val)}</textarea>
+        <div id="instructions-counter" style="${overCounterThreshold ? '' : 'display:none;'}text-align:right;font-size:11px;color:#8a8d86;margin-top:4px;">${t('taskSheet.instructions.counter', { n: val.length, max: INSTRUCTIONS_MAX })}</div>
+      </div>
+    </div>`;
+}
+
+// The counter is deliberately absent until INSTRUCTIONS_COUNTER_AT so the field
+// reads as unconstrained for ordinary-length instructions.
+function updateInstructionsCounter() {
+  const ta = document.getElementById('sheet-task-instructions');
+  const el = document.getElementById('instructions-counter');
+  if (!ta || !el) return;
+  const len = ta.value.length;
+  if (len >= INSTRUCTIONS_COUNTER_AT) {
+    el.textContent = t('taskSheet.instructions.counter', { n: len, max: INSTRUCTIONS_MAX });
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function attachInstructionsListeners() {
+  const ta = document.getElementById('sheet-task-instructions');
+  if (!ta) return;
+  ta.addEventListener('input', updateInstructionsCounter);
+}
+
+// Reads the current sheet value. The textarea lives in the DOM whether or not the
+// row is expanded, so an untouched collapsed row still returns its seeded value —
+// which is exactly what the unchanged-comparison in `sheet-save-task` relies on.
+function readInstructionsValue() {
+  return document.getElementById('sheet-task-instructions')?.value ?? '';
+}
+
 function renderOwnerPills(selectedOwner) {
   return membersCache.map(m => {
     const color = m.color ?? '#2e7d51';
@@ -6367,6 +6537,8 @@ function renderEditTaskSheet(plantId, taskId) {
       <input type="text" class="form-input" id="sheet-task-name" value="${escapeHtml(task.name ?? '')}"${isCustom ? '' : ' disabled'} style="background:${isCustom ? '#f8f8f6' : '#f0f0ee'};border:0.5px solid #e0e0dc;border-radius:8px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box;${isCustom ? '' : 'color:#8a8d86;cursor:not-allowed;'}">
     </div>
 
+    ${renderInstructionsRow(task.instructions)}
+
     <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
       <label class="form-label" style="font-size:11px;color:#8a8d86;margin:0;text-transform:none;font-weight:500;letter-spacing:normal;flex-shrink:0;">${t('taskSheet.field.owner')}</label>
       <div class="owner-pill-group" style="flex:1;display:flex;gap:6px;flex-wrap:wrap;margin:0;">${renderOwnerPills(task.owner)}</div>
@@ -6423,6 +6595,7 @@ function renderEditTaskSheet(plantId, taskId) {
   attachFutureDateSelectListeners('task-override');
   attachRecurrenceSummaryListeners('task-override');
   applyCompactDateSelectStyles('task-override');
+  attachInstructionsListeners();
   updateTaskDueLabel();
   syncYearlyRecurrenceUI();
 }
@@ -6538,6 +6711,8 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
 
     ${customFields}
 
+    ${renderInstructionsRow('')}
+
     <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
       <label class="form-label" style="font-size:11px;color:#8a8d86;margin:0;text-transform:none;font-weight:500;letter-spacing:normal;flex-shrink:0;">${t('taskSheet.field.owner')}</label>
       <div class="owner-pill-group" style="flex:1;display:flex;gap:6px;flex-wrap:wrap;margin:0;">${ownerPillsHtml}</div>
@@ -6582,6 +6757,7 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
   attachFutureDateSelectListeners('task-due-oneoff');
   attachRecurrenceSummaryListeners('task-due-oneoff');
   applyCompactDateSelectStyles('task-due-oneoff');
+  attachInstructionsListeners();
   updateTaskDueLabel();
   syncYearlyRecurrenceUI();
 }
@@ -7574,6 +7750,14 @@ async function handleSaveNewTask() {
   const ownerMember = membersCache.find(m => m.display_name === owner);
   const sortOrder = plant.tasks.length + 1;
 
+  // #456-1: a new task starts with no instructions, so anything non-empty here is
+  // authored by definition — stamp attribution only in that case, leaving both
+  // columns null for the (overwhelmingly common) empty create.
+  const instructionsVal = readInstructionsValue();
+  const instructionsAttribution = instructionsVal
+    ? { instructions_updated_by: currentMemberId, instructions_updated_at: new Date().toISOString() }
+    : {};
+
   const supabaseRow = {
     plant_id:         pid,
     name,
@@ -7584,7 +7768,8 @@ async function handleSaveNewTask() {
       : { type: recType, every: frequencyDays, unit: 'days', days: weekdays },
     owner_id:         ownerMember?.id ?? null,
     paused:           false,
-    note:             '',
+    instructions:     instructionsVal,
+    ...instructionsAttribution,
     sort_order:       sortOrder,
     next_due_override: firstDueVal,
   };
@@ -7621,7 +7806,11 @@ async function handleSaveNewTask() {
     nextDueOverride: firstDueVal,
     paused: false,
     owner,
-    note: '',
+    instructions: instructionsVal,
+    // #456-2: mirror the row we just inserted so the indicator and viewer work
+    // on a freshly created task without waiting for a reload.
+    instructionsUpdatedBy: instructionsAttribution.instructions_updated_by ?? null,
+    instructionsUpdatedAt: instructionsAttribution.instructions_updated_at ?? null,
     ...(isCustom ? { customName, customIcon } : {}),
   };
 
@@ -8702,6 +8891,31 @@ async function handleEvent(e) {
       break;
     }
 
+    // #456-2: the row indicator. plantId/taskId come from the button's own dataset
+    // (re-declared per the .care-log-thumb convention), so this never depends on
+    // the parent row's data attributes.
+    case 'open-task-instructions':
+      renderInstructionsViewerSheet(plantId, taskId);
+      break;
+
+    // #456-1: expansion is local UI state only — never written to localStorage or
+    // Supabase, so every sheet open starts collapsed.
+    case 'toggle-task-instructions': {
+      const body = document.getElementById('instructions-expanded');
+      const chev = document.getElementById('instructions-chevron');
+      const row  = document.getElementById('instructions-toggle-row');
+      if (!body) break;
+      const willExpand = body.style.display === 'none';
+      body.style.display = willExpand ? '' : 'none';
+      if (chev) chev.style.transform = willExpand ? 'rotate(90deg)' : '';
+      if (row) row.classList.toggle('task-toggle-row--expanded', willExpand);
+      if (willExpand) {
+        updateInstructionsCounter();
+        document.getElementById('sheet-task-instructions')?.focus();
+      }
+      break;
+    }
+
     case 'toggle-task-pause': {
       const btn = document.getElementById('pause-toggle');
       if (!btn) break;
@@ -8778,6 +8992,24 @@ async function handleEvent(e) {
         if (nameVal) taskUpdates.name = nameVal;
         const iconVal = document.querySelector('#sheet .edit-task-icon-tile')?.dataset.emoji;
         if (iconVal) taskUpdates.icon = iconVal;
+      }
+
+      // #456-1: instructions follow the #439 omit-unless-touched shape. Compare
+      // against the stored value; if unchanged, none of the three columns enter
+      // the payload, so an unrelated edit never rewrites authorship.
+      const _prevInstructions = getTask(pid, tid)?.instructions ?? '';
+      const _nextInstructions = readInstructionsValue();
+      if (_nextInstructions !== _prevInstructions) {
+        // Emptying a previously non-empty field is destructive — confirm before
+        // writing, matching the recurrence-strip guard in sheet-toggle-recurrence.
+        if (_prevInstructions && !_nextInstructions) {
+          if (!confirm(t('dialog.confirmClearInstructions'))) break;
+        }
+        // Attribution is stamped even when clearing — who cleared it, and when,
+        // is a real authorship fact.
+        taskUpdates.instructions          = _nextInstructions;
+        taskUpdates.instructionsUpdatedBy = currentMemberId;
+        taskUpdates.instructionsUpdatedAt = new Date().toISOString();
       }
 
       updateTask(pid, tid, taskUpdates);
@@ -9794,7 +10026,7 @@ async function seedHeavyV4() {
       recurrence:        def.rec,
       owner_id:          def.owner,
       paused:            def.paused ?? false,
-      note:              '',
+      instructions:      '',
       sort_order:        idx + 1,
       last_done:         def.ld ?? null,
       next_due_override: def.ndo ?? null,

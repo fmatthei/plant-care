@@ -279,6 +279,45 @@ body {
   line-height: 1;
 }
 
+/* #456-2 — task instructions indicator. 26x26 matches .attention-check-circle,
+   the house size for a secondary in-row control. Zero padding: the tap area is
+   exactly the visual area, and separation comes from the parent flex `gap`,
+   mirroring the .care-log-thumb nested-target convention. Identical on all six
+   surfaces — no per-surface variation. */
+.task-instructions-badge {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid #3b6d11;
+  background: #fff;
+  color: #3b6d11;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.task-instructions-badge:active {
+  background: #eaf3de;
+}
+
+/* Desaturates with the rest of the row content on a paused Tasks-tab row.
+   .task-row--paused already applies opacity to the whole row; this keeps the
+   badge from reading as the one still-active element. */
+.task-row--paused .task-instructions-badge {
+  border-color: #9aa792;
+  color: #9aa792;
+}
+
 .attention-check-circle.done {
   background: #3a5a3a;
   border-color: #3a5a3a;
@@ -1058,18 +1097,6 @@ body {
 .task-due-label.due  { color: var(--due); }
 .task-due-label.soon { color: var(--soon); }
 .task-due-label.ok   { color: var(--ok); }
-
-.task-note-text {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-style: italic;
-  margin-bottom: 8px;
-  padding: 6px 8px;
-  background: #f7f9f7;
-  border-radius: 6px;
-  border-left: 2px solid var(--border);
-  line-height: 1.4;
-}
 
 .task-actions {
   display: flex;

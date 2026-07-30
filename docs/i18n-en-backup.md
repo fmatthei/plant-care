@@ -2,11 +2,11 @@
 
 - **Generated:** 2026-07-22
 - **Source:** `TRANSLATIONS.en` in `src/app.js`
-- **Key count:** 442 (36 `onboarding.*` + 42 `taskSheet.*` + 27 `addPlant.*` + 15 `auth.*` + 18 `install.*` + 39 `menu.*` + 41 `calendarSync.*` + 27 `home.*` + 6 `caring.*` + 27 `plantDetail.*` + 4 `taskCard.*` + 13 `manageHouseholds.*` + 15 `notes.*` + 15 `photos.*` + 14 `editPlant.*` + 1 `emojiPicker.*` + 35 `status.*` + 17 `relativeTime.*` + 23 `reschedule.*` + 11 `dialog.*` + 8 `careVerb.*` + 5 `activityFeed.*` + 3 `confirmComplete.*`)
+- **Key count:** 451 (36 `onboarding.*` + 50 `taskSheet.*` + 27 `addPlant.*` + 15 `auth.*` + 18 `install.*` + 39 `menu.*` + 41 `calendarSync.*` + 27 `home.*` + 6 `caring.*` + 27 `plantDetail.*` + 4 `taskCard.*` + 13 `manageHouseholds.*` + 15 `notes.*` + 15 `photos.*` + 14 `editPlant.*` + 1 `emojiPicker.*` + 35 `status.*` + 17 `relativeTime.*` + 23 `reschedule.*` + 12 `dialog.*` + 8 `careVerb.*` + 5 `activityFeed.*` + 3 `confirmComplete.*`)
 
 > **Keep this current:** re-run this export after each future `#44*` brief. Documentation only — not imported.
 
-> **Known drift (noted #451, not introduced by it):** `TRANSLATIONS.en` in `src/app.js` currently holds **448** keys — 6 more than the 442 tabled below. Untabled: `profile.editTitle`, `profile.displayNameLabel`, `profile.avatarInitialLabel`, `profile.avatarInitialHint`, `profile.nameRequired`, `activityFeed.careCustom` (added by `#245` and an earlier profile brief after the 2026-07-22 sync). A `#44h`-style doc-sync pass should absorb them; `#451` only added its own 2 keys above.
+> **Known drift (noted #451, not introduced by it; re-measured #456-1 and #456-2):** `TRANSLATIONS.en` in `src/app.js` currently holds **457** keys — 6 more than the 451 tabled below. Untabled: `profile.editTitle`, `profile.displayNameLabel`, `profile.avatarInitialLabel`, `profile.avatarInitialHint`, `profile.nameRequired`, `activityFeed.careCustom` (added by `#245` and an earlier profile brief after the 2026-07-22 sync). Verified programmatically in both `#456-1` and `#456-2` that these 6 are the *entire* drift — nothing tabled is missing from code, and no other code key is untabled. The count is unchanged at 6 across both briefs. A `#44h`-style doc-sync pass should absorb them; `#456-2` only added its own 4 keys above (`taskSheet.instructions.viewerTitle` / `.updatedBy` / `.close` / `.viewAria`) and left the pre-existing 6 untouched.
 
 **Reading notes**
 - Values verbatim in code spans; `{braces}` are runtime vars. `.one`/`.other` pairs are selected by `tn(key, n, vars)` via `Intl.PluralRules`.
@@ -56,7 +56,7 @@
 
 ---
 
-## `taskSheet.*` — Task create/edit sheets (Briefs #44b-2, #44-extract-final, #440, #451) · 42 keys
+## `taskSheet.*` — Task create/edit sheets (Briefs #44b-2, #44-extract-final, #440, #451, #456-1, #456-2) · 50 keys
 
 | Key | English value |
 | --- | --- |
@@ -80,6 +80,14 @@
 | `taskSheet.recurrence.weekdays` | `Days of week` |
 | `taskSheet.recurrence.yearly` | `Yearly` |
 | `taskSheet.recurrence.daysBetween` | `days between tasks` |
+| `taskSheet.instructions.label` | `Instructions` |
+| `taskSheet.instructions.subtitle` | `How to perform this task` |
+| `taskSheet.instructions.placeholder` | `e.g. Water slowly until it drains from the bottom` |
+| `taskSheet.instructions.counter` | `{n} / {max}` |
+| `taskSheet.instructions.viewerTitle` | `Instructions` |
+| `taskSheet.instructions.updatedBy` | `Last edited by {name} · {date}` |
+| `taskSheet.instructions.close` | `Close` |
+| `taskSheet.instructions.viewAria` | `View instructions` |
 | `taskSheet.pause.label` | `Pause task` |
 | `taskSheet.pause.subtitle` | `Skip until resumed` |
 | `taskSheet.delete` | `Delete task` |
@@ -561,7 +569,7 @@
 
 ---
 
-## `dialog.*` — Native confirm()/alert() dialogs (Brief #44-dialogs) · 11 keys
+## `dialog.*` — Native confirm()/alert() dialogs (Briefs #44-dialogs, #456-1) · 12 keys
 
 | Key | English value |
 | --- | --- |
@@ -569,6 +577,7 @@
 | `dialog.confirmDeleteNote` | `Delete this note?` |
 | `dialog.confirmDeletePhoto` | `Delete this photo?` |
 | `dialog.confirmRemoveRecurrence` | `This will remove the recurrence schedule. The task will become a one-off. Continue?` |
+| `dialog.confirmClearInstructions` | `This will delete the instructions. Continue?` |
 | `dialog.alertNoteOrPhoto` | `Please add a note or photo.` |
 | `dialog.alertNoteEmpty` | `Note cannot be empty.` |
 | `dialog.alertPlantNameRequired` | `Please enter a plant name.` |

@@ -1635,9 +1635,12 @@ body {
   left: 20px;
 }
 
+/* #451: the flat chooser replaced the Repeating toggle row that used to sit
+   directly above this block. The card fill + bottom-only radius existed purely to
+   fuse with that row's top-only radius, so with the row gone they are dropped —
+   the label and chooser now sit on the sheet background and the single remaining
+   card is the recurrence body inside. Padding/margin are unchanged. */
 #task-recurrence-block {
-  background: #f6f5f0;
-  border-radius: 0 0 10px 10px;
   padding: 12px 14px;
   margin-bottom: 8px;
 }

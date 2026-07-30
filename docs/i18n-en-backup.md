@@ -2,9 +2,11 @@
 
 - **Generated:** 2026-07-22
 - **Source:** `TRANSLATIONS.en` in `src/app.js`
-- **Key count:** 440 (36 `onboarding.*` + 40 `taskSheet.*` + 27 `addPlant.*` + 15 `auth.*` + 18 `install.*` + 39 `menu.*` + 41 `calendarSync.*` + 27 `home.*` + 6 `caring.*` + 27 `plantDetail.*` + 4 `taskCard.*` + 13 `manageHouseholds.*` + 15 `notes.*` + 15 `photos.*` + 14 `editPlant.*` + 1 `emojiPicker.*` + 35 `status.*` + 17 `relativeTime.*` + 23 `reschedule.*` + 11 `dialog.*` + 8 `careVerb.*` + 5 `activityFeed.*` + 3 `confirmComplete.*`)
+- **Key count:** 442 (36 `onboarding.*` + 42 `taskSheet.*` + 27 `addPlant.*` + 15 `auth.*` + 18 `install.*` + 39 `menu.*` + 41 `calendarSync.*` + 27 `home.*` + 6 `caring.*` + 27 `plantDetail.*` + 4 `taskCard.*` + 13 `manageHouseholds.*` + 15 `notes.*` + 15 `photos.*` + 14 `editPlant.*` + 1 `emojiPicker.*` + 35 `status.*` + 17 `relativeTime.*` + 23 `reschedule.*` + 11 `dialog.*` + 8 `careVerb.*` + 5 `activityFeed.*` + 3 `confirmComplete.*`)
 
 > **Keep this current:** re-run this export after each future `#44*` brief. Documentation only — not imported.
+
+> **Known drift (noted #451, not introduced by it):** `TRANSLATIONS.en` in `src/app.js` currently holds **448** keys — 6 more than the 442 tabled below. Untabled: `profile.editTitle`, `profile.displayNameLabel`, `profile.avatarInitialLabel`, `profile.avatarInitialHint`, `profile.nameRequired`, `activityFeed.careCustom` (added by `#245` and an earlier profile brief after the 2026-07-22 sync). A `#44h`-style doc-sync pass should absorb them; `#451` only added its own 2 keys above.
 
 **Reading notes**
 - Values verbatim in code spans; `{braces}` are runtime vars. `.one`/`.other` pairs are selected by `tn(key, n, vars)` via `Intl.PluralRules`.
@@ -54,7 +56,7 @@
 
 ---
 
-## `taskSheet.*` — Task create/edit sheets (Briefs #44b-2, #44-extract-final, #440) · 40 keys
+## `taskSheet.*` — Task create/edit sheets (Briefs #44b-2, #44-extract-final, #440, #451) · 42 keys
 
 | Key | English value |
 | --- | --- |
@@ -71,7 +73,9 @@
 | `taskSheet.field.firstDueDate` | `First due date` |
 | `taskSheet.field.nextDueDate` | `Next due date` |
 | `taskSheet.field.repeating` | `Repeating task` |
+| `taskSheet.field.howOften` | `How often` |
 | `taskSheet.icon.tapToChange` | `tap icon to change` |
+| `taskSheet.recurrence.oneOff` | `One-off` |
 | `taskSheet.recurrence.interval` | `Every X days` |
 | `taskSheet.recurrence.weekdays` | `Days of week` |
 | `taskSheet.recurrence.yearly` | `Yearly` |

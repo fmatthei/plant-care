@@ -150,8 +150,10 @@ const TRANSLATIONS = {
     'taskSheet.field.startFrom':           "Start from",
     'taskSheet.field.firstDueDate':        "First due date",
     'taskSheet.field.nextDueDate':         "Next due date", // #440: state (c) label
-    'taskSheet.field.repeating':           "Repeating task",
+    'taskSheet.field.repeating':           "Repeating task", // #451: unused since the flat chooser replaced the toggle; retained
+    'taskSheet.field.howOften':            "How often", // #451: label above the four-option chooser
     'taskSheet.icon.tapToChange':          "tap icon to change",
+    'taskSheet.recurrence.oneOff':         "One-off", // #451: first chooser option
     'taskSheet.recurrence.interval':       "Every X days",
     'taskSheet.recurrence.weekdays':       "Days of week",
     'taskSheet.recurrence.yearly':         "Yearly",
@@ -712,9 +714,11 @@ const TRANSLATIONS = {
     'taskSheet.field.firstDueDate': "Primera fecha de vencimiento",
     'taskSheet.field.nextDueDate': "Próxima fecha de vencimiento",
     'taskSheet.field.repeating': "Tarea recurrente",
+    'taskSheet.field.howOften': "Con qué frecuencia",
     'taskSheet.icon.tapToChange': "presiona el ícono para cambiarlo",
+    'taskSheet.recurrence.oneOff': "Una vez",
     'taskSheet.recurrence.interval': "Cada X días",
-    'taskSheet.recurrence.weekdays': "Días de la semana",
+    'taskSheet.recurrence.weekdays': "Días fijos", // #452: shortened from "Días de la semana" — it wrapped at 390pt and, in the equal-height chooser grid, doubled all four pills
     'taskSheet.recurrence.yearly': "Anual",
     'taskSheet.recurrence.daysBetween': "días entre tareas",
     'taskSheet.pause.label': "Pausar tarea",
@@ -4503,7 +4507,12 @@ function renderSummaryTab(plant) {
       const monAbbr     = dObj.toLocaleDateString(displayLocale(), { month: 'short' });
       const dayAbbr     = dObj.toLocaleDateString(displayLocale(), { weekday: 'short' });
       const dayNum      = dObj.getDate();
-      html += `<div style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
+      // #459: the bare `attention-row` class is here purely so `summary-mark-done`'s
+      // closest('.attention-row') resolves the row for the collapse animation. Its
+      // visual declarations (background / border / border-radius) are all overridden
+      // by this row's inline styles; without an `--overdue`/`--duetoday` modifier it
+      // contributes only min-height, the opacity/height transition, and .marking-done.
+      html += `<div class="attention-row" style="margin:0 0 8px;display:flex;align-items:center;gap:10px;background:#fff;border:0.5px solid #e8ede8;border-radius:12px;padding:10px 12px;cursor:pointer;" data-action="edit-task" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}">
         <div style="display:flex;flex-direction:column;align-items:center;min-width:36px;flex-shrink:0;">
           <span style="font-size:10px;color:#7a8a7a;text-transform:uppercase;line-height:1.1;">${escapeHtml(monAbbr)}</span>
           <span style="font-size:15px;font-weight:500;color:#1a1a1a;line-height:1.1;">${dayNum}</span>
@@ -4516,6 +4525,9 @@ function renderSummaryTab(plant) {
           <span style="font-size:11px;color:#8a8d86;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(recurrenceLabel(task, RECURRENCE_VERBOSE_OPTS))}</span>
         </span>
         <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:white;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInit)}</span>
+        <button class="attention-check-circle" data-action="summary-mark-done" data-plant="${escapeHtml(plant.id)}" data-task="${escapeHtml(task.id)}" aria-label="${t('home.aria.markDone')}">
+          <span class="attention-check-icon">✓</span>
+        </button>
       </div>`;
     }
   }
@@ -6360,27 +6372,13 @@ function renderEditTaskSheet(plantId, taskId) {
       <div class="owner-pill-group" style="flex:1;display:flex;gap:6px;flex-wrap:wrap;margin:0;">${renderOwnerPills(task.owner)}</div>
     </div>
 
-    <div id="task-due-home"></div>
-    <div id="task-due-field" style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
-      <label class="form-label" id="task-due-label" style="${rowLabelStyle}">${t('taskSheet.field.dueDate')}</label>
-      ${renderDateSelectHtml('task-override', overrideDate, curYear, curYear + 2)}
-    </div>
-
-    <div class="task-toggle-row${isRepeating ? ' task-toggle-row--expanded' : ''}" id="repeating-toggle-row" data-action="toggle-repeating-task" style="padding:10px 16px;">
-      <span class="task-toggle-label">${t('taskSheet.field.repeating')}</span>
-      <button class="task-toggle-btn${isRepeating ? ' on' : ''}" id="repeating-toggle" role="switch" aria-checked="${isRepeating}" type="button">
-        <span class="task-toggle-knob"></span>
-      </button>
-    </div>
-
-    <div id="task-recurrence-block" style="${isRepeating ? '' : 'display:none;'}padding:0 16px 10px;">
+    <div id="task-recurrence-block" style="padding:10px 16px;">
+      <label class="form-label" style="${rowLabelStyle}">${t('taskSheet.field.howOften')}</label>
+      <div class="recurrence-type-toggle" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:10px;">
+        ${recurrenceChooserOptionsHtml(recType)}
+      </div>
       <div style="background:#f4f6f2;border-radius:10px;padding:8px 10px;">
-        <div class="recurrence-type-toggle" style="margin-bottom:8px;">
-          <div class="recurrence-option${recType === 'interval' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.interval')}</div>
-          <div class="recurrence-option${recType === 'weekdays' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.weekdays')}</div>
-          <div class="recurrence-option${recType === 'yearly' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="yearly" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.yearly')}</div>
-        </div>
-        <div id="recurrence-container" class="recurrence-${isRepeating ? recType : 'one-off'}">
+        <div id="recurrence-container" class="recurrence-${recType}">
           <div class="recurrence-interval-section form-group" style="margin:0;">
             <div class="freq-row">
               <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="${task.frequencyDays}" style="width:auto;min-width:52px;font-size:13px;padding:5px 8px;overflow:visible;text-overflow:unset;">
@@ -6391,6 +6389,10 @@ function renderEditTaskSheet(plantId, taskId) {
             <div class="weekday-picker">${weekdayBtns}</div>
           </div>
           ${yearlySectionHtml(yMonth, yDay)}
+          <div id="task-due-field" style="border-top:1px solid #d8ddd3;margin-top:8px;padding-top:8px;">
+            <label class="form-label" id="task-due-label" style="${rowLabelStyle}">${t('taskSheet.field.dueDate')}</label>
+            ${renderDateSelectHtml('task-override', overrideDate, curYear, curYear + 2)}
+          </div>
           <div id="recurrence-summary" data-sched-state="${schedState}" data-orig-due="${_resolvedDue ?? ''}" data-last-done="${task.lastDone ?? ''}" style="display:none;background:#eef3eb;border-radius:8px;padding:5px 8px;margin:8px 0 0;font-size:12px;line-height:1.45;color:#3a6b3a;"></div>
         </div>
       </div>
@@ -6421,7 +6423,7 @@ function renderEditTaskSheet(plantId, taskId) {
   attachFutureDateSelectListeners('task-override');
   attachRecurrenceSummaryListeners('task-override');
   applyCompactDateSelectStyles('task-override');
-  relocateTaskDueField(isRepeating);
+  updateTaskDueLabel();
   syncYearlyRecurrenceUI();
 }
 
@@ -6473,6 +6475,11 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
   const isOnboarding = !!prefill.onboarding;
   const repeating    = prefill.repeating ?? false;
   const recType      = prefill.recType  ?? 'interval';
+  // #451: the flat chooser has no separate repeating flag — collapse the old
+  // (repeating, recType) pair into the single type the container carries. This is
+  // the exact expression the container className used before, so the default Add
+  // state stays one-off and the onboarding prefill stays interval.
+  const effType      = repeating ? recType : 'one-off';
   const freqValue    = prefill.frequency ?? 7;
   const defaultOwner = prefill.owner ?? activeUser ?? Object.keys(USERS)[0];
 
@@ -6536,27 +6543,13 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
       <div class="owner-pill-group" style="flex:1;display:flex;gap:6px;flex-wrap:wrap;margin:0;">${ownerPillsHtml}</div>
     </div>
 
-    <div id="task-due-home"></div>
-    <div id="task-due-field" style="padding:10px 16px;border-bottom:0.5px solid #f0f0ee;">
-      <label class="form-label" id="task-due-label" style="${rowLabelStyle}">${t('taskSheet.field.dueDate')}</label>
-      ${renderDateSelectHtml('task-due-oneoff', todayVal, curYear, curYear + 2)}
-    </div>
-
-    <div class="task-toggle-row${repeating ? ' task-toggle-row--expanded' : ''}" id="repeating-toggle-row" data-action="toggle-repeating-task" style="padding:10px 16px;">
-      <span class="task-toggle-label">${t('taskSheet.field.repeating')}</span>
-      <button class="task-toggle-btn${repeating ? ' on' : ''}" id="repeating-toggle" role="switch" aria-checked="${repeating}" type="button">
-        <span class="task-toggle-knob"></span>
-      </button>
-    </div>
-
-    <div id="task-recurrence-block" style="${repeating ? '' : 'display:none;'}padding:0 16px 10px;">
+    <div id="task-recurrence-block" style="padding:10px 16px;">
+      <label class="form-label" style="${rowLabelStyle}">${t('taskSheet.field.howOften')}</label>
+      <div class="recurrence-type-toggle" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:10px;">
+        ${recurrenceChooserOptionsHtml(effType)}
+      </div>
       <div style="background:#f4f6f2;border-radius:10px;padding:8px 10px;">
-        <div class="recurrence-type-toggle" style="margin-bottom:8px;">
-          <div class="recurrence-option${recType === 'interval' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="interval" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.interval')}</div>
-          <div class="recurrence-option${recType === 'weekdays' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="weekdays" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.weekdays')}</div>
-          <div class="recurrence-option${recType === 'yearly' ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="yearly" style="font-size:12px;padding:5px 8px;">${t('taskSheet.recurrence.yearly')}</div>
-        </div>
-        <div id="recurrence-container" class="recurrence-${repeating ? recType : 'one-off'}">
+        <div id="recurrence-container" class="recurrence-${effType}">
           <div class="recurrence-interval-section form-group" style="margin:0;">
             <div class="freq-row">
               <input type="number" class="form-input" id="sheet-frequency" min="1" max="365" value="${freqValue}" style="width:auto;min-width:52px;font-size:13px;padding:5px 8px;overflow:visible;text-overflow:unset;">
@@ -6567,6 +6560,10 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
             <div class="weekday-picker">${weekdayBtns}</div>
           </div>
           ${yearlySectionHtml(yMonth, yDay)}
+          <div id="task-due-field" style="border-top:1px solid #d8ddd3;margin-top:8px;padding-top:8px;">
+            <label class="form-label" id="task-due-label" style="${rowLabelStyle}">${t('taskSheet.field.dueDate')}</label>
+            ${renderDateSelectHtml('task-due-oneoff', todayVal, curYear, curYear + 2)}
+          </div>
           <div id="recurrence-summary" data-started="false" style="display:none;background:#eef3eb;border-radius:8px;padding:5px 8px;margin:8px 0 0;font-size:12px;color:#3a6b3a;"></div>
         </div>
       </div>
@@ -6585,7 +6582,7 @@ function renderAddTaskStep2(plantId, typeKey, prefill = {}) {
   attachFutureDateSelectListeners('task-due-oneoff');
   attachRecurrenceSummaryListeners('task-due-oneoff');
   applyCompactDateSelectStyles('task-due-oneoff');
-  relocateTaskDueField(repeating);
+  updateTaskDueLabel();
   syncYearlyRecurrenceUI();
 }
 
@@ -8661,9 +8658,24 @@ async function handleEvent(e) {
     case 'sheet-toggle-recurrence': {
       const rtype = target.dataset.rtype;
       const container = document.getElementById('recurrence-container');
+      if (container?.classList.contains(`recurrence-${rtype}`)) break; // already selected
+      // #451: picking One-off is the flat chooser's equivalent of switching the old
+      // Repeating toggle off, so it inherits that path's confirm-before-stripping
+      // guard for an existing recurring task.
+      if (rtype === 'one-off' && state.sheetMode === 'edit-task') {
+        const { plantId: _pid, taskId: _tid } = state.sheetData;
+        const _existTask = getTask(_pid, _tid);
+        if ((_existTask?.recurrenceType ?? 'interval') !== 'one-off') {
+          if (!confirm(t('dialog.confirmRemoveRecurrence'))) break;
+        }
+      }
       if (container) container.className = `recurrence-${rtype}`;
       document.querySelectorAll('#sheet .recurrence-option').forEach(o => o.classList.remove('selected'));
       target.classList.add('selected');
+      // #451: pause only applies to a recurring task — same show/hide the old
+      // toggle performed on its on/off transitions.
+      const pauseRow = document.getElementById('pause-toggle-row');
+      if (pauseRow) pauseRow.style.display = rtype === 'one-off' ? 'none' : '';
       // #437: switching to Yearly seeds month/day from the sheet's current date
       // field, so the previously chosen date carries over instead of resetting to
       // the build-time default. Always seed on switch-to-Yearly (no gate); leave
@@ -8686,50 +8698,6 @@ async function handleEvent(e) {
       }
       syncYearlyRecurrenceUI();
       updateTaskDueLabel();
-      updateRecurrenceSummary();
-      break;
-    }
-
-    case 'toggle-repeating-task': {
-      const toggleBtn = document.getElementById('repeating-toggle');
-      if (!toggleBtn) break;
-      const isOn      = toggleBtn.getAttribute('aria-checked') === 'true';
-      const willTurnOn = !isOn;
-
-      // Edit Task: confirm before stripping recurrence from an existing recurring task
-      if (!willTurnOn && state.sheetMode === 'edit-task') {
-        const { plantId: _pid, taskId: _tid } = state.sheetData;
-        const _existTask = getTask(_pid, _tid);
-        if ((_existTask?.recurrenceType ?? 'interval') !== 'one-off') {
-          if (!confirm(t('dialog.confirmRemoveRecurrence'))) break;
-        }
-      }
-
-      toggleBtn.setAttribute('aria-checked', String(willTurnOn));
-      toggleBtn.classList.toggle('on', willTurnOn);
-
-      const toggleRow = document.getElementById('repeating-toggle-row');
-      const block     = document.getElementById('task-recurrence-block');
-      const container = document.getElementById('recurrence-container');
-      const pauseRow  = document.getElementById('pause-toggle-row');
-
-      if (willTurnOn) {
-        toggleRow?.classList.add('task-toggle-row--expanded');
-        if (block)     block.style.display = '';
-        if (container) {
-          container.className = 'recurrence-interval';
-          document.querySelectorAll('#sheet .recurrence-option').forEach(o => {
-            o.classList.toggle('selected', o.dataset.rtype === 'interval');
-          });
-        }
-        if (pauseRow) pauseRow.style.display = '';
-      } else {
-        toggleRow?.classList.remove('task-toggle-row--expanded');
-        if (block)     block.style.display = 'none';
-        if (container) container.className = 'recurrence-one-off';
-        if (pauseRow)  pauseRow.style.display = 'none';
-      }
-      relocateTaskDueField(willTurnOn);
       updateRecurrenceSummary();
       break;
     }
@@ -9325,6 +9293,23 @@ const YEARLY_MONTH_SHORT_BY_LOCALE = { en: YEARLY_MONTH_SHORT, es: YEARLY_MONTH_
 const YEARLY_MONTH_MAXDAY = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 function yearlyMaxDay(month) { return YEARLY_MONTH_MAXDAY[(month || 1) - 1] ?? 31; }
 
+// #451: the four-option flat recurrence chooser, shared by the Add and Edit Task
+// sheets. Each option writes the same `recurrence-<type>` className the old
+// toggle-plus-three-pills combination produced, which is the sole input both save
+// paths read (handleSaveNewTask / sheet-save-task) — so the saved record is
+// unchanged for the same user intent.
+const RECURRENCE_CHOOSER_TYPES = [
+  ['one-off',  'taskSheet.recurrence.oneOff'],
+  ['interval', 'taskSheet.recurrence.interval'],
+  ['weekdays', 'taskSheet.recurrence.weekdays'],
+  ['yearly',   'taskSheet.recurrence.yearly'],
+];
+function recurrenceChooserOptionsHtml(selType) {
+  return RECURRENCE_CHOOSER_TYPES.map(([type, key]) =>
+    `<div class="recurrence-option${type === selType ? ' selected' : ''}" data-action="sheet-toggle-recurrence" data-rtype="${type}" style="font-size:12px;padding:9px 4px;">${t(key)}</div>`
+  ).join('');
+}
+
 function yearlyMonthOptionsHtml(selMonth) {
   return localeMonthNames()
     .map((n, i) => `<option value="${i + 1}"${i + 1 === selMonth ? ' selected' : ''}>${n}</option>`)
@@ -9364,15 +9349,22 @@ function syncYearlyRecurrenceUI() {
   const field = document.getElementById('task-due-field');
   if (!field) return;
   field.style.display = container?.classList.contains('recurrence-yearly') ? 'none' : '';
+  // #451: the date field's rule separates it from the per-type body controls above
+  // it. One-off has no body controls, so the field is the card's first row and the
+  // rule is dropped. Kept here so this stays the only place that styles the field.
+  const bare = container?.classList.contains('recurrence-one-off');
+  field.style.borderTop  = bare ? '0' : '1px solid #d8ddd3';
+  field.style.marginTop  = bare ? '0' : '8px';
+  field.style.paddingTop = bare ? '0' : '8px';
 }
 
 function updateTaskDueLabel() {
   const label = document.getElementById('task-due-label');
   if (!label) return;
-  const toggleBtn = document.getElementById('repeating-toggle');
-  const isOn = toggleBtn?.getAttribute('aria-checked') === 'true';
-  if (!isOn) { label.textContent = t('taskSheet.field.dueDate'); return; }
   const container = document.getElementById('recurrence-container');
+  // #451: reads the container className instead of the removed Repeating toggle —
+  // same two-way outcome, since one-off was exactly the toggle-off state.
+  if (container?.classList.contains('recurrence-one-off')) { label.textContent = t('taskSheet.field.dueDate'); return; }
   // Yearly has no first-due-date field (it's hidden), so nothing to relabel.
   if (container?.classList.contains('recurrence-yearly')) return;
   const rtype = container?.classList.contains('recurrence-weekdays') ? 'weekdays' : 'interval';
@@ -9386,34 +9378,14 @@ function updateTaskDueLabel() {
   label.textContent = rtype === 'weekdays' ? t('taskSheet.field.startFrom') : t('taskSheet.field.firstDueDate');
 }
 
-// Moves the shared task-due field: outside the recurrence block when one-off,
-// inside it (below the visible section, above the summary) when repeating.
-function relocateTaskDueField(isRepeating) {
-  const field = document.getElementById('task-due-field');
-  if (!field) return;
-  const OUT_STYLE = 'padding:10px 16px;border-bottom:0.5px solid #f0f0ee;';
-  const IN_STYLE  = 'border-top:1px solid #d8ddd3;margin-top:8px;padding-top:8px;';
-  if (isRepeating) {
-    const summary = document.getElementById('recurrence-summary');
-    if (summary) summary.parentNode.insertBefore(field, summary);
-    field.setAttribute('style', IN_STYLE);
-  } else {
-    const home = document.getElementById('task-due-home');
-    if (home) home.parentNode.insertBefore(field, home.nextSibling);
-    field.setAttribute('style', OUT_STYLE);
-  }
-  updateTaskDueLabel();
-}
-
 function updateRecurrenceSummary() {
   const el = document.getElementById('recurrence-summary');
   if (!el) return;
 
-  const toggleBtn = document.getElementById('repeating-toggle');
-  const isOn = toggleBtn?.getAttribute('aria-checked') === 'true';
-  if (!isOn) { el.style.display = 'none'; return; }
-
   const container = document.getElementById('recurrence-container');
+  // #451: reads the container className instead of the removed Repeating toggle.
+  // One-off shows no summary — unchanged from the toggle-off behaviour.
+  if (container?.classList.contains('recurrence-one-off')) { el.style.display = 'none'; return; }
 
   // Yearly summary is anchored purely by the month/day selects — independent of
   // the (hidden) first-due-date field. Feb 29 gets the leap-year special copy.

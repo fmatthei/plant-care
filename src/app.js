@@ -1394,6 +1394,10 @@ async function routeAfterAuth() {
 // those keys; nulling the id below is what resolves it.)
 function teardownSessionState() {
   stopActivityFeedPoll();
+  // #465: #sheet lives outside #app, so renderLoginScreen() (which only replaces
+  // #app.innerHTML) can never clear a lingering `.active`. A stuck one would bail
+  // poll guard 3 on every tick, permanently and silently.
+  closeSheet();
 
   // Identity. isAdmin gates the dev-tools panel, so it must not outlive the session.
   currentUserId   = null;
@@ -1524,7 +1528,9 @@ function renderLoginScreen(errorMsg) {
       </div>
     </div>`;
   document.getElementById('app').addEventListener('keydown', e => {
-    if (e.key === 'Enter') handleLogin();
+    // #450: exclude the visibility toggle — Enter on a focused <button> already
+    // activates it, so without this the keypress would toggle AND submit.
+    if (e.key === 'Enter' && e.target.id !== 'login-password-toggle') handleLogin();
   });
   // #450: swallow the toggle's mousedown so pointer taps never pull focus off the
   // password input — the mobile keyboard stays open while the user is mid-typing.
@@ -1946,20 +1952,12 @@ async function loadActivityFeed() {
 // household switches reuse the same timer and pick up the new householdId next tick.
 function startActivityFeedPoll() {
   if (activityFeedPollTimer !== null) return;
-  activityFeedPollTimer = setInterval(async () => {
+  activityFeedPollTimer = setInterval(() => {
     if (document.visibilityState !== 'visible') return;
     if (!householdId || !currentMemberId) return;
     // Reuse the #260 open-sheet check so a tick never yanks state mid-edit.
     if (document.getElementById('sheet')?.classList.contains('active')) return;
-    // #465: never paint from a tick without a live session. teardownSessionState()
-    // already stops this timer on sign-out, so reaching here signed-out should be
-    // impossible — this is deliberate redundancy. The check is on the auth client
-    // rather than on module state precisely so it stays independent of the guards
-    // above, and so the next poll someone adds cannot resurrect the whole class of
-    // bug by outliving its session. Placed last so the cheap sync guards short-
-    // circuit first and an idle/backgrounded tab does no async work.
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    if (!session) return;
+    // #465: teardownSessionState() is the sole defense — no async guards in a timer body (decisions v4)
     loadActivityFeed().then(() => renderApp());
   }, POLL_INTERVAL_MS);
 }

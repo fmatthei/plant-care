@@ -3353,10 +3353,9 @@ function renderCaringDoneToday() {
       <span style="width:26px;height:26px;border-radius:8px;background:#eaf3de;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;line-height:1;">${cfg.icon}</span>
       <span class="home-due-today-info">
         <span class="home-due-today-task" style="text-decoration:line-through;text-decoration-color:#aab09f;color:#6b7c61;">${escapeHtml(cfg.name)}</span>
-        <span style="color:#8a9180;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)} · ${escapeHtml(actorName ?? '')}</span>
+        ${subtitleWithOwnerHtml(ownerColor, ownerInitial, `<span style="color:#8a9180;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(plant.name)}</span>`, true)}
       </span>
       <button data-action="add-note" data-plant="${plant.id}" style="width:26px;height:26px;border-radius:50%;border:0.5px solid #dde0d9;background:#f4f6f2;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;cursor:pointer;padding:0;" aria-label="${t('home.aria.addNote')}"><svg viewBox="0 0 16 16" fill="none" stroke="#8a9180" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg></button>
-      <span style="width:20px;height:20px;border-radius:50%;background:${escapeHtml(ownerColor)};color:#fff;font-size:11px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(ownerInitial)}</span>
       <button data-action="caring-undo-done" data-plant="${plant.id}" data-task="${task.id}" style="width:26px;height:26px;border-radius:50%;border:none;background:#3b6d11;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;cursor:pointer;padding:0;" aria-label="${t('menu.toast.undo')}">✓</button>
     </div>`;
   }
@@ -6383,14 +6382,18 @@ function hasInstructions(task) {
 // It is inert on every row variant, so it belongs in the content column, not in
 // the action rail alongside real controls. Rendered on EVERY row regardless of
 // whether the task is documented, so the layout never shifts.
-function inlineOwnerAvatarHtml(ownerColor, ownerInitial) {
-  return `<span style="width:14px;height:14px;border-radius:50%;background:${escapeHtml(ownerColor)};color:#fff;font-size:8px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;">${escapeHtml(ownerInitial)}</span>`;
+// #464: `muted` dims the chip for a completed-state row (Caring Done Today), whose
+// name and subtitle are already desaturated — a full-saturation chip would be the
+// one vivid thing on a finished row. Omitted everywhere else, and omitting it emits
+// byte-identical markup to #456-2, so the other six variants are untouched.
+function inlineOwnerAvatarHtml(ownerColor, ownerInitial, muted = false) {
+  return `<span style="width:14px;height:14px;border-radius:50%;background:${escapeHtml(ownerColor)};color:#fff;font-size:8px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;${muted ? 'opacity:0.55;' : ''}">${escapeHtml(ownerInitial)}</span>`;
 }
 
 // #456-2: wraps a row's existing subtitle span so the 14px avatar sits immediately
 // before it. The text span keeps its own ellipsis; the avatar stays fixed-width.
-function subtitleWithOwnerHtml(ownerColor, ownerInitial, subtitleInnerHtml) {
-  return `<span style="display:flex;align-items:center;gap:4px;min-width:0;">${inlineOwnerAvatarHtml(ownerColor, ownerInitial)}${subtitleInnerHtml}</span>`;
+function subtitleWithOwnerHtml(ownerColor, ownerInitial, subtitleInnerHtml, muted = false) {
+  return `<span style="display:flex;align-items:center;gap:4px;min-width:0;">${inlineOwnerAvatarHtml(ownerColor, ownerInitial, muted)}${subtitleInnerHtml}</span>`;
 }
 
 // #456-2: the action-rail indicator. Follows the .care-log-thumb nested-target

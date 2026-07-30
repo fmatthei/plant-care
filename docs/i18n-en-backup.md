@@ -2,11 +2,11 @@
 
 - **Generated:** 2026-07-22
 - **Source:** `TRANSLATIONS.en` in `src/app.js`
-- **Key count:** 451 (36 `onboarding.*` + 50 `taskSheet.*` + 27 `addPlant.*` + 15 `auth.*` + 18 `install.*` + 39 `menu.*` + 41 `calendarSync.*` + 27 `home.*` + 6 `caring.*` + 27 `plantDetail.*` + 4 `taskCard.*` + 13 `manageHouseholds.*` + 15 `notes.*` + 15 `photos.*` + 14 `editPlant.*` + 1 `emojiPicker.*` + 35 `status.*` + 17 `relativeTime.*` + 23 `reschedule.*` + 12 `dialog.*` + 8 `careVerb.*` + 5 `activityFeed.*` + 3 `confirmComplete.*`)
+- **Key count:** 453 (36 `onboarding.*` + 50 `taskSheet.*` + 27 `addPlant.*` + 17 `auth.*` + 18 `install.*` + 39 `menu.*` + 41 `calendarSync.*` + 27 `home.*` + 6 `caring.*` + 27 `plantDetail.*` + 4 `taskCard.*` + 13 `manageHouseholds.*` + 15 `notes.*` + 15 `photos.*` + 14 `editPlant.*` + 1 `emojiPicker.*` + 35 `status.*` + 17 `relativeTime.*` + 23 `reschedule.*` + 12 `dialog.*` + 8 `careVerb.*` + 5 `activityFeed.*` + 3 `confirmComplete.*`)
 
 > **Keep this current:** re-run this export after each future `#44*` brief. Documentation only — not imported.
 
-> **Known drift (noted #451, not introduced by it; re-measured #456-1 and #456-2):** `TRANSLATIONS.en` in `src/app.js` currently holds **457** keys — 6 more than the 451 tabled below. Untabled: `profile.editTitle`, `profile.displayNameLabel`, `profile.avatarInitialLabel`, `profile.avatarInitialHint`, `profile.nameRequired`, `activityFeed.careCustom` (added by `#245` and an earlier profile brief after the 2026-07-22 sync). Verified programmatically in both `#456-1` and `#456-2` that these 6 are the *entire* drift — nothing tabled is missing from code, and no other code key is untabled. The count is unchanged at 6 across both briefs. A `#44h`-style doc-sync pass should absorb them; `#456-2` only added its own 4 keys above (`taskSheet.instructions.viewerTitle` / `.updatedBy` / `.close` / `.viewAria`) and left the pre-existing 6 untouched.
+> **Known drift (noted #451, not introduced by it; re-measured #456-1, #456-2 and #450):** `TRANSLATIONS.en` in `src/app.js` currently holds **459** keys — 6 more than the 453 tabled below. Untabled: `profile.editTitle`, `profile.displayNameLabel`, `profile.avatarInitialLabel`, `profile.avatarInitialHint`, `profile.nameRequired`, `activityFeed.careCustom` (added by `#245` and an earlier profile brief after the 2026-07-22 sync). Verified programmatically in both `#456-1` and `#456-2` that these 6 are the *entire* drift — nothing tabled is missing from code, and no other code key is untabled. The count is unchanged at 6 across both briefs. A `#44h`-style doc-sync pass should absorb them; `#450` only added its own 2 keys above (`auth.login.showPassword` / `.hidePassword`) and left the pre-existing 6 untouched.
 
 **Reading notes**
 - Values verbatim in code spans; `{braces}` are runtime vars. `.one`/`.other` pairs are selected by `tn(key, n, vars)` via `Intl.PluralRules`.
@@ -147,7 +147,7 @@
 
 ---
 
-## `auth.*` — Auth / login / password reset (Brief #44b-4) · 15 keys
+## `auth.*` — Auth / login / password reset (Briefs #44b-4, #450) · 17 keys
 
 | Key | English value |
 | --- | --- |
@@ -157,6 +157,8 @@
 | `auth.error.notMember` | `You aren't listed as a member of this household.` |
 | `auth.login.emailPlaceholder` | `Email` |
 | `auth.login.passwordPlaceholder` | `Password` |
+| `auth.login.showPassword` | `Show password` |
+| `auth.login.hidePassword` | `Hide password` |
 | `auth.login.signIn` | `Sign In` |
 | `auth.reset.title` | `Set New Password` |
 | `auth.reset.newPasswordPlaceholder` | `New password` |

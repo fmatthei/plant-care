@@ -235,6 +235,8 @@ const TRANSLATIONS = {
     'auth.error.notMember':                  "You aren't listed as a member of this household.",
     'auth.login.emailPlaceholder':           "Email",
     'auth.login.passwordPlaceholder':        "Password",
+    'auth.login.showPassword':               "Show password", // #450: toggle aria-label, hidden state
+    'auth.login.hidePassword':               "Hide password", // #450: toggle aria-label, visible state
     'auth.login.signIn':                     "Sign In",
     'auth.reset.title':                      "Set New Password",
     'auth.reset.newPasswordPlaceholder':     "New password",
@@ -797,6 +799,8 @@ const TRANSLATIONS = {
     'auth.error.notMember': "No apareces como miembro de este hogar.",
     'auth.login.emailPlaceholder': "Email",
     'auth.login.passwordPlaceholder': "Contraseña",
+    'auth.login.showPassword': "Mostrar contraseña",
+    'auth.login.hidePassword': "Ocultar contraseña",
     'auth.login.signIn': "Iniciar Sesión",
     'auth.reset.title': "Establecer Nueva Contraseña",
     'auth.reset.newPasswordPlaceholder': "Nueva contraseña",
@@ -1370,6 +1374,59 @@ async function routeAfterAuth() {
   posthog.capture('tab_viewed', { tab: 'my_plants' });
 }
 
+// #465: the inverse of a successful sign-in, shared by both sign-out paths so the
+// cleanup can never drift between them.
+//
+// Sign-out used to call supabaseClient.auth.signOut() + renderLoginScreen() and
+// leave every in-memory trace of the session behind. Two orphaned mechanisms then
+// repainted the signed-in view over the login screen:
+//   1. the #418 feed poll, whose 45s tick passed its householdId/currentMemberId
+//      guard and called renderApp() (clearInterval appeared nowhere in this file);
+//   2. the #260 foreground reload, gated on `lastSyncedAt !== null`, which fired on
+//      tab re-focus and whose .then(renderApp) overwrote the login screen that
+//      loadFromSupabase() had just correctly rendered for a null user.
+// Household data is already in memory, so RLS does not mitigate either: it renders
+// regardless of what the server would now authorize.
+//
+// Deliberately does NOT clear onboarding_step_*, calendar_card_triggered_*, or
+// locale — those are per-device UI facts and are correct to persist across sign-out.
+// (The stale "Step 1 of 3" banner was a symptom of currentMemberId surviving, not of
+// those keys; nulling the id below is what resolves it.)
+function teardownSessionState() {
+  stopActivityFeedPoll();
+
+  // Identity. isAdmin gates the dev-tools panel, so it must not outlive the session.
+  currentUserId   = null;
+  currentMemberId = null;
+  activeUser      = null;
+  isAdmin         = false;
+
+  // Household scope
+  householdId     = null;
+  householdName   = null;
+  userHouseholds  = [];
+  membersCache    = [];
+
+  // Denormalized household data — the payload that was rendering post-sign-out
+  plants          = [];
+  notes           = [];
+  activityFeed    = [];
+
+  // Sync + view state. lastSyncedAt is what re-arms the #260 foreground reload.
+  lastSyncedAt    = null;
+  state.view      = 'home';
+  state.plantId   = null;
+  state.sheetMode = null;
+  state.sheetData = {};
+
+  // Holds member display names from the household just left.
+  activeFilter    = [];
+  notesShowAll    = new Set();
+  editingNoteId   = null;
+
+  localStorage.removeItem('active_household_id');
+}
+
 function renderAuthErrorScreen(message) {
   document.getElementById('app').innerHTML = `
     <div class="user-select-screen">
@@ -1458,7 +1515,10 @@ function renderLoginScreen(errorMsg) {
       <h2>Plant Care</h2>
       <div class="user-select-buttons">
         <input class="form-input" type="email" id="login-email" placeholder="${t('auth.login.emailPlaceholder')}" autocomplete="email">
-        <input class="form-input" type="password" id="login-password" placeholder="${t('auth.login.passwordPlaceholder')}" autocomplete="current-password">
+        <div class="password-field">
+          <input class="form-input" type="password" id="login-password" placeholder="${t('auth.login.passwordPlaceholder')}" autocomplete="current-password">
+          <button type="button" class="password-toggle" id="login-password-toggle" data-action="toggle-password-visibility" aria-label="${t('auth.login.showPassword')}">${EYE_SVG}</button>
+        </div>
         <button class="btn btn-primary" data-action="login" style="width:100%;padding:16px;font-size:16px;">${t('auth.login.signIn')}</button>
         ${errorMsg ? `<p style="color:var(--due);font-size:14px;text-align:center;margin:0;">${errorMsg}</p>` : ''}
       </div>
@@ -1466,6 +1526,10 @@ function renderLoginScreen(errorMsg) {
   document.getElementById('app').addEventListener('keydown', e => {
     if (e.key === 'Enter') handleLogin();
   });
+  // #450: swallow the toggle's mousedown so pointer taps never pull focus off the
+  // password input — the mobile keyboard stays open while the user is mid-typing.
+  // Tab-focus and Space activation are unaffected.
+  document.getElementById('login-password-toggle')?.addEventListener('mousedown', e => e.preventDefault());
 }
 
 async function handleLogin() {
@@ -1882,13 +1946,32 @@ async function loadActivityFeed() {
 // household switches reuse the same timer and pick up the new householdId next tick.
 function startActivityFeedPoll() {
   if (activityFeedPollTimer !== null) return;
-  activityFeedPollTimer = setInterval(() => {
+  activityFeedPollTimer = setInterval(async () => {
     if (document.visibilityState !== 'visible') return;
     if (!householdId || !currentMemberId) return;
     // Reuse the #260 open-sheet check so a tick never yanks state mid-edit.
     if (document.getElementById('sheet')?.classList.contains('active')) return;
+    // #465: never paint from a tick without a live session. teardownSessionState()
+    // already stops this timer on sign-out, so reaching here signed-out should be
+    // impossible — this is deliberate redundancy. The check is on the auth client
+    // rather than on module state precisely so it stays independent of the guards
+    // above, and so the next poll someone adds cannot resurrect the whole class of
+    // bug by outliving its session. Placed last so the cheap sync guards short-
+    // circuit first and an idle/backgrounded tab does no async work.
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) return;
     loadActivityFeed().then(() => renderApp());
   }, POLL_INTERVAL_MS);
+}
+
+// #465: inverse of startActivityFeedPoll(). Nulling the handle matters as much as
+// clearing the timer — startActivityFeedPoll() early-returns on a non-null handle,
+// so a cleared-but-not-nulled value would silently stop the feed from ever polling
+// again after the next sign-in.
+function stopActivityFeedPoll() {
+  if (activityFeedPollTimer === null) return;
+  clearInterval(activityFeedPollTimer);
+  activityFeedPollTimer = null;
 }
 
 // Shared by loadActivityFeed() and the batched load in loadFromSupabase().
@@ -3206,6 +3289,10 @@ const FEEDBACK_BUBBLE_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fil
 // #400: chevron-right on the plant-detail title (tappable → Edit Plant). Inline
 // SVG (matches the repo's icon convention) since no Tabler webfont is loaded.
 const CHEVRON_RIGHT_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
+// #450: login password visibility toggle. Inline SVG in the same shape as the two
+// constants above (24-unit viewBox, currentColor, aria-hidden) — no icon library.
+const EYE_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const EYE_OFF_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
 
 function renderHeaderRight() {
   const activeMember = membersCache.find(m => m.display_name === activeUser);
@@ -7885,6 +7972,31 @@ async function handleEvent(e) {
       handleLogin();
       break;
 
+    // #450: flips ONLY the input's `type`. The field is never re-rendered, so its
+    // value survives untouched; the selection is captured and restored because
+    // changing `type` resets the caret in some engines. Nothing is persisted —
+    // renderLoginScreen always emits type="password", so a fresh render is hidden.
+    case 'toggle-password-visibility': {
+      const pwInput = document.getElementById('login-password');
+      if (!pwInput) break;
+      const wasHidden = pwInput.type === 'password';
+      const selStart  = pwInput.selectionStart;
+      const selEnd    = pwInput.selectionEnd;
+      pwInput.type = wasHidden ? 'text' : 'password';
+      target.innerHTML = wasHidden ? EYE_OFF_SVG : EYE_SVG;
+      target.setAttribute('aria-label', t(wasHidden ? 'auth.login.hidePassword' : 'auth.login.showPassword'));
+      // Restoring synchronously is not enough: swapping `type` on a focused input
+      // schedules a selection reset to 0 that lands AFTER this handler returns
+      // (verified by tracing selectionchange). Re-assert on the next frame so the
+      // caret survives; the sync call covers engines that never fire the reset.
+      if (selStart !== null) {
+        const restore = () => { try { pwInput.setSelectionRange(selStart, selEnd); } catch (_) { /* value untouched either way */ } };
+        restore();
+        requestAnimationFrame(restore);
+      }
+      break;
+    }
+
     case 'save-name':
       handleNameCapture();
       break;
@@ -7894,6 +8006,10 @@ async function handleEvent(e) {
       break;
 
     case 'sign-out':
+      // #465: tear down synchronously, before the signOut() round-trip rather than
+      // inside its .then(). Deferring would leave a ~200ms window in which a poll
+      // tick could still fire against live state.
+      teardownSessionState();
       supabaseClient.auth.signOut().then(() => { posthog.reset(); renderLoginScreen(); });
       break;
 
@@ -8064,7 +8180,9 @@ async function handleEvent(e) {
 
     case 'menu-sign-out':
       closeMenu();
-      localStorage.removeItem('active_household_id');
+      // #465: active_household_id removal moved into teardownSessionState() so both
+      // sign-out paths clear it — previously only this one did.
+      teardownSessionState();
       supabaseClient.auth.signOut().then(() => { posthog.reset(); renderLoginScreen(); });
       break;
 

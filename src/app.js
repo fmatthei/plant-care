@@ -1664,6 +1664,15 @@ function saveData() {
   } catch (_) {}
 }
 
+// #477: the no-household branches below can't stamp a household (there isn't
+// one), but they must not leave the previous household's super properties
+// active — those persist in localStorage across reloads.
+function clearHouseholdSuperProperties() {
+  posthog.unregister('household_id');
+  posthog.unregister('household_name');
+  posthog.unregister('is_test_household');
+}
+
 async function loadFromSupabase() {
   // 1. Get the logged-in user
   const { data: { user } } = await supabaseClient.auth.getUser();
@@ -1683,6 +1692,7 @@ async function loadFromSupabase() {
     .eq('user_id', user.id);
 
   if (!userMemberRows || userMemberRows.length === 0) {
+    clearHouseholdSuperProperties();
     renderAuthErrorScreen(t('auth.error.noHousehold'));
     return;
   }
@@ -1697,13 +1707,14 @@ async function loadFromSupabase() {
   )];
 
   if (householdIds.length === 0) {
+    clearHouseholdSuperProperties();
     renderAuthErrorScreen(t('auth.error.noHousehold'));
     return;
   }
 
   const { data: householdRows } = await supabaseClient
     .from('households')
-    .select('id, name')
+    .select('id, name, is_test')
     .in('id', householdIds);
 
   userHouseholds = householdIds.map(id => ({
@@ -1731,7 +1742,7 @@ async function loadFromSupabase() {
       .is('deleted_at', null),
     supabaseClient
       .from('households')
-      .select('name')
+      .select('name, is_test')
       .eq('id', householdId)
       .single(),
   ]);
@@ -1739,6 +1750,20 @@ async function loadFromSupabase() {
   householdName = householdRow?.name ?? null;
   const headerNameEl = document.getElementById('header-household-name');
   if (headerNameEl) headerNameEl.textContent = householdName ?? t('home.householdFallback');
+
+  // #445/#477: stamp the active household onto every subsequent event as super
+  // properties. This fires here — as soon as the household resolves — and not
+  // next to identify() further down, because several branches below return
+  // early (no plants row, caller not a member of this household). Stamping late
+  // left those paths running on the *previous* household's super properties,
+  // which persist in localStorage across reloads. If the single-row query
+  // failed, fall back to the list query fetched above.
+  const activeHousehold = householdRow ?? householdRows?.find(h => h.id === householdId);
+  posthog.register({
+    household_id:       householdId,
+    household_name:     householdName,
+    is_test_household:  activeHousehold?.is_test === true,
+  });
 
   if (!plantRows) return;
 
@@ -1772,8 +1797,6 @@ async function loadFromSupabase() {
         household_name: householdName,
         is_test:        isTestUser,
       });
-      // #445: stamp household onto every subsequent event as super properties.
-      posthog.register({ household_id: householdId, household_name: householdName });
     }
     return;
   }
@@ -1910,8 +1933,6 @@ async function loadFromSupabase() {
       household_name: householdName,
       is_test:        isTestUser,
     });
-    // #445: stamp household onto every subsequent event as super properties.
-    posthog.register({ household_id: householdId, household_name: householdName });
   }
 
   lastSyncedAt = Date.now();

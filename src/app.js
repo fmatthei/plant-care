@@ -358,6 +358,13 @@ const TRANSLATIONS = {
     'calendarSync.getHelp.item2':         "Open the Calendar app directly and pull down to refresh.",
     'calendarSync.getHelp.item3':         "Make sure the Plant Care calendar is visible — tap Calendars at the bottom and check it's enabled.",
     'calendarSync.getHelp.item4':         "If you don't see events after subscribing, check that the calendar is checked/visible in your calendar app's list.",
+    'calendarSync.confirm.title':         "Did it work?",
+    'calendarSync.confirm.body':          "Check your calendar app for your plant care events, then let us know.",
+    'calendarSync.confirm.yes':           "Yes, I see my tasks",
+    'calendarSync.confirm.noHelp':        "I don't see them &mdash; Get Help",
+    'calendarSync.confirm.confirmed':     "Confirmed working",
+    'calendarSync.confirm.close':         "Close",
+    'calendarSync.confirm.needHelp':      "Need help?",
     'calendarSync.switch.title':          "Switch calendar app",
     'calendarSync.switch.intro':          "First remove the current {scope} feed from {app}, then pick the new app and subscribe again.",
     'calendarSync.unsubscribe.body':      "To stop these events, remove the feed from your calendar app:",
@@ -909,6 +916,13 @@ const TRANSLATIONS = {
     'calendarSync.getHelp.item2': "Abre la app de calendario directamente y desliza hacia abajo para actualizar.",
     'calendarSync.getHelp.item3': "Asegúrate de que el calendario de Plant Care esté visible — presiona Calendarios abajo y verifica que esté activado.",
     'calendarSync.getHelp.item4': "Si no ves eventos después de suscribirte, verifica que el calendario esté marcado/visible en la lista de tu app de calendario.",
+    'calendarSync.confirm.title': "¿Funcionó?",
+    'calendarSync.confirm.body': "Revisa tu app de calendario para ver tus eventos de cuidado de plantas y luego cuéntanos.",
+    'calendarSync.confirm.yes': "Sí, veo mis tareas",
+    'calendarSync.confirm.noHelp': "No las veo &mdash; Obtener Ayuda",
+    'calendarSync.confirm.confirmed': "Confirmado y funcionando",
+    'calendarSync.confirm.close': "Cerrar",
+    'calendarSync.confirm.needHelp': "¿Necesitas ayuda?",
     'calendarSync.switch.title': "Cambiar de app de calendario",
     'calendarSync.switch.intro': "Primero elimina el feed {scope} actual de {app}, luego elige la nueva app y suscríbete de nuevo.",
     'calendarSync.unsubscribe.body': "Para detener estos eventos, elimina el feed de tu app de calendario:",
@@ -3702,6 +3716,17 @@ function renderRemindersCard() {
 
 function shouldShowCalendarCard() {
   if (!currentMemberId) return false;
+  // #488: the card clears once the user confirms the feed actually shows up in
+  // their calendar app — NOT on the Subscribe tap (#486), which fired before
+  // anyone had verified anything and hid the nudge even when the handoff
+  // silently failed. Scoped to the CURRENT household on purpose: the confirmed
+  // keys are per-household (#432), so confirming one household still leaves the
+  // nudge in another. Key shape and === 'true' mirror the sheet's confKey.
+  if (householdId) {
+    const confirmedHere = ['my_tasks', 'all_tasks'].some(scope =>
+      localStorage.getItem(`calendar_confirmed_${scope}_${householdId}_${currentMemberId}`) === 'true');
+    if (confirmedHere) return false;
+  }
   if (!localStorage.getItem(`onboarding_session6_done_${currentMemberId}`)) return false;
   if (!localStorage.getItem(`calendar_card_triggered_${currentMemberId}`)) return false;
   if (localStorage.getItem(`calendar_card_dismissed_${currentMemberId}`)) return false;
@@ -5889,6 +5914,13 @@ function openCalendarSyncSheet() {
   const appKey    = (scope) => `calendar_app_${scope === 'all' ? 'all' : 'my'}_${householdId}_${currentMemberId}`;
   const getApp    = (scope) => localStorage.getItem(appKey(scope)) || (isIOS() ? 'apple' : 'google');
   const setApp    = (scope, app) => localStorage.setItem(appKey(scope), app);
+
+  // #488: "the feed actually shows up in my calendar app" — a separate, later
+  // signal from the subscribed flag, which only means the handoff was tapped.
+  // Key shape mirrors the subscribed keys (my_tasks / all_tasks) so both stay
+  // per-household and per-scope.
+  const confKey     = (scope) => `calendar_confirmed_${scope === 'all' ? 'all_tasks' : 'my_tasks'}_${householdId}_${currentMemberId}`;
+  const isConfirmed = (scope) => localStorage.getItem(confKey(scope)) === 'true';
   const scopeName = (scope) => scope === 'all' ? t('calendarSync.scope.all') : t('calendarSync.scope.my');
   const appLabel  = (scope) => getApp(scope) === 'google' ? t('calendarSync.app.google') : t('calendarSync.app.apple');
 
@@ -5990,11 +6022,12 @@ function openCalendarSyncSheet() {
       const addRows = [];
       if (!mySub)  addRows.push(addCardFor('my'));
       if (!allSub) addRows.push(addCardFor('all'));
-      body = `${styleBlock}
-        <div class="section-label">${t('calendarSync.options.activeSyncs')}</div>
-        ${cards.join('') || `<p style="font-size:13px;color:var(--text-muted);margin:0 0 4px;">${t('calendarSync.options.noSyncs')}</p>`}
-        ${addRows.join('')}
-        <div class="option-card" data-action="cal-help" style="margin-top:20px;">
+      // #488: Get Help keeps its card and destination, but its position now
+      // depends on confirmation state — it sits alone until a feed exists, is
+      // demoted to a text link inside the confirm card while a subscribed feed
+      // is unverified, then returns below the confirmed strip.
+      const helpCard = (marginTop) => `
+        <div class="option-card" data-action="cal-help" style="margin-top:${marginTop}px;">
           <div class="option-icon">&#10067;</div>
           <div>
             <div class="option-title">${t('calendarSync.options.getHelp')}</div>
@@ -6002,6 +6035,43 @@ function openCalendarSyncSheet() {
           </div>
           <div class="option-chevron">&#8250;</div>
         </div>`;
+      // #488 mock values. The mock's horizontal `margin: 0 20px` reproduces
+      // #sheet-content's own `padding: 16px 20px`, so in-app the sides are 0 —
+      // keeping 20px here would inset these to 40px, out of line with every
+      // sibling card. Vertical margins and all other values are the mock's.
+      const confirmCard = `
+        <div style="background:#f4faf6;border:1px solid #cfe6d8;border-radius:14px;padding:18px;margin:0 0 20px;">
+          <div style="font-size:16px;font-weight:700;color:#1a1a1a;margin-bottom:4px;">${t('calendarSync.confirm.title')}</div>
+          <div style="font-size:14px;color:#5c6b62;line-height:1.4;margin-bottom:16px;">${t('calendarSync.confirm.body')}</div>
+          <button type="button" data-action="cal-confirm-yes" style="display:block;width:100%;background:#2e7d51;color:#ffffff;font-size:15px;font-weight:700;text-align:center;padding:13px 0;border:none;border-radius:12px;margin-bottom:10px;cursor:pointer;font-family:inherit;">${t('calendarSync.confirm.yes')}</button>
+          <button type="button" data-action="cal-help" style="display:block;width:100%;text-align:center;font-size:14px;font-weight:600;color:#6b6b6b;background:none;border:none;padding:0;cursor:pointer;font-family:inherit;">${t('calendarSync.confirm.noHelp')}</button>
+        </div>`;
+      const confirmedStrip = `
+        <div style="background:#eef7f1;border:1px solid #cfe6d8;border-radius:12px;padding:12px 14px;font-size:13px;color:#2e7d51;font-weight:600;margin:0 0 20px;">
+          <span aria-hidden="true">&#10003;</span> ${t('calendarSync.confirm.confirmed')}
+        </div>`;
+      // #488 polish: the confirmed state ends the flow — Close is the only exit,
+      // reusing the header X's own data-action so the two are the same code path
+      // by construction (closeSheet() touches no calendar state). Confirming is
+      // not reversible here; unsubscribe/resubscribe or Get Help are the routes
+      // back. The help line reuses getHelpSub so its copy tracks the main card.
+      const confirmedActions = `
+        <button type="button" data-action="close-sheet" style="display:block;width:100%;background:#2e7d51;color:#ffffff;font-size:15px;font-weight:700;text-align:center;padding:13px 0;border:none;border-radius:12px;margin-bottom:10px;cursor:pointer;font-family:inherit;">${t('calendarSync.confirm.close')}</button>
+        <div style="text-align:center;padding:8px 0 0;font-size:12px;color:#a3a3a3;">
+          ${t('calendarSync.confirm.needHelp')}
+          <button type="button" data-action="cal-help" style="background:none;border:none;font-size:12px;font-weight:600;color:#8a8a8a;text-decoration:underline;padding:0;cursor:pointer;font-family:inherit;">${t('calendarSync.options.getHelpSub')}</button>
+        </div>`;
+      // Only a live feed can be confirmed, and the single card speaks for every
+      // live feed, so an unconfirmed scope anywhere keeps the prompt up.
+      const subbedScopes = [...(mySub ? ['my'] : []), ...(allSub ? ['all'] : [])];
+      const tail = !subbedScopes.length            ? helpCard(20)
+                 : subbedScopes.some(s => !isConfirmed(s)) ? confirmCard
+                 : `${confirmedStrip}${confirmedActions}`;
+      body = `${styleBlock}
+        <div class="section-label">${t('calendarSync.options.activeSyncs')}</div>
+        ${cards.join('') || `<p style="font-size:13px;color:var(--text-muted);margin:0 0 4px;">${t('calendarSync.options.noSyncs')}</p>`}
+        ${addRows.join('')}
+        ${tail}`;
     } else if (view === 'help') {
       body = `
         <div style="font-size:16px;font-weight:600;color:#1a2e1a;margin-bottom:12px;">${t('calendarSync.getHelp.title')}</div>
@@ -6242,8 +6312,22 @@ function openCalendarSyncSheet() {
     document.querySelector('[data-action="cal-back"]')?.addEventListener('click', () => {
       view = 'options'; cameFromOptions = false; render();
     });
-    document.querySelector('[data-action="cal-help"]')?.addEventListener('click', () => {
-      view = 'help'; render();
+    // #488: cal-help now renders as either the option card or the confirm
+    // card's text link, so bind every match rather than the first.
+    document.querySelectorAll('[data-action="cal-help"]').forEach(el =>
+      el.addEventListener('click', () => { view = 'help'; render(); }));
+    document.querySelector('[data-action="cal-confirm-yes"]')?.addEventListener('click', () => {
+      // #488: confirmation is stored per scope, but one card covers every live
+      // feed — confirm each subscribed scope so a single tap clears the banner.
+      ['my', 'all'].forEach(scope => {
+        const subbed = localStorage.getItem(scope === 'my' ? mySubKey : allSubKey) === 'true';
+        if (subbed) localStorage.setItem(confKey(scope), 'true');
+      });
+      // Clear the banner behind the open sheet immediately. #app and #sheet are
+      // siblings, so re-rendering home leaves the sheet intact; the view guard
+      // keeps this from yanking a non-home tab out from under the user.
+      if (state.view === 'home') renderHome();
+      render();
     });
     const toConfigure = (btn) => {
       const scope = btn.dataset.scope;
@@ -6268,6 +6352,11 @@ function openCalendarSyncSheet() {
       const scope  = e.currentTarget.dataset.scope;
       localStorage.removeItem(scope === 'my' ? mySubKey : allSubKey);
       localStorage.removeItem(appKey(scope));
+      // #488 follow-up: drop the confirmation with the feed. Left behind, it
+      // would keep the banner suppressed for a user who no longer has a sync.
+      localStorage.removeItem(confKey(scope));
+      // Bring the banner back right away, same as confirming clears it.
+      if (state.view === 'home') renderHome();
       view = 'options'; render();
     });
   }
@@ -10045,7 +10134,7 @@ async function runOnboardingReset() {
   if (!currentMemberId) { showToast('No current member'); return false; }
   try {
     // 1. Local: clear onboarding-adjacent keys for THIS member only.
-    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_card_dismissed_', 'calendar_card_triggered_', 'calendar_subscribed_', 'calendar_app_'];
+    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_card_dismissed_', 'calendar_card_triggered_', 'calendar_subscribed_', 'calendar_confirmed_', 'calendar_app_'];
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
       if (key && key.includes(currentMemberId) && resetPrefixes.some(p => key.startsWith(p))) {
@@ -10106,7 +10195,7 @@ async function seedEmpty({ resetOnboarding = false } = {}) {
     // Wipe onboarding + push-accepted state for ALL members on this browser, not
     // just the current one — clears every key starting with these prefixes so a
     // fresh Empty State produces a clean onboarding for whoever logs in next.
-    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_card_dismissed_', 'calendar_card_triggered_', 'calendar_subscribed_', 'calendar_app_'];
+    const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_card_dismissed_', 'calendar_card_triggered_', 'calendar_subscribed_', 'calendar_confirmed_', 'calendar_app_'];
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
       if (key && resetPrefixes.some(p => key.startsWith(p))) localStorage.removeItem(key);
@@ -10552,7 +10641,7 @@ async function seedRemindersTest() {
 
   // Clear onboarding + reminder state for ALL members on this browser (#314),
   // including calendar-subscribed flags, so both dialog sections read action-state.
-  const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_subscribed_', 'calendar_app_'];
+  const resetPrefixes = ['onboarding_', 'push_accepted_', 'reminders_card_dismissed_', 'calendar_subscribed_', 'calendar_confirmed_', 'calendar_app_'];
   for (let i = localStorage.length - 1; i >= 0; i--) {
     const key = localStorage.key(i);
     if (key && resetPrefixes.some(p => key.startsWith(p))) localStorage.removeItem(key);

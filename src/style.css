@@ -5265,6 +5265,137 @@ div + .section-header-bar {
 .add-note-photo-area {
   margin: 4px 0 12px;
 }
+
+/* ===== #491 photo-first note creation ===== */
+/* Scoped to this sheet's Save: the app had no :disabled button style, so the
+   pre-choice Save read as tappable. Not a global .btn rule — other surfaces
+   were not audited for it. */
+.add-note-actions .btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+/* Pre-choice capture prompt */
+.add-note-capture-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 32px 16px;
+  margin: 4px 0 0;
+  background: #f0f4ec;
+  border: 2px dashed #c8d4c2;
+  border-radius: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.add-note-capture-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+.add-note-capture-label {
+  font-size: 16px;
+  font-weight: 700;
+  color: #2e7d51;
+}
+/* Quiet default-photo link — used both pre-choice and as the swap-back path */
+.add-note-default-link {
+  display: block;
+  width: 100%;
+  margin: 10px 0 0;
+  padding: 6px 0;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #8a8a8a;
+  text-align: center;
+  text-decoration: underline;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Photo block — height set per-image by applyAdaptivePhotoSizing() */
+.add-note-photo-block {
+  position: relative;
+  width: 100%;
+  margin: 4px 0 10px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #1e2a1e;
+}
+.add-note-photo-full {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* contain, not cover: the block's height already matches the image ratio, so
+     for landscape/square/mild-portrait this fills edge to edge with no bars and
+     no crop. Only a photo tall enough to hit the height cap gets side bars —
+     and there, showing the whole photo beats silently cropping half of it. */
+  object-fit: contain;
+}
+.add-note-photo-default {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: #eef3ea;
+}
+.add-note-photo-default-glyph {
+  font-size: 64px;
+  line-height: 1;
+}
+/* Semi-transparent controls sitting on the image itself */
+.add-note-photo-overlay {
+  position: absolute;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(2px);
+}
+.add-note-photo-overlay--x {
+  left: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 15px;
+  padding: 0;
+}
+.add-note-photo-overlay--retake {
+  right: 10px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+  font-size: 13px;
+  font-weight: 700;
+}
+/* Caption strip — sits below the photo block, never over it */
+.add-note-caption {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  margin: 0 0 12px;
+  background: var(--card, #fff);
+  border: 1.5px solid #d4ddca;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 14px;
+  color: #1a2e1f;
+}
+.add-note-caption::placeholder {
+  color: #9aa79a;
+}
 .add-note-photo-btn {
   display: flex;
   align-items: center;

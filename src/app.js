@@ -481,6 +481,12 @@ const TRANSLATIONS = {
     'notes.postTask.skip':    "Skip",
     'notes.saveNote':         "Save note",
     'notes.addNote.title':    "Add Note",
+    'notes.takePhoto':        "Take a Photo",
+    'notes.useDefaultPhoto':  "Use default photo",
+    'notes.captionPlaceholder':"Add a caption&hellip; (optional)",
+    'notes.retake':           "Retake",
+    'notes.aria.removePhoto': "Remove photo",
+    'notes.defaultPhotoLabel':"Default photo",
     'notes.coach.title':      "Match your last photo",
     'notes.coach.body':       "Use the same angle/distance. Helps to see progress!",
     'notes.coach.bodyAlt':    "Same angle helps track progress!",
@@ -1027,6 +1033,12 @@ const TRANSLATIONS = {
     'notes.postTask.skip': "Omitir",
     'notes.saveNote': "Guardar nota",
     'notes.addNote.title': "Agregar Nota",
+    'notes.takePhoto': "Tomar una foto",
+    'notes.useDefaultPhoto': "Usar foto predeterminada",
+    'notes.captionPlaceholder': "Agrega un comentario&hellip; (opcional)",
+    'notes.retake': "Volver a tomar",
+    'notes.aria.removePhoto': "Quitar foto",
+    'notes.defaultPhotoLabel': "Foto predeterminada",
     'notes.coach.title': "Replica tu última foto",
     'notes.coach.body': "Usa el mismo ángulo/distancia. ¡Ayuda a ver el progreso!",
     'notes.coach.bodyAlt': "¡El mismo ángulo ayuda a registrar el progreso!",
@@ -2788,13 +2800,24 @@ async function deletePlant(plantId) {
   }
 }
 
-async function addNote(plantId, noteText, taskId, photoUrl = null) {
+// #492: isDefaultPhoto records that the user deliberately skipped taking a photo
+// ("Use default photo"), which is otherwise indistinguishable from a text-only
+// note since both leave photo_url null. Always sent explicitly rather than left
+// to the column default, so nudge counting can filter on intent
+// (is_default_photo = false) instead of inferring it from a null.
+async function addNote(plantId, noteText, taskId, photoUrl = null, isDefaultPhoto = false) {
   if (isSaving) return null;
   isSaving = true;
   try {
     const member = membersCache.find(m => m.display_name === activeUser);
-    const insertData = { plant_id: plantId, household_member_id: member?.id ?? null, note: noteText, task_id: taskId ?? null };
-    if (photoUrl) insertData.photo_url = photoUrl;
+    const insertData = { plant_id: plantId, household_member_id: member?.id ?? null, note: noteText, task_id: taskId ?? null, is_default_photo: !!isDefaultPhoto };
+    if (photoUrl) {
+      insertData.photo_url = photoUrl;
+      // #493: stamp photo recency only for a real photo — never the default path.
+      // 'now' is Postgres's special timestamptz literal, resolved server-side, so
+      // this does not trust the device clock (same guarantee created_at has).
+      insertData.photo_added_at = 'now';
+    }
     const { data: inserted, error } = await supabaseClient
       .from('notes')
       .insert(insertData)
@@ -2962,6 +2985,11 @@ async function deletePlantPhoto(photoRow) {
   const { error: rowErr } = await supabaseClient.from('plant_photos').delete().eq('id', photoRow.id);
   if (rowErr) console.error('deletePlantPhoto row error:', rowErr);
   if (photoRow.note_id) {
+    // #493: photo_added_at is deliberately NOT cleared here. It records that a
+    // real photo was once added, which stays true after deletion — that is what
+    // keeps a "first photo" nudge from re-firing at someone who already engaged.
+    // Only photo_url is nulled, so "has one now" and "ever added one" stay
+    // separately answerable.
     await supabaseClient.from('notes').update({ photo_url: null }).eq('id', photoRow.note_id);
     const note = notes.find(n => n.id === photoRow.note_id);
     if (note) note.photoUrl = null;
@@ -2983,7 +3011,12 @@ async function runSaveNoteFlow(plantId) {
   console.log('[saveNote] ENTER', { plantId, sheetData: state.sheetData, isSaving });
   const textEl = document.getElementById('sheet-note-text');
   const text = (textEl?.value ?? state.sheetData?.pendingText ?? '').trim();
-  if (!text && !state.sheetData?.pendingPhoto) { alert(t('dialog.alertNoteOrPhoto')); return; }
+  // #491: the caption is always optional — a chosen photo, real or the default
+  // stand-in, is enough on its own. Only a wholly empty sheet is rejected.
+  if (!text && !state.sheetData?.pendingPhoto && !state.sheetData?.usingDefaultPhoto) {
+    alert(t('dialog.alertNoteOrPhoto'));
+    return;
+  }
   state.sheetData.pendingText = text;
 
   const pendingPhoto = state.sheetData?.pendingPhoto;
@@ -3020,11 +3053,14 @@ async function runSaveNoteFlow(plantId) {
       console.log('[saveNote] no photo — skipping upload');
     }
 
-    console.log('[saveNote] inserting note row', { plantId, photoUrl });
-    const newNote = await addNote(plantId, text, null, photoUrl);
+    // #492: the two write paths are mutually exclusive — a real capture sets
+    // photoUrl and false; "Use default photo" sets true and leaves photoUrl null.
+    const isDefaultPhoto = !photoUrl && !!state.sheetData?.usingDefaultPhoto;
+    console.log('[saveNote] inserting note row', { plantId, photoUrl, isDefaultPhoto });
+    const newNote = await addNote(plantId, text, null, photoUrl, isDefaultPhoto);
     console.log('[saveNote] addNote returned', { newNote });
     if (!newNote) throw new Error('Note insert failed');
-    posthog.capture('note_added', { plant_id: plantId, has_photo: !!photoUrl });
+    posthog.capture('note_added', { plant_id: plantId, has_photo: !!photoUrl, is_default_photo: isDefaultPhoto });
 
     if (photoUrl && newNote.id) {
       console.log('[saveNote] inserting plant_photos row', { plantId, noteId: newNote.id, photoUrl });
@@ -3038,6 +3074,7 @@ async function runSaveNoteFlow(plantId) {
 
     if (pendingPhoto?.previewUrl) URL.revokeObjectURL(pendingPhoto.previewUrl);
     state.sheetData.pendingPhoto = null;
+    state.sheetData.usingDefaultPhoto = false;   // #491
     state.sheetData.pendingText = '';
 
     closeSheet();
@@ -6977,23 +7014,25 @@ function renderPostTaskNoteSheet(plantId, taskId) {
   `);
 }
 
+// #491: photo-first creation flow. The sheet has two shapes — a capture prompt
+// before anything is chosen, then a photo-block / caption-strip / action-row
+// stack once a real photo or the default stands in for one. renderAddNoteBody()
+// owns both so a photo choice can re-render in place without reopening.
 function renderAddNoteSheet(plantId) {
   state.sheetMode = 'add-note';
-  state.sheetData = { plantId, pendingText: state.sheetData?.pendingText ?? '', pendingPhoto: state.sheetData?.pendingPhoto ?? null };
+  state.sheetData = {
+    plantId,
+    pendingText:  state.sheetData?.pendingText ?? '',
+    pendingPhoto: state.sheetData?.pendingPhoto ?? null,
+    usingDefaultPhoto: state.sheetData?.usingDefaultPhoto ?? false,
+  };
 
   openSheet(`
     <div class="sheet-title">${t('notes.addNote.title')}</div>
-    <div class="form-group">
-      <textarea class="form-textarea" id="sheet-note-text" placeholder="${t('notes.placeholder')}" style="min-height:110px">${escapeHtml(state.sheetData.pendingText)}</textarea>
-    </div>
-    <div id="add-note-photo-area" class="add-note-photo-area">${renderAddNotePhotoArea()}</div>
-    <div id="add-note-coach" class="add-note-coach">${renderAddNoteCoachTip(null)}</div>
+    <div id="add-note-body">${renderAddNoteBody()}</div>
     <input type="file" id="add-note-file-input" accept="image/*" capture="environment" hidden />
-    <div class="sheet-actions">
-      <button class="btn btn-ghost" data-action="close-sheet">${t('taskSheet.cancel')}</button>
-      <button class="btn btn-primary" data-action="sheet-save-note">${t('auth.reset.save')}</button>
-    </div>
   `);
+  applyAdaptivePhotoSizing();
 
   // Async fill in last photo thumbnail (don't block sheet open)
   fetchLastPlantPhoto(plantId).then(photo => {
@@ -7003,20 +7042,81 @@ function renderAddNoteSheet(plantId) {
   });
 }
 
-function renderAddNotePhotoArea() {
-  const pending = state.sheetData?.pendingPhoto;
-  if (pending) {
+function renderAddNoteBody() {
+  const pending    = state.sheetData?.pendingPhoto;
+  const useDefault = !!state.sheetData?.usingDefaultPhoto;
+  const hasPhoto   = !!pending || useDefault;
+
+  // Pre-choice: capture prompt + quiet default link. No caption strip yet, and
+  // Save stays disabled until one of the two paths is taken.
+  if (!hasPhoto) {
     return `
-      <div class="add-note-photo-preview">
-        <img loading="lazy" class="add-note-photo-thumb" src="${escapeHtml(pending.previewUrl)}" alt="" />
-        <div class="add-note-photo-meta">
-          <div class="add-note-photo-meta-title">&#10003; ${t('addPlant.photo.added')}</div>
-          <button type="button" class="add-note-photo-change" data-action="add-note-pick-photo">${t('photos.tapToChange')}</button>
-        </div>
-        <button type="button" class="add-note-photo-remove" data-action="add-note-remove-photo">&#10005; ${t('addPlant.photo.remove')}</button>
+      <button type="button" class="add-note-capture-block" data-action="add-note-pick-photo">
+        <span class="add-note-capture-icon" aria-hidden="true">&#128247;</span>
+        <span class="add-note-capture-label">${t('notes.takePhoto')}</span>
+      </button>
+      <button type="button" class="add-note-default-link" data-action="add-note-use-default">${t('notes.useDefaultPhoto')}</button>
+      <div id="add-note-coach" class="add-note-coach">${renderAddNoteCoachTip(null)}</div>
+      <div class="sheet-actions add-note-actions">
+        <button class="btn btn-ghost" data-action="close-sheet">${t('taskSheet.cancel')}</button>
+        <button class="btn btn-primary" data-action="sheet-save-note" disabled>${t('auth.reset.save')}</button>
       </div>`;
   }
-  return `<button type="button" class="add-note-photo-btn" data-action="add-note-pick-photo">📷 ${t('notes.addPhoto')}</button>`;
+
+  // Post-choice: three stacked, non-overlapping sections. The X and Retake sit
+  // on top of the image itself; everything else flows below it.
+  const media = useDefault
+    ? `<div class="add-note-photo-default" role="img" aria-label="${t('notes.defaultPhotoLabel')}">
+         <span class="add-note-photo-default-glyph" aria-hidden="true">${escapeHtml(getPlant(state.sheetData.plantId)?.emoji || '🌿')}</span>
+       </div>`
+    : `<img id="add-note-photo-img" class="add-note-photo-full" src="${escapeHtml(pending.previewUrl)}" alt="" />`;
+
+  return `
+    <div class="add-note-photo-block" id="add-note-photo-block">
+      ${media}
+      <button type="button" class="add-note-photo-overlay add-note-photo-overlay--x" data-action="add-note-remove-photo" aria-label="${t('notes.aria.removePhoto')}">&#10005;</button>
+      <button type="button" class="add-note-photo-overlay add-note-photo-overlay--retake" data-action="add-note-pick-photo">${t('notes.retake')}</button>
+    </div>
+    <input type="text" class="add-note-caption" id="sheet-note-text" placeholder="${t('notes.captionPlaceholder')}" value="${escapeHtml(state.sheetData.pendingText)}" />
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" data-action="close-sheet">${t('taskSheet.cancel')}</button>
+      <button class="btn btn-primary" data-action="sheet-save-note">${t('auth.reset.save')}</button>
+    </div>
+    <button type="button" class="add-note-default-link" data-action="add-note-use-default">${t('notes.useDefaultPhoto')}</button>
+    <div id="add-note-coach" class="add-note-coach">${renderAddNoteCoachTip(null)}</div>`;
+}
+
+// #491: adaptive orientation sizing. Nothing in the app did this before (the
+// existing viewers letterbox inside a fixed box), so the block's height is
+// derived from the image's own ratio: exact fit for landscape/square/mild
+// portrait, capped for very tall portraits so the caption strip and actions stay
+// on screen. Only the capped case crops, and it crops from the centre.
+const ADD_NOTE_PHOTO_MAX_VH = 52;
+function applyAdaptivePhotoSizing() {
+  const block = document.getElementById('add-note-photo-block');
+  const img   = document.getElementById('add-note-photo-img');
+  if (!block) return;
+  if (!img) { block.style.height = '180px'; return; }   // default-photo placeholder
+  const size = () => {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) return;
+    const boxW  = block.clientWidth || block.getBoundingClientRect().width;
+    const maxH  = window.innerHeight * (ADD_NOTE_PHOTO_MAX_VH / 100);
+    block.style.height = `${Math.round(Math.min(boxW * (h / w), maxH))}px`;
+  };
+  if (img.complete && img.naturalWidth) size();
+  else img.addEventListener('load', size, { once: true });
+}
+
+function refreshAddNoteBody() {
+  const body = document.getElementById('add-note-body');
+  if (body) body.innerHTML = renderAddNoteBody();
+  applyAdaptivePhotoSizing();
+  fetchLastPlantPhoto(state.sheetData?.plantId).then(photo => {
+    if (state.sheetMode !== 'add-note') return;
+    const coach = document.getElementById('add-note-coach');
+    if (coach) coach.innerHTML = renderAddNoteCoachTip(photo);
+  });
 }
 
 function renderAddNoteCoachTip(lastPhoto) {
@@ -7039,11 +7139,6 @@ function renderAddNoteCoachTip(lastPhoto) {
     ${thumbHtml}`;
 }
 
-function refreshAddNotePhotoArea() {
-  const area = document.getElementById('add-note-photo-area');
-  if (area) area.innerHTML = renderAddNotePhotoArea();
-}
-
 async function handleAddNoteFileSelected(file) {
   console.log('[fileSelected] ENTER', { name: file?.name, type: file?.type, size: file?.size, sheetMode: state.sheetMode, sheetData: state.sheetData });
   if (!file || !file.type?.startsWith('image/')) {
@@ -7061,8 +7156,9 @@ async function handleAddNoteFileSelected(file) {
     }
     state.sheetData = state.sheetData || {};
     state.sheetData.pendingPhoto = { blob, previewUrl };
+    state.sheetData.usingDefaultPhoto = false;   // #491: a real photo supersedes the default
     console.log('[fileSelected] pendingPhoto set on sheetData', { sheetData: state.sheetData });
-    refreshAddNotePhotoArea();
+    refreshAddNoteBody();
   } catch (err) {
     console.error('[fileSelected] error:', err);
     showToast(t('menu.toast.couldNotLoadImage'));
@@ -7548,7 +7644,10 @@ async function handleEditNotePhotoFileSelected(file) {
     if (ppErr) throw ppErr;
     const { error: noteErr } = await supabaseClient
       .from('notes')
-      .update({ photo_url: photoUrl })
+      // #493: adding or replacing a photo on an existing note re-stamps recency.
+      // created_at deliberately stays put — it means note-creation time only, and
+      // relying on it here is exactly the defect this column fixes.
+      .update({ photo_url: photoUrl, photo_added_at: 'now' })
       .eq('id', noteId);
     if (noteErr) throw noteErr;
     note.photoUrl = photoUrl;
@@ -9272,10 +9371,27 @@ async function handleEvent(e) {
       break;
     }
 
-    case 'add-note-remove-photo':
+    case 'add-note-remove-photo': {
+      // #491: the overlay X drops both the real photo and the default stand-in,
+      // returning the sheet to the capture prompt. Keep any caption typed so far.
+      const capEl = document.getElementById('sheet-note-text');
+      if (capEl && state.sheetData) state.sheetData.pendingText = capEl.value;
       clearPendingPhoto();
-      refreshAddNotePhotoArea();
+      if (state.sheetData) state.sheetData.usingDefaultPhoto = false;
+      refreshAddNoteBody();
       break;
+    }
+
+    case 'add-note-use-default': {
+      // #491: stand in for a photo so Save unblocks. Swapping back from a real
+      // photo drops the pending capture — the default replaces it.
+      const capEl2 = document.getElementById('sheet-note-text');
+      if (capEl2 && state.sheetData) state.sheetData.pendingText = capEl2.value;
+      clearPendingPhoto();
+      if (state.sheetData) state.sheetData.usingDefaultPhoto = true;
+      refreshAddNoteBody();
+      break;
+    }
 
     case 'add-note-view-photo': {
       const _noteId = target.dataset.noteId;
